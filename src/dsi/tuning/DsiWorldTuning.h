@@ -224,4 +224,35 @@
 #undef  DSI_GREEDY_BATCHES_PER_CALL
 #define DSI_GREEDY_BATCHES_PER_CALL              6
 
+// EMERGENCY KILL SWITCH, real-hardware evidence: Config::isConnectedTextures()
+// defaulted to true on DSi for this whole session (GameSettingsBackend_DSI.cpp
+// returned 0, not 3, from platformGameSettingsDefaultConnectedTextures() --
+// now fixed), and WorldRendererDsi.cpp's dsiAllowGreedyMesh gates the whole
+// greedy phase on !isConnectedTextures(). That means the greedy-mesh code
+// path in DsiGreedyMesh.cpp had NEVER ACTUALLY EXECUTED on real hardware
+// before the default fix landed -- every earlier "greedy mesh" build this
+// session ran the plain per-block path the whole time.
+//
+// The very first real-hardware run with the default fix applied (user debug
+// log, same session) showed a catastrophic steady-state regression: render
+// time pinned at ~212-240ms EVERY frame (not a spike -- min and max nearly
+// identical across a long, otherwise-idle stretch with rebuilds= frozen, i.e.
+// no rebuilding in flight, just steady replay cost), matching the user's own
+// "4 fps" report almost exactly (1000/213 =~ 4.7 fps). That is far worse than
+// this platform's established non-greedy baseline (~130-165ms/frame render
+// under comparable load, from this same session's earlier logs).
+//
+// Root cause not yet isolated -- the algorithm in DsiGreedyMesh.cpp looks
+// sound by inspection (bounded 16x16 mask, no double-render against the
+// per-block loop's skip check) but has literally never run on a real
+// console until now, so something in it or in its interaction with the
+// static-mesh compile/replay path is wrong in a way static review missed.
+// Disabling the runtime path here (independent of the now-correct
+// isConnectedTextures() default, which stays fixed) restores the known-good
+// non-greedy baseline while that gets root-caused, rather than shipping a
+// build proven ~40x slower than intended. Flip to 1 once the real bug is
+// found and fixed and a real-hardware run confirms it no longer regresses.
+#undef  DSI_GREEDY_MESH_RUNTIME_ENABLED
+#define DSI_GREEDY_MESH_RUNTIME_ENABLED           0
+
 #endif // PLATFORM_DSI

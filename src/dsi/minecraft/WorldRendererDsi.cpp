@@ -290,7 +290,15 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 		// allowOptiFineGreedyMesh guard: both features vary a block's texture
 		// per-neighbour/per-position, which the greedy pass's FaceKey (one
 		// texture id per merged run) cannot represent.
-		const bool dsiAllowGreedyMesh = !Config::isConnectedTextures() && !Config::isNaturalTextures();
+		// DSI_GREEDY_MESH_RUNTIME_ENABLED (DsiWorldTuning.h): emergency kill
+		// switch, currently 0 -- real-hardware evidence of a catastrophic
+		// steady-state render regression (~4-5 fps) the first time this path
+		// ever actually ran, once the isConnectedTextures() default bug that
+		// had kept it permanently inert was fixed. See that macro's own
+		// comment for the full account; independent of the (correct, staying
+		// fixed) isConnectedTextures()/isNaturalTextures() checks below.
+		const bool dsiAllowGreedyMesh = DSI_GREEDY_MESH_RUNTIME_ENABLED &&
+			!Config::isConnectedTextures() && !Config::isNaturalTextures();
 		if (dsiAllowGreedyMesh && dsiBuildPass == 0 && dsiBuildGreedyFace < RENDER_TERRAIN_GREEDY_FACE_COUNT)
 		{
 			// Real-hardware evidence (memtrend's rebuilds= counter climbing

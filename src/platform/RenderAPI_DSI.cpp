@@ -1638,10 +1638,22 @@ void renderColorMask(bool, bool, bool, bool)
 // `(anonymous namespace)::dsiFlushPendingUpload(...)'".
 void dsiFlushPendingUpload(int name, DsiTexture& tex);
 
+// Real cost this avoids: WorldRendererDsi.cpp rebinds /terrain.png after
+// every rendered section (its own comment: "Terrain state assumes /terrain.png
+// is still bound after each section") -- up to ~18 times a frame for DSi's
+// whole resident world, virtually always re-binding the SAME already-bound
+// texture. Every one of those was an unconditional glBindTexture() -- a real
+// GX-FIFO command write -- for no state change at all. Wii's equivalent path
+// already skips this (WiiNativeDraw.cpp's loadTextureIfNeeded(), a memcmp
+// against the last-loaded texture object); DSi never had the analogous
+// guard. renderDeleteTextures() above keeps g_boundTexture from going stale
+// across a delete-then-reuse-the-same-id cycle, so this comparison alone is
+// enough to know whether the hardware is already showing this exact texture.
 void renderBindTexture(int texture)
 {
+	const bool alreadyBound = texture > 0 && texture == g_boundTexture;
 	g_boundTexture = texture;
-	if (texture > 0)
+	if (texture > 0 && !alreadyBound)
 		glBindTexture(0, texture);
 
 	// See DsiTexture::pendingUploadFlush's comment: a sub-image patch
@@ -1730,8 +1742,20 @@ void renderDeleteTextures(int count, const int* textures)
 	std::vector<int> mutableCopy(textures, textures + count);
 	glDeleteTextures(count, mutableCopy.data());
 	for (int i = 0; i < count; ++i)
+	{
 		if (textures[i] > 0 && static_cast<std::size_t>(textures[i]) < g_textures.size())
 			g_textures[textures[i]] = DsiTexture{};
+		// A deleted name can be handed back out by a later glGenTextures()
+		// (mob-skin eviction -- releaseTexturesWithPrefix() -- does exactly
+		// this: delete now, lazily re-upload a DIFFERENT image under the
+		// same reused id later). renderBindTexture()'s own dedup guard below
+		// compares against this value; leaving it pointing at a deleted id
+		// would make that guard wrongly skip the real glBindTexture() call
+		// the first time that reused id is bound again, rendering with
+		// whatever texture the hardware still happened to have loaded.
+		if (textures[i] > 0 && textures[i] == g_boundTexture)
+			g_boundTexture = 0;
+	}
 }
 
 // The actual GPU re-upload half of a sub-image patch -- see DsiTexture::

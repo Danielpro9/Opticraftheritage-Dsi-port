@@ -208,6 +208,21 @@ struct RenderCapturedMesh
     // every other backend, same as positionIsV16.
     bool texCoordIsT16 = false;
 
+    // DSi-only (RenderAPI_DSI.cpp's dsiCompileCapturedMeshCommands()): a
+    // pre-packed GX FIFO command stream -- built once, same "pay the cost
+    // at build time, not on every one of the hundreds of frames this mesh
+    // replays before its next rebuild" precedent as positionIsV16/
+    // texCoordIsT16 above, just one step further (skips the per-vertex
+    // libnds wrapper-function calls entirely, not just the float math
+    // inside them: see that function's own comment, and
+    // drawCapturedMeshFast()'s, for the real-hardware reference this is
+    // modelled on). Empty means "not compiled" -- raw is always kept as the
+    // fallback, so an empty list here just means drawCapturedMeshFast()
+    // uses its ordinary per-vertex path, the same as if this field did not
+    // exist. Ignored on every other backend, same as positionIsV16/
+    // texCoordIsT16.
+    std::vector<std::uint32_t> compiledCommands;
+
     bool empty() const { return vertexCount <= 0 || raw.empty(); }
     std::size_t byteSize() const { return raw.size() * sizeof(std::int32_t); }
     void clear()
@@ -226,6 +241,19 @@ struct RenderCapturedMesh
         hasBrightness = false;
         brightnessOffset = 0;
         positionIsV16 = false;
+        // FIXED: texCoordIsT16 used to be left unreset here (positionIsV16
+        // right above it was correctly reset, this one was just missed) --
+        // a RenderCapturedMesh cleared and refilled in place (not every
+        // caller replaces the object outright) would carry a stale "true"
+        // into fresh raw data that is not actually t16-converted yet,
+        // which drawCapturedMeshFast() would then misread as pre-converted
+        // fixed-point ints instead of the floats actually there. Fixed
+        // alongside adding compiledCommands below, since a stale compiled
+        // command list surviving a clear() would be the same class of bug
+        // one step further along -- replaying commands built from a
+        // previous, unrelated fill of this same mesh object.
+        texCoordIsT16 = false;
+        compiledCommands.clear();
     }
 };
 

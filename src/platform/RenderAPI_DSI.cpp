@@ -1252,6 +1252,129 @@ bool renderCaptureInterleaved(const RenderInterleavedMesh& mesh, RenderCapturedM
 // per vertex) -- a real but smaller remaining cost than position (1 call vs.
 // 3 per vertex) and the next thing to revisit if a texture-size-aware
 // version of this is worth the added complexity.
+// Pre-packs a captured mesh's per-vertex GX FIFO command stream once, so
+// replaying it every frame is a single DMA transfer straight into the
+// geometry engine's command port instead of this file's own per-vertex
+// libnds call sequence below (glColor3b()/glTexCoord2t16()/glVertex3v16(),
+// each a real ARM9 function call with its own argument packing, run
+// vertexCount times EVERY frame a section is drawn). Validated two ways
+// before writing this, not guessed:
+//   (1) libnds's own headers give the exact on-the-wire format the FIFO
+//       register (GFX_FIFO, nds/arm9/video.h) expects: FIFO_COMMAND_PACK()
+//       (nds/arm9/videoGL.h) packs up to 4 command IDs into one header word
+//       (one byte per queued command, REG2ID()'d from each command
+//       register's own address), immediately followed by each command's
+//       parameter words in order -- COLOR takes 1 (glColor3b()'s
+//       RGB15(r>>3,g>>3,b>>3)), TEX_COORD takes 1 (glTexCoord2t16()'s
+//       TEXTURE_PACK(u,v)), VERTEX16 takes 2 (glVertex3v16()'s
+//       ((u32)(u16)y<<16)|(x&0xFFFF) then z), NOP takes 0 -- so one
+//       COLOR+TEX_COORD+VERTEX16+NOP record is exactly 5 words: the header
+//       plus those 4 real parameter words.
+//   (2) ClassiCube's own shipped, working DS/DSi backend
+//       (github.com/ClassiCube/ClassiCube, src/nds/Graphics_NDS.c's
+//       PreprocessTexturedVertices()/DSTexturedVertex/CallDrawList())
+//       independently implements this exact technique, on the exact same
+//       hardware, confirming both the format above and that this is a
+//       real, proven win rather than a hopeful guess -- including the
+//       detail that follows: ClassiCube's CallDrawList() does NOT go
+//       through libnds's own glCallList() (which expects a leading word-
+//       count prefix inside the list itself, since it can't otherwise know
+//       how long a caller-built list is); it DMAs the pre-packed buffer
+//       straight into GFX_FIFO via dmaSetParams(..., DMA_FIFO | wordCount),
+//       passing the already-known word count directly instead of paying
+//       for a prefix word this call site never needs. drawCapturedMeshFast()
+//       below mirrors that exact DMA call, not glCallList().
+//
+// Fixed 5-word-per-vertex layout, one self-contained command header per
+// vertex (matching ClassiCube's DSTexturedVertex struct, NOT this file's
+// own emitColorIfChanged() run-length colour dedup below): a per-vertex
+// header must stand alone for a blind DMA replay to work, so a redundant
+// GFX_COLOR word between two same-coloured vertices costs one packed word,
+// not a function call -- cheap next to the per-vertex call overhead this
+// removes. Gated by dsiRepackCapturedMeshFast() below to only meshes it has
+// already fully converted to v16 position + t16 texcoord, with no normals
+// (this path never emits a NORMAL command) and GL_QUADS primitives (this
+// port's only captured-mesh shape).
+void dsiCompileCapturedMeshCommands(RenderCapturedMesh& mesh)
+{
+	mesh.compiledCommands.clear();
+
+	if (mesh.empty() || !mesh.positionIsV16 || !mesh.texCoordIsT16 || mesh.hasNormals)
+		return;
+	if (mesh.primitive != RenderPrimitive::Quads)
+		return;
+
+	const std::uint8_t* base = reinterpret_cast<const std::uint8_t*>(mesh.raw.data());
+	// Not constexpr: REG2ID() (videoGL.h) casts a register's address to an
+	// integer, which is a pointer-to-integer conversion the standard bars
+	// from constant expressions even though the address itself is a fixed
+	// compile-time literal (GFX_FIFO et al. are hardcoded MMIO addresses) --
+	// still computed once here, outside the per-vertex loop below, which is
+	// what actually matters for cost.
+	const std::uint32_t kHeader = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
+
+	mesh.compiledCommands.resize((std::size_t)mesh.vertexCount * 5);
+	std::uint32_t* out = mesh.compiledCommands.data();
+
+	for (int i = 0; i < mesh.vertexCount; ++i)
+	{
+		const std::uint8_t* vertex = base + (std::size_t)i * mesh.stride;
+
+		// Identical colour/lightmap-combine logic to drawCapturedMeshFast()'s
+		// per-vertex loop below (kept in sync by hand) -- see that copy's own
+		// comments for why each branch exists. The only difference is this
+		// loop always computes and writes a colour word instead of skipping
+		// one when it matches the previous vertex's.
+		std::uint8_t r = 255, g = 255, b = 255;
+		bool haveLightmapColor = false;
+		std::uint8_t lightmapR = 255, lightmapG = 255, lightmapB = 255;
+		if (mesh.hasBrightness)
+		{
+			std::int32_t packedBrightness = 0;
+			std::memcpy(&packedBrightness, vertex + mesh.brightnessOffset, sizeof(packedBrightness));
+			const float lightU = static_cast<float>(packedBrightness & 0xffff) / 256.0f;
+			const float lightV = static_cast<float>((packedBrightness >> 16) & 0xffff) / 256.0f;
+			haveLightmapColor = lightmapColorAt(lightU, lightV, lightmapR, lightmapG, lightmapB);
+		}
+		if (mesh.hasColor)
+		{
+			std::uint8_t rgba[4];
+			std::memcpy(rgba, vertex + mesh.colorOffset, sizeof(rgba));
+			if (haveLightmapColor)
+			{
+				r = static_cast<std::uint8_t>((static_cast<int>(lightmapR) * rgba[0]) / 255);
+				g = static_cast<std::uint8_t>((static_cast<int>(lightmapG) * rgba[1]) / 255);
+				b = static_cast<std::uint8_t>((static_cast<int>(lightmapB) * rgba[2]) / 255);
+			}
+			else
+			{
+				r = rgba[0]; g = rgba[1]; b = rgba[2];
+			}
+		}
+		else if (haveLightmapColor)
+		{
+			r = lightmapR; g = lightmapG; b = lightmapB;
+		}
+		// else: r=g=b stay 255 (opaque white) -- same "no colour, no
+		// lightmap" fallback as drawCapturedMeshFast()'s own comment below
+		// explains (avoids inheriting a stale GFX_COLOR from an unrelated
+		// earlier draw call under POLY_MODULATION).
+
+		std::int32_t uvT16[2];
+		std::memcpy(uvT16, vertex + mesh.texCoordOffset, sizeof(uvT16));
+		std::int32_t posV16[3];
+		std::memcpy(posV16, vertex, sizeof(posV16));
+
+		out[0] = kHeader;
+		out[1] = static_cast<std::uint32_t>(RGB15(r >> 3, g >> 3, b >> 3));
+		out[2] = static_cast<std::uint32_t>(TEXTURE_PACK(static_cast<t16>(uvT16[0]), static_cast<t16>(uvT16[1])));
+		out[3] = (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[1])) << 16)
+		       | (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[0])) & 0xFFFFu);
+		out[4] = static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[2]));
+		out += 5;
+	}
+}
+
 void dsiRepackCapturedMeshFast(RenderCapturedMesh& mesh, int terrainTextureId)
 {
 	if (mesh.empty())
@@ -1303,6 +1426,18 @@ void dsiRepackCapturedMeshFast(RenderCapturedMesh& mesh, int terrainTextureId)
 			mesh.texCoordIsT16 = true;
 		}
 	}
+
+	// Both conversions above are one-shot and idempotent (positionIsV16/
+	// texCoordIsT16 guard each), so this is safe to call unconditionally on
+	// every pass through here: it only actually (re)builds compiledCommands
+	// the first time both are true and stays a no-op after (mesh.raw itself
+	// never changes once a section finishes building -- see this function's
+	// own banner comment on why replays never re-derive it). If the texture
+	// wasn't resident yet above (texCoordIsT16 still false), this call's own
+	// guard clause skips it and leaves compiledCommands empty, falling back
+	// to the float texcoord path below on that call -- same as before this
+	// existed -- and it tries again next time this is called.
+	dsiCompileCapturedMeshCommands(mesh);
 }
 
 namespace
@@ -1365,6 +1500,41 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 
 	glPushMatrix();
 	glScalef(kVertexScale, kVertexScale, kVertexScale);
+
+	if (!mesh.compiledCommands.empty())
+	{
+		// Fast path: dsiCompileCapturedMeshCommands() (see its own banner
+		// comment above dsiRepackCapturedMeshFast()) already pre-packed
+		// every vertex's COLOR+TEX_COORD+VERTEX16 command record once, back
+		// when this section's mesh was repacked -- replay it as a single DMA
+		// transfer straight into the geometry engine's FIFO port instead of
+		// the per-vertex libnds call loop below (which still handles every
+		// mesh this backend draws that ISN'T eligible for pre-compilation:
+		// anything with normals, a non-quad primitive, or not yet through
+		// dsiRepackCapturedMeshFast() at all).
+		//
+		// Mirrors ClassiCube's own CallDrawList() (src/nds/Graphics_NDS.c),
+		// not libnds's higher-level glCallList(): glCallList() expects a
+		// leading word-count prefix baked into the list, since it can't
+		// otherwise know how long a general caller-built list is. This call
+		// site already knows the exact word count -- mesh.compiledCommands
+		// is always a whole number of fixed 5-word records, one per vertex,
+		// by construction in dsiCompileCapturedMeshCommands() above -- so it
+		// skips that prefix and DMAs the buffer directly -- the same
+		// technique, minus a redundant word, and
+		// validated against ClassiCube's real, shipped implementation of
+		// exactly this DMA call rather than assumed.
+		glBegin(glPrimitive);
+		while (dmaBusy(0) || dmaBusy(1) || dmaBusy(2) || dmaBusy(3))
+			;
+		dmaSetParams(0, mesh.compiledCommands.data(), (void*)&GFX_FIFO,
+		             DMA_FIFO | static_cast<std::uint32_t>(mesh.compiledCommands.size()));
+		while (dmaBusy(0))
+			;
+		glEnd();
+		glPopMatrix(1);
+		return true;
+	}
 
 	bool haveLastColor = false;
 	std::uint8_t lastColorR = 0, lastColorG = 0, lastColorB = 0;

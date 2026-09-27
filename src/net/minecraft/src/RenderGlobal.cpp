@@ -421,7 +421,7 @@ void RenderGlobal::loadRenderers()
 	Block::leaves->setGraphicsLevel(Config::isTreesFancy());
 	renderDistance = mc->gameSettings->renderDistance;
 	worldRenderersToUpdate.clear();
-#if (PLATFORM_PS2 || PLATFORM_WII) && PLATFORM_CENTER_VERTICAL_RENDERERS
+#if (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI) && PLATFORM_CENTER_VERTICAL_RENDERERS
 	verticalWindowInitialized = false;
 #endif
 #if !defined(PS2_PLATFORM)
@@ -785,7 +785,7 @@ jstring RenderGlobal::getDebugInfoEntities()
 }
 
 #if PLATFORM_CENTER_VERTICAL_RENDERERS
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 int_t RenderGlobal::chooseConsoleVerticalStartSection(int_t playerBlockY) const
 {
 	const int_t maxStartSection = std::max(0, WorldHeight::SECTION_COUNT - renderChunksTall);
@@ -846,7 +846,7 @@ void RenderGlobal::remapCenteredVerticalRendererSlots(int_t newStartSection)
 		}
 	}
 
-#if (PLATFORM_PS2 || PLATFORM_WII) && MC_LOG_LEVEL > 2
+#if (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI) && MC_LOG_LEVEL > 2
 	MC_LOG_DEBUG("render", "vertical shift reused=%d recycled=%d start=%d->%d\n",
 		(int)reused, (int)recycled, (int)verticalStartSection, (int)newStartSection);
 #endif
@@ -874,7 +874,17 @@ void RenderGlobal::markRenderersForNewPosition(int_t i, int_t j, int_t k)
 	// Console windows favour terrain below the player and move only when the
 	// player reaches a guard edge, avoiding section-boundary oscillation.
 	int_t startSection = 0;
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
+	// DSi wired in here for the first time: this hysteresis (favour terrain
+	// below the player, only shift the window when a guard edge is crossed)
+	// was PS2/WII-only despite DSi's own PLATFORM_CENTER_VERTICAL_RENDERERS=1
+	// (DsiWorldTuning.h) taking the naive #else recompute below instead --
+	// the one platform whose PLATFORM_VERTICAL_CHUNK_COUNT=2 makes the
+	// vertical window thinnest of the three (32 blocks), so ordinary vertical
+	// movement sits near a section boundary more of the time, not less.
+	// remapCenteredVerticalRendererSlots() below was already unconditional
+	// (just inside PLATFORM_CENTER_VERTICAL_RENDERERS), so this only needed
+	// wiring the decision function itself in, not new slot-remapping code.
 	startSection = chooseConsoleVerticalStartSection(j + 8);
 	if (verticalWindowInitialized)
 		remapCenteredVerticalRendererSlots(startSection);
@@ -888,7 +898,7 @@ void RenderGlobal::markRenderersForNewPosition(int_t i, int_t j, int_t k)
 	remapCenteredVerticalRendererSlots(startSection);
 #endif
 	verticalStartSection = startSection;
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 	verticalWindowInitialized = true;
 #endif
 #endif
@@ -962,7 +972,7 @@ void RenderGlobal::enqueueRendererUpdate(WorldRenderer *worldrenderer)
 #endif
 }
 
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 void RenderGlobal::enqueueRendererUpdatePriority(WorldRenderer *worldrenderer)
 {
 	if (worldrenderer == nullptr)
@@ -2836,11 +2846,24 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				int_t k4 = (j4 * renderChunksTall + l3) * renderChunksWide + j3;
 				WorldRenderer *worldrenderer = worldRenderers[k4];
 
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 				// Active builds must observe every mutation so deferred population
 				// can mark one final rebuild without throwing away the current staging
 				// mesh. markDirty() itself decides whether to coalesce or restart; a
 				// light-only mark always coalesces.
+				//
+				// DSi wired in here for the first time: WorldRenderer.h's
+				// urgentRebuild field, markDirtyFromLighting()'s dsiBuildActive
+				// branch, and setDontDraw()'s unconditional urgentRebuild=false
+				// reset were all already DSI_PLATFORM-aware (this mechanism's
+				// consumer side, RenderGlobal.cpp's rendererPriority()/urgent-lane
+				// budget loop below, isn't platform-gated at all) -- only this
+				// producer half, and enqueueRendererUpdatePriority()'s own #if
+				// just above, were missing PLATFORM_DSI, so a block the player
+				// broke or placed got no priority at all here: it queued behind
+				// ordinary terrain streaming exactly like the PS2 problem this
+				// mechanism itself exists to solve ("used to take about a second
+				// to show", Ps2MeshTuning.h).
 				enqueueRendererUpdatePriority(worldrenderer);
 				if (worldObj != nullptr && worldObj->isMarkingFromLighting())
 				{

@@ -343,9 +343,16 @@ void RenderItem::renderGuiItemGlint(int seed, int x, int y, int width, int heigh
 
         const float uScale = 0.00390625f;
         const float vScale = 0.00390625f;
-        const long_t period = 3000LL + static_cast<long_t>(pass) * 1873LL;
-        const float uOffset = static_cast<float>(System::currentTimeMillis() % period) /
-                              (3000.0f + static_cast<float>(pass * 1873)) * 256.0f;
+        // period as a compile-time literal (not pass-derived like
+        // "3000LL + pass * 1873LL") lets the compiler turn the 64-bit modulo
+        // into a magic-number multiply instead of a real division -- ARM9
+        // has no hardware divide at all, let alone a 64-bit one, and this
+        // runs on every enchanted hotbar item drawn every frame (GuiIngame's
+        // renderItemIntoGUI, not just inventory-screen icons). ItemRenderer.cpp's
+        // held-item glint already does this the cheap way (% 3000LL / % 4873LL
+        // literals); this mirrors it instead of computing period at runtime.
+        const float uOffset = static_cast<float>(System::currentTimeMillis() % (pass == 0 ? 3000LL : 4873LL)) /
+                              (pass == 0 ? 3000.0f : 4873.0f) * 256.0f;
         const float vOffset = 0.0f;
         const float skew = pass == 1 ? -1.0f : 4.0f;
 

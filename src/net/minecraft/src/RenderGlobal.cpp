@@ -1068,9 +1068,18 @@ bool RenderGlobal::isRendererUpdateActing(EntityLiving *entityliving) const
 
 int_t RenderGlobal::sortAndRender(EntityLiving *entityliving, int_t i, double d)
 {
+	// worldRenderersCheckIndex only ever advances by 1 each iteration, so a
+	// wraparound compare gives the exact same round-robin cursor as the
+	// modulo it replaces without a runtime division -- this loop runs every
+	// frame, so the original recomputed both the multiply (renderChunksWide *
+	// renderChunksTall * renderChunksDeep) and a full software modulo by it
+	// (never a power of two) 10 times a call for no reason beyond "+1".
+	const int_t totalRenderersForCheck = renderChunksWide * renderChunksTall * renderChunksDeep;
 	for (int_t j = 0; j < 10; j++)
 	{
-		worldRenderersCheckIndex = (worldRenderersCheckIndex + 1) % (renderChunksWide * renderChunksTall * renderChunksDeep);
+		++worldRenderersCheckIndex;
+		if (worldRenderersCheckIndex >= totalRenderersForCheck)
+			worldRenderersCheckIndex = 0;
 		WorldRenderer *worldrenderer = worldRenderers[worldRenderersCheckIndex];
 
 		if (worldrenderer->needsUpdate)

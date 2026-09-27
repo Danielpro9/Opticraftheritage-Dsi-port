@@ -306,6 +306,8 @@ EntityRenderer::EntityRenderer(Minecraft* minecraft)
     fogColorBlue = 0.0f;
     fogColor2 = 0.0f;
     fogColor1 = 0.0f;
+    cachedFogDistanceRenderDistance = -1; // renderDistance is always >= 0; forces a first compute
+    cachedFogDistanceFactor = 0.0f;
     fovModifierHand = 1.0f;
     fovModifierHandPrev = 1.0f;
     lightmapTexture = -1;
@@ -2319,12 +2321,24 @@ void EntityRenderer::updateFogColor(float partialTicks)
     World *world = mc->theWorld;
     EntityLiving *entityliving = mc->renderViewEntity;
 
-    float fogDistanceFactor = 1.0f / (float)(4 - mc->gameSettings->renderDistance);
+    // fogDistanceFactor is a function of renderDistance alone, which only
+    // changes from a video-settings menu action -- caching it means the
+    // division and the pow(x, 0.25) call (a full software transcendental on
+    // hardware with no FPU, not a table lookup like MathHelper::sin/cos)
+    // only run again when renderDistance actually changes, instead of every
+    // single frame this function is called from.
+    if (mc->gameSettings->renderDistance != cachedFogDistanceRenderDistance)
+    {
+        float fogDistanceFactor = 1.0f / (float)(4 - mc->gameSettings->renderDistance);
 #if PLATFORM_FLOAT_VERTEX_MATH
-    fogDistanceFactor = 1.0f - std::pow(fogDistanceFactor, 0.25f);
+        fogDistanceFactor = 1.0f - std::pow(fogDistanceFactor, 0.25f);
 #else
-    fogDistanceFactor = 1.0f - (float)pow(fogDistanceFactor, 0.25);
+        fogDistanceFactor = 1.0f - (float)pow(fogDistanceFactor, 0.25);
 #endif
+        cachedFogDistanceFactor = fogDistanceFactor;
+        cachedFogDistanceRenderDistance = mc->gameSettings->renderDistance;
+    }
+    const float fogDistanceFactor = cachedFogDistanceFactor;
 
     Vec3D *skyColor = world->getSkyColor(mc->renderViewEntity, partialTicks);
     const float skyR = (float)skyColor->xCoord;

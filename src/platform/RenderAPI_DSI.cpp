@@ -1087,6 +1087,17 @@ bool drawInterleavedMesh(const RenderInterleavedMesh& mesh)
 			// faces in the world every single frame.
 			emitColorIfChanged(lightmapR, lightmapG, lightmapB);
 		}
+		else
+		{
+			// Same fix as drawCapturedMeshFast()'s identical branch below --
+			// see its comment for the real-hardware "black hearts" bug this
+			// closes. Unreached for ordinary world terrain in practice
+			// (every real block face calls setBrightness() and/or
+			// setColorOpaque_F(), per this function's own comments above),
+			// but present here too so nothing drawn through this path can
+			// silently inherit a stale GFX_COLOR either.
+			emitColorIfChanged(255, 255, 255);
+		}
 		if (mesh.hasNormals)
 		{
 			constexpr float kInvNormalScale = 1.0f / 127.0f;
@@ -1403,6 +1414,32 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 		else if (haveLightmapColor)
 		{
 			emitColorIfChanged(lightmapR, lightmapG, lightmapB);
+		}
+		else
+		{
+			// FIXED: a mesh with neither per-vertex colour nor a lightmap
+			// value (mesh.hasColor and haveLightmapColor both false -- e.g.
+			// GuiIngame.cpp's renderPlayerStatusHudGeometry(), which emits
+			// hearts/food/armor icons via addVertexWithUV() alone and never
+			// calls setColorOpaque()/setBrightness()) used to leave this
+			// branch entirely unreached: no glColor3b() call at all, so
+			// GFX_COLOR simply kept whatever value the previous, unrelated
+			// draw call last set it to. This engine always runs in
+			// POLY_MODULATION (applyPolyFormatIfDirty() above never sets
+			// POLY_DECAL -- see its own comment), where
+			// FinalColor = TexColor * VertexColor: if that inherited colour
+			// happened to be dark or black (a plausible leftover from the
+			// world's own terrain draw call immediately preceding the HUD
+			// overlay pass), an otherwise-correct red heart/food icon
+			// (icons.png's pixel data confirmed correct via this port's own
+			// per-rect opacity scan) rendered solid black regardless of its
+			// real texture colour -- the exact "hearts render black" report.
+			// Vanilla OpenGL's own default vertex colour when glColor is
+			// never called is opaque white (a no-op multiplier), so default
+			// to that explicitly here instead of silently inheriting
+			// whatever colour happens to still be resident from an earlier,
+			// unrelated draw.
+			emitColorIfChanged(255, 255, 255);
 		}
 		if (mesh.hasNormals)
 		{

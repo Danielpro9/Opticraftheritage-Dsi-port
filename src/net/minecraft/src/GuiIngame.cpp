@@ -523,28 +523,6 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		}
 		if (index * 2 + 1 < health)  emitRect(hx, hy, heartTextureX + 36, 9 * hardcoreRow, 9, 9);
 		if (index * 2 + 1 == health) emitRect(hx, hy, heartTextureX + 45, 9 * hardcoreRow, 9, 9);
-#if PLATFORM_DSI
-		// One-shot companion to RenderEngine.cpp's icons.png opacity scan: that
-		// diagnostic answers whether the SOURCE pixels for the fill icons exist.
-		// This one answers the other half -- does the CPU-side logic above
-		// actually reach the fill emitRect() calls at all, with the values this
-		// code expects (matches the "hearts/food show only their empty
-		// background" report's own coordinates: heartTextureX+36=52 (full),
-		// +45=61 (half), same for food below).
-		if (index == 0)
-		{
-			static bool s_dsiLoggedHeartLogic = false;
-			if (!s_dsiLoggedHeartLogic)
-			{
-				s_dsiLoggedHeartLogic = true;
-				MC_LOG_WARN("dsi", "heart[0]: health=%d prevHealth=%d hx=%d hy=%d heartTextureX=%d "
-					"hardcoreRow=%d fullBranch=%d halfBranch=%d fullTexX=%d halfTexX=%d\n",
-					(int)health, (int)prevHealth, (int)hx, (int)hy, (int)heartTextureX,
-					(int)hardcoreRow, (index * 2 + 1 < health) ? 1 : 0, (index * 2 + 1 == health) ? 1 : 0,
-					(int)(heartTextureX + 36), (int)(heartTextureX + 45));
-			}
-		}
-#endif
 	}
 
 	FoodStats *foodStats = mc->thePlayer->getFoodStats();
@@ -566,21 +544,6 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		emitRect(fx, fy, 16 + backgroundOffset * 9, 27, 9, 9);
 		if (index * 2 + 1 < foodLevel)  emitRect(fx, fy, foodTextureX + 36, 27, 9, 9);
 		if (index * 2 + 1 == foodLevel) emitRect(fx, fy, foodTextureX + 45, 27, 9, 9);
-#if PLATFORM_DSI
-		if (index == 0)
-		{
-			static bool s_dsiLoggedFoodLogic = false;
-			if (!s_dsiLoggedFoodLogic)
-			{
-				s_dsiLoggedFoodLogic = true;
-				MC_LOG_WARN("dsi", "food[0]: foodLevel=%d saturation=%d fx=%d fy=%d foodTextureX=%d "
-					"fullBranch=%d halfBranch=%d fullTexX=%d halfTexX=%d\n",
-					(int)foodLevel, (int)saturation, (int)fx, (int)fy, (int)foodTextureX,
-					(index * 2 + 1 < foodLevel) ? 1 : 0, (index * 2 + 1 == foodLevel) ? 1 : 0,
-					(int)(foodTextureX + 36), (int)(foodTextureX + 45));
-			}
-		}
-#endif
 	}
 
 	if (mc->thePlayer->isInsideOfMaterial(Material::water))

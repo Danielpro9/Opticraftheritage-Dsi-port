@@ -2247,15 +2247,51 @@ void renderSubmitFrame()
 	// caller's own swap (glFlush()) remains the real synchronization point.
 }
 
+// ASSUMED (real-hardware report: in-world sky renders solid black instead of
+// the expected day-sky blue; needs confirmation like everything else tagged
+// ASSUMED in this file). Root cause traced by reading, not by a hardware
+// probe -- not yet independently confirmed by a real-hardware A/B test.
+//
+// This backend's caller (EntityRenderer.cpp's updateFogColor(), shared,
+// vanilla, cross-platform code -- not DSi-specific) calls this every frame
+// as `renderClearColor(fogColorRed, fogColorGreen, fogColorBlue, 0.0f)`:
+// alpha is ALWAYS 0. On every other backend that is harmless -- clear-colour
+// alpha is not part of what ends up on screen, since each of those is
+// either a single-layer framebuffer or otherwise ignores it. It is NOT
+// harmless here: glClearColor()'s alpha sets the DS 3D engine's REAR-PLANE
+// alpha (GFX_CLEAR_COLOR, nds/arm9/video.h), and the rear plane is what the
+// hardware shows wherever no polygon was actually drawn -- exactly the open
+// sky above the world once render distance is >=2 and RenderGlobal::
+// renderSky()'s dome mesh is skipped (see that function's own
+// `renderDistance < 2` gate; DSi inherits PS2's PLATFORM_DEFAULT_RENDER_
+// DISTANCE=3, so that dome is never drawn on this platform -- the "sky" the
+// player sees the rest of the time really is just this rear plane). Engine
+// A composites that alpha against whatever 2D background layer sits behind
+// the 3D layer, and dsiEnsureEarlyVideo() (DsiEarlyVideo.cpp) never sets one
+// up for the top/main screen (MODE_0_3D, no bgInit() call) -- the exact same
+// "nothing to composite against" gap that same file's own comment already
+// documents for why the BOTTOM screen reads flat black. An alpha-0 rear
+// plane compositing against nothing very plausibly falls through to that
+// same hardware black, regardless of what colour was requested -- matching
+// the report exactly (grass/trees/water still show correctly, since those
+// are real opaque polygons with their own alpha, untouched by this).
+//
+// dsiEnsureEarlyVideo()'s own one-time startup clear
+// (`glClearColor(0, 0, 0, 31)`) already uses a real alpha (31, opaque) for
+// exactly this reason, which is what this fix makes every frame's clear
+// consistent with: DSi's rear plane has nothing behind it to ever
+// legitimately blend with, so it should always be fully opaque regardless
+// of what alpha a cross-platform caller happens to pass in.
 void renderClearColor(float r, float g, float b, float a)
 {
+	(void)a;
 	const auto toChannel = [](float v) -> std::uint8_t
 	{
 		if (v < 0.0f) v = 0.0f;
 		if (v > 1.0f) v = 1.0f;
 		return static_cast<std::uint8_t>(v * 31.0f + 0.5f);
 	};
-	glClearColor(toChannel(r), toChannel(g), toChannel(b), toChannel(a));
+	glClearColor(toChannel(r), toChannel(g), toChannel(b), 31);
 }
 
 void renderClearDepth(double depth)

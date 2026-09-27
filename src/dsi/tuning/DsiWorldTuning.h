@@ -53,6 +53,27 @@
 #undef  PLATFORM_CENTER_VERTICAL_RENDERERS
 #define PLATFORM_CENTER_VERTICAL_RENDERERS       1
 
+// PLATFORM_RANDOM_TICK_CHUNK_RADIUS/MOB_SPAWN_CHUNK_RADIUS do NOT inherit the
+// PLATFORM_VISIBLE_CHUNK_RADIUS override two lines up: PlatformGameTuning.h
+// aliases both to PS2_RANDOM_TICK_CHUNK_RADIUS/PS2_MOB_SPAWN_CHUNK_RADIUS
+// (Ps2WorldTuning.h), which are themselves #define'd as the PS2-specific
+// PS2_VISIBLE_CHUNK_RADIUS macro (=2, Ps2CoreTuning.h) -- a different token
+// than the generic PLATFORM_VISIBLE_CHUNK_RADIUS this file overrides above,
+// so DSi's radius-1 override never reaches these two. World::
+// updateBlocksAndPlayCaveSounds() (World.cpp) builds its random-tick chunk
+// set from this radius every tick: at 2, that is a 5x5=25-chunk set even
+// though only DSi's real ~9 resident chunks (radius 1) exist, inflating
+// randomTickScale's denominator and concentrating PLATFORM_RANDOM_BLOCK_
+// TICKS_PER_CHUNK's per-visit attempts into bursts instead of spreading them
+// evenly -- the same shape of tick-time variance/spike this file's own
+// PLATFORM_MAX_SCHEDULED_TICK_UPDATES comment already documents chasing.
+// Referencing PLATFORM_VISIBLE_CHUNK_RADIUS (not a literal 1) so this stays
+// correct automatically if that radius is ever raised.
+#undef  PLATFORM_RANDOM_TICK_CHUNK_RADIUS
+#define PLATFORM_RANDOM_TICK_CHUNK_RADIUS        PLATFORM_VISIBLE_CHUNK_RADIUS
+#undef  PLATFORM_MOB_SPAWN_CHUNK_RADIUS
+#define PLATFORM_MOB_SPAWN_CHUNK_RADIUS          PLATFORM_VISIBLE_CHUNK_RADIUS
+
 // Streaming window equal to the visible radius (PS2 settled on the same choice
 // for the same reason -- see the "Back at radius 2 for memory" note in
 // Ps2CoreTuning.h): a bigger cache radius buys lead time for prefetching, but

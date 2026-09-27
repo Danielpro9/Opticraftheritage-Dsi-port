@@ -22,7 +22,34 @@ int_t platformGameSettingsDefaultChunkUpdates() { return (int_t)PLATFORM_MAX_REN
 // state, which costs extra texture lookups per face; off by default given
 // the same texture-memory/GPU-time budget reasoning as the rest of this
 // port's tuning.
-int_t platformGameSettingsDefaultConnectedTextures() { return 0; }
+//
+// FIXED: this returned 0, not 3. Config::isConnectedTextures() (Config.cpp)
+// checks ofConnectedTextures != 3 -- 1=Fast and 2=Fancy are the only "on"
+// values, matching GameSettings.cpp's own cycle-through-options logic
+// (ofConnectedTextures++, wrapping 3 back to 1) and its options-string
+// display (GameSettings.cpp: only 1 and 2 print a name, everything else,
+// 0 included, prints "OFF") -- so the menu already correctly displayed
+// "Connected Textures: OFF" on a fresh DSi settings object while 0 != 3
+// made Config::isConnectedTextures() itself return true, the opposite of
+// what was displayed and clearly the opposite of this comment's own stated
+// intent. This setting is never read from or written to options.txt
+// (grep confirms ofConnectedTextures is only ever assigned here at
+// construction and in GameSettings.cpp's own toggle handler), so unlike a
+// persisted setting, correcting this default is a complete fix on its own
+// -- no stale options.txt value can keep reproducing the bug.
+//
+// Real consequence beyond the extra per-face ConnectedTextures::
+// getConnectedTexture() lookup RenderBlocks.cpp's resolveFaceTexture()
+// pays for every block face regardless (cheap on its own when a resource
+// pack has no CTM *.properties files to match, as OptiCraft's bundled ones
+// do not): WorldRendererDsi.cpp's greedy-mesh phase and DsiWaterMerge.cpp's
+// still-water merge both gate themselves on
+// !Config::isConnectedTextures() (mirroring PS2's own identical
+// allowOptiFineGreedyMesh guard, since a merged run's single FaceKey/tile
+// cannot represent connected-texture's per-neighbour texture variation) --
+// with isConnectedTextures() incorrectly true, both were silently
+// disabled entirely on every DSi build up to and including this one.
+int_t platformGameSettingsDefaultConnectedTextures() { return 3; }
 int_t platformGameSettingsCycleRenderDistance(int_t, int_t) { return PLATFORM_DEFAULT_RENDER_DISTANCE; }
 int_t platformGameSettingsClampRenderDistance(int_t) { return PLATFORM_DEFAULT_RENDER_DISTANCE; }
 

@@ -32,6 +32,8 @@
 #include "dsi/DsiEarlyInit.h"
 #include "platform/Log.h"
 
+#include "client/Minecraft.h"
+
 namespace
 {
 bool g_created = false;
@@ -99,6 +101,15 @@ void processMessages()
 	scanKeys();
 	dsiUpdateTouchCameraDelta();
 	dsiPushGameplayKeyEvents();
+
+	// Same "ask the game directly" approach Display_wii.cpp's processMessages()
+	// already uses (see its own comment): the input layer cannot infer
+	// whether a GuiScreen is open, and getting it wrong either feeds the menu
+	// pointer gameplay camera-drag touches or feeds gameplay a stray menu
+	// click.
+	Minecraft *mc = Minecraft::getMinecraft();
+	const bool inMenu = (mc != nullptr && mc->currentScreen != nullptr);
+	dsiUpdateMenuPointer(inMenu);
 }
 
 void swapBuffers()

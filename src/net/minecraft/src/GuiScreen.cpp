@@ -37,14 +37,19 @@ namespace
 // permanently switched off.
 bool menuPointerInputSuppressed(Minecraft *mc)
 {
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 	if (mc != nullptr && mc->currentScreen != nullptr && mc->currentScreen->suppressesPlatformPointerInput())
 		return true;
 #endif
 #if PLATFORM_PS2
 	return mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI &&
 	       (mc->currentScreen == nullptr || !mc->currentScreen->allowsPlatformPointerInput());
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
+	// Same pointer-vs-D-pad ownership model as Wii's remote (see this file's
+	// header comment) -- DSi's touch screen plays the pointer role, and
+	// InputBackend_DSI.cpp's dsiUpdateMenuPointer() hands ownership back to
+	// the pad on a D-pad/A/B press the same way Wii's updateMenuInputOwner()
+	// does on a stick/D-pad press.
 	(void)mc;
 	return !platformMenuPointerActive();
 #else
@@ -55,7 +60,7 @@ bool menuPointerInputSuppressed(Minecraft *mc)
 
 bool menuCursorSuppressed(Minecraft *mc)
 {
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 	if (mc != nullptr && mc->currentScreen != nullptr && mc->currentScreen->suppressesPlatformPointerInput())
 		return true;
 #endif
@@ -69,7 +74,7 @@ bool menuCursorSuppressed(Minecraft *mc)
 	// Keep the D-pad slot cursor visible until the first pointer-motion event
 	// clears its selection in GuiContainer::mouseMovedOrUp().
 	return ContainerSlotNavigator::instance().controllerSelectionActive();
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
 	// Drawn only while the pointer is the active owner, so the cursor is not left
 	// sitting on screen through a D-pad-driven menu.
 	(void)mc;
@@ -577,16 +582,24 @@ void GuiScreen::handleConsoleJavaUiNavigation()
 	if ((pad.pressed & PLATFORM_TEXT_TYPE) != 0)
 		activateKeyboardSelection();
 #elif PLATFORM_DSI
-	// No platform pointer and no separate analog stick to disambiguate from
-	// the D-pad on this hardware (platformGamepadSnapshot() reads the same
-	// D-pad buttons PLATFORM_TEXT_UP/DOWN/LEFT/RIGHT do -- see
-	// InputBackend_DSI.cpp), so neither the Wii branch's pointer-ownership
-	// check nor the PS2 branch's analog-stick-deadzone check (which would
-	// misread every D-pad press meant for this navigation as "the stick
-	// moved" and immediately clear the selection again) applies: just drive
-	// the D-pad straight into the same shared keyboard-selection calls both
-	// other platforms use.
-	(void)suppressPointerInput;
+	// No separate analog stick to disambiguate from the D-pad on this
+	// hardware (platformGamepadSnapshot() reads the same D-pad buttons
+	// PLATFORM_TEXT_UP/DOWN/LEFT/RIGHT do -- see InputBackend_DSI.cpp), so
+	// the PS2 branch's analog-stick-deadzone check (which would misread
+	// every D-pad press meant for this navigation as "the stick moved" and
+	// immediately clear the selection again) does not apply here.
+	//
+	// The Wii branch's early return on platformMenuPointerActive() IS kept,
+	// even though it is provably a no-op given how dsiUpdateMenuPointer()
+	// (InputBackend_DSI.cpp) orders things: it hands pointer ownership back
+	// to the pad the instant any of UP/DOWN/LEFT/RIGHT/A/B is newly pressed,
+	// reading the exact same keysDown() edge platformTextInputSnapshot()
+	// below reads -- so whenever platformMenuPointerActive() is still true
+	// here, pad.pressed below is guaranteed empty already. Kept anyway as
+	// cheap insurance against that ordering guarantee ever drifting, and to
+	// match the Wii branch's shape instead of silently diverging from it.
+	if (!suppressPointerInput && platformMenuPointerActive())
+		return;
 	const PlatformTextInputSnapshot pad = platformTextInputSnapshot(platformMenuPad());
 	if ((pad.pressed & PLATFORM_TEXT_UP) != 0)
 		moveKeyboardSelection(-1);

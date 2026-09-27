@@ -220,13 +220,16 @@ void GuiMainMenu::updateScreen()
         moveLegacySelection(-1);
     else if ((pad.pressed & PLATFORM_TEXT_DOWN) != 0)
         moveLegacySelection(1);
-#if PLATFORM_PS2 || PLATFORM_DSI
-    // DSi has no menu pointer (platformMenuPointerActive() is always false
-    // there -- see InputBackend_DSI.cpp), so it takes PS2's unconditional
-    // branch rather than Wii's pointer-aware one below.
+#if PLATFORM_PS2
     if ((pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateLegacySelection();
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
+    // DSi's touch screen plays the same pointer role the Wiimote does here
+    // (InputBackend_DSI.cpp's dsiUpdateMenuPointer()): while it owns menu
+    // input, A/tap already activates the selection via the normal
+    // mouseClicked() path, so firing activateLegacySelection() here too
+    // would double-activate whatever is both keyboard-selected and under
+    // the touch cursor.
     if (!platformMenuPointerActive() && (pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateLegacySelection();
 #endif

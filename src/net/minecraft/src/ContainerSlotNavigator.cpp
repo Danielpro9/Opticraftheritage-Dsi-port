@@ -207,11 +207,14 @@ void ContainerSlotNavigator::tick()
         return;
 
     repairSelection();
-#ifdef WII_PLATFORM
-    // Wii exposes pointer ownership explicitly. When a GameCube/Classic left
-    // stick takes over, drop the D-pad highlight before consuming A/B so the
-    // same frame is routed to the slot under the cursor. PS2 reports its menu
-    // pointer as always active, so this handoff is intentionally Wii-only.
+#if defined(WII_PLATFORM) || defined(DSI_PLATFORM)
+    // Wii and DSi both expose pointer ownership explicitly (a GameCube/
+    // Classic left stick taking over, or a D-pad/A/B press handing menu
+    // input back from DSi's touch screen -- see InputBackend_DSI.cpp's
+    // dsiUpdateMenuPointer()). Drop the D-pad highlight before consuming
+    // A/B so the same frame is routed to the slot under the cursor instead.
+    // PS2 reports its menu pointer as always active, so this handoff would
+    // be a permanent no-op there -- left out on purpose, not an oversight.
     if (platformMenuPointerActive())
         clearControllerSelection();
 #endif
@@ -290,4 +293,4 @@ void ContainerSlotNavigator::tick()
     moveMenuCursorToSelection();
 }
 
-#endif // PS2_PLATFORM || WII_PLATFORM
+#endif // PS2_PLATFORM || WII_PLATFORM || DSI_PLATFORM

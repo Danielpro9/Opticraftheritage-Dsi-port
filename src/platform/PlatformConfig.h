@@ -424,10 +424,12 @@ declares."
 
 // Draw a pointer inside GuiScreen. Consoles have no OS cursor, so without this
 // the existing mouse-hover/click GUI code is unusable: the player has no idea
-// where they are aiming. Both console backends feed lwjgl::Mouse from a stick
-// (PS2) or the Wiimote IR pointer (Wii), so the coordinates are already there.
+// where they are aiming. All three console backends feed lwjgl::Mouse from a
+// stick (PS2), the Wiimote IR pointer (Wii), or the touch screen (DSi -- the
+// bottom screen doubles as an absolute-position trackpad for the menu the top
+// screen shows), so the coordinates are already there.
 #ifndef PLATFORM_SOFTWARE_CURSOR
-#  if PLATFORM_PS2 || PLATFORM_WII
+#  if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
 #    define PLATFORM_SOFTWARE_CURSOR 1
 #  else
 #    define PLATFORM_SOFTWARE_CURSOR 0

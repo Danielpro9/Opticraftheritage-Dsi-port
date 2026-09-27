@@ -49,7 +49,7 @@ int_t legacyHoveredSelectableButton(const std::vector<GuiButton *> &buttons, int
     (void)mouseY;
     return -1;
 #else
-#if PLATFORM_WII
+#if PLATFORM_WII || PLATFORM_DSI
     if (!platformMenuPointerActive())
         return -1;
 #endif
@@ -76,6 +76,11 @@ void legacyApplyMenuSelection(const std::vector<GuiButton *> &buttons, int_t sel
     }
 }
 
+// DSi deliberately stays out of the PLATFORM_WII branch below: a Wiimote IR
+// position or PS2's stick-driven virtual cursor can be programmatically
+// warped, but a physical touch position cannot -- it only changes when the
+// player actually touches the screen (see InputBackend_DSI.cpp's
+// platformSetMenuCursor(), a no-op for exactly this reason).
 void legacyMoveMenuCursorToSelection(const std::vector<GuiButton *> &buttons, int_t selectedIndex)
 {
 #if PLATFORM_WII

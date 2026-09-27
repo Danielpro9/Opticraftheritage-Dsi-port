@@ -3,17 +3,16 @@
 #include <cstdint>
 #include <chrono>
 
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM)
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(DSI_PLATFORM)
 #include "pc/lwjgl/Mouse.h"
 #include "pc/lwjgl/Display.h"
-#elif defined(DSI_PLATFORM)
-// No lwjgl::Mouse/Display compat layer exists for DSi yet -- input is
-// deferred (see the DSi input backend, not yet written) -- so nothing here
-// needs it. system_counter.h is BlocksDS's hardware-timer-backed tick
-// counter; see getMonotonicMicros() below for why that matters over
-// std::chrono on a toolchain this new.
+#endif
+#if defined(DSI_PLATFORM)
+// system_counter.h is BlocksDS's hardware-timer-backed tick counter; see
+// getMonotonicMicros() below for why that matters over std::chrono on a
+// toolchain this new.
 #include <nds/system_counter.h>
-#else
+#elif !defined(PS2_PLATFORM) && !defined(WII_PLATFORM)
 #include <SDL.h>
 #endif
 
@@ -131,17 +130,15 @@ inline void setSmoothInputThreadPriority(bool enabled)
 
 inline void getMouseState(int *x, int *y)
 {
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM)
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(DSI_PLATFORM)
     // LWJGL Mouse::getY() is bottom-left origin. SDL_GetMouseState() is
-    // top-left origin, and shared GUI code expects that here.
+    // top-left origin, and shared GUI code expects that here. DSi's touch
+    // screen (InputBackend_DSI.cpp's dsiUpdateMenuPointer()) already
+    // pre-flips into the same bottom-left convention when it pushes a touch
+    // position, exactly like PS2's stick-driven cursor and Wii's IR pointer
+    // do, so this one shared read applies to all three.
     if (x) *x = lwjgl::Mouse::getX();
     if (y) *y = lwjgl::Display::getHeight() - lwjgl::Mouse::getY() - 1;
-#elif defined(DSI_PLATFORM)
-    // No pointer input wired up yet (touch screen, deferred with the rest of
-    // DSi input); reports "top-left, no motion" rather than uninitialised
-    // memory.
-    if (x) *x = 0;
-    if (y) *y = 0;
 #else
     SDL_GetMouseState(x, y);
 #endif

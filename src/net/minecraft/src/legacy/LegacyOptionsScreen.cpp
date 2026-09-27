@@ -148,14 +148,16 @@ void LegacyOptionsScreen::updateScreen()
         moveLegacySelection(-1);
     else if ((pad.pressed & PLATFORM_TEXT_DOWN) != 0)
         moveLegacySelection(1);
-#if PLATFORM_PS2 || PLATFORM_DSI
+#if PLATFORM_PS2
     if ((pad.pressed & PLATFORM_TEXT_LEFT) != 0)
         adjustLegacySelection(-1);
     else if ((pad.pressed & PLATFORM_TEXT_RIGHT) != 0)
         adjustLegacySelection(1);
     if ((pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateLegacySelection();
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
+    // DSi's touch screen plays the same pointer role the Wiimote does here --
+    // see GuiMainMenu.cpp's updateScreen() for why this stays pointer-aware.
     if (!platformMenuPointerActive())
     {
         if ((pad.pressed & PLATFORM_TEXT_LEFT) != 0)

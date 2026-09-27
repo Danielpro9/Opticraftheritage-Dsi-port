@@ -331,10 +331,12 @@ void LegacyPlayGameScreen::updateScreen()
         moveSelection(-1);
     else if ((pad.pressed & PLATFORM_TEXT_DOWN) != 0)
         moveSelection(1);
-#if PLATFORM_PS2 || PLATFORM_DSI
+#if PLATFORM_PS2
     if ((pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateSelection();
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
+    // DSi's touch screen plays the same pointer role the Wiimote does here --
+    // see GuiMainMenu.cpp's updateScreen() for why this stays pointer-aware.
     if (!platformMenuPointerActive() && (pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateSelection();
 #endif

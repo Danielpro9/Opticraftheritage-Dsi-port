@@ -6,6 +6,7 @@
 #include <nds.h>
 
 #include "dsi/DsiEarlyInit.h"
+#include "lwjgl/Display.h"
 #include "lwjgl/Keyboard.h"
 #include "lwjgl/Mouse.h"
 
@@ -77,6 +78,16 @@ constexpr float kTouchDragPixelsForFullDeflection = 24.0f;
 // per press, not one every frame it stays held).
 std::uint32_t g_prevActionButtons = 0;
 
+// Menu-pointer ownership state -- see dsiUpdateMenuPointer()'s own comment
+// and DsiEarlyInit.h's declaration for the full picture. Separate from the
+// touch-drag camera state above: that one tracks a delta for gameplay,
+// this tracks an absolute position and a down/up edge for menu clicks, and
+// the two run in different situations (inMenu false vs true) so they never
+// fight over the same touchRead() sample in a way that matters.
+enum class DsiMenuInputOwner { Pad, Pointer };
+DsiMenuInputOwner g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
+bool g_dsiMenuTouchWasDown = false;
+
 float normalizeDrag(float deltaPixels)
 {
 	float value = deltaPixels / kTouchDragPixelsForFullDeflection;
@@ -139,6 +150,56 @@ void dsiUpdateTouchCameraDelta()
 		g_prevTouchY = touch.py;
 	}
 	g_touchWasDown = touching;
+}
+
+// See DsiEarlyInit.h's declaration for the full picture. inMenu comes from
+// Display_dsi.cpp's processMessages(), computed the same way
+// Display_wii.cpp's does (Minecraft::getMinecraft()->currentScreen != nullptr).
+void dsiUpdateMenuPointer(bool inMenu)
+{
+	if (!inMenu)
+	{
+		// No screen open: reset ownership and the touch-edge tracker so the
+		// next screen that opens starts on Pad ownership with no stale
+		// "was touching" carried over from whatever the player was doing on
+		// the previous screen (or in gameplay, where KEY_TOUCH drives the
+		// camera instead -- see dsiUpdateTouchCameraDelta() above).
+		g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
+		g_dsiMenuTouchWasDown = false;
+		return;
+	}
+
+	touchPosition touch;
+	touchRead(&touch);
+	const bool touching = (keysHeld() & KEY_TOUCH) != 0;
+
+	// LWJGL's Mouse::getY() is bottom-left origin (see PlatformCompat.h's
+	// getMouseState()), but touchRead()'s px/py -- like every other pixel
+	// coordinate in this codebase (e.g. DsiEarlyVideo.cpp's glViewport) --
+	// are top-left origin. Flip once here, at the one place a real touch
+	// position enters lwjgl::Mouse, rather than asking every reader of
+	// Mouse::getY() to know DSi needs special handling.
+	const int lwjglY = lwjgl::Display::getHeight() - 1 - static_cast<int>(touch.py);
+
+	if (touching)
+	{
+		g_dsiMenuInputOwner = DsiMenuInputOwner::Pointer;
+		lwjgl::Mouse::detail::pushMotion(touch.px, lwjglY, 0, 0);
+	}
+	if (touching != g_dsiMenuTouchWasDown)
+		lwjgl::Mouse::detail::pushButton(0, touching, touch.px, lwjglY);
+	g_dsiMenuTouchWasDown = touching;
+
+	// A D-pad direction or A/B hands ownership back to the pad, mirroring
+	// Wii's updateMenuInputOwner() (WiiPadState.cpp) -- "aim to use the
+	// cursor, press a direction to go back to navigation" (GuiScreen.cpp's
+	// menuPointerInputSuppressed() comment). Checked after the touch handling
+	// above so a tap-and-hold-while-pressing-a-direction (unlikely, but not
+	// impossible on real hardware) still resolves to Pad, the safer default:
+	// stale hover/click state is easier to get from a lingering Pointer
+	// ownership than a D-pad press silently doing nothing.
+	if (keysDown() & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_A | KEY_B))
+		g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
 }
 
 void dsiPushGameplayKeyEvents()
@@ -253,16 +314,23 @@ int platformMenuPad()
 	return 0;
 }
 
+// See dsiUpdateMenuPointer() (called once a frame from Display_dsi.cpp) for
+// where g_dsiMenuInputOwner actually changes.
 bool platformMenuPointerActive()
 {
-	return false;
+	return g_dsiMenuInputOwner == DsiMenuInputOwner::Pointer;
 }
 
 bool platformMenuCursorVisible()
 {
-	return false;
+	return g_dsiMenuInputOwner == DsiMenuInputOwner::Pointer;
 }
 
+// Unlike Wii's IR pointer or PS2's stick-driven cursor, a touch position
+// cannot be programmatically warped -- it only changes when the player
+// physically touches the screen -- so there is nothing for this to do.
+// legacyMoveMenuCursorToSelection() (LegacyMenuNavigation.cpp) already knows
+// to skip calling this outside PLATFORM_WII for exactly this reason.
 void platformSetMenuCursor(int, int)
 {
 }

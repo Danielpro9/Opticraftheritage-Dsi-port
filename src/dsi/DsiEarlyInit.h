@@ -48,6 +48,22 @@ void dsiUpdateTouchCameraDelta();
 // dsiUpdateTouchCameraDelta() above.
 void dsiPushGameplayKeyEvents();
 
+// Feeds the touch screen into lwjgl::Mouse as an absolute-position pointer
+// while a GuiScreen is open (inMenu), the same role the Wiimote IR pointer
+// plays on Wii (see WiiPointer.cpp) -- touching the bottom screen moves a
+// cursor drawn on the top screen, since DSi's GUI canvas is the same native
+// 256x192 as the touch screen's own pixel space (DsiPresentationTuning.h),
+// no scaling needed. Also owns the pointer-vs-D-pad handoff
+// platformMenuPointerActive() reports: touching claims pointer ownership,
+// a D-pad/A/B press hands it back, mirroring Wii's "aim to use the cursor,
+// press a direction to go back to navigation" behaviour (see GuiScreen.cpp's
+// menuPointerInputSuppressed() comment). Call with inMenu=false does nothing
+// but reset that ownership state, so a fresh GuiScreen never inherits a
+// previous one's pointer/pad ownership. Must run once a frame, same place
+// and for the same reason as dsiUpdateTouchCameraDelta() above -- Display_dsi.cpp's
+// processMessages() is the one call site.
+void dsiUpdateMenuPointer(bool inMenu);
+
 // Bytes of the 512 KB texture-image VRAM budget (four 128 KB banks, see
 // DsiEarlyVideo.cpp) currently spoken for by successfully-uploaded textures.
 // Defined in RenderAPI_DSI.cpp; RenderEngine.cpp calls this from its DSi-only

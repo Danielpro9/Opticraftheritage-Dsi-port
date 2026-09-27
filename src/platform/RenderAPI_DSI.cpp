@@ -1555,45 +1555,61 @@ void renderDepthMask(bool enabled)
 	markPolyDirty();
 }
 
-// FIXED: this used to be an unconditional no-op on the claim that "DS depth
+// FIXED, then found to have over-corrected into a worse real-hardware bug --
+// see the second half of this comment for the actual current behaviour.
+//
+// This used to be an unconditional no-op on the claim that "DS depth
 // comparison is fixed at less-or-equal" -- checked against libnds's own
 // videoGL.h, that is wrong: POLY_DEPTH_TEST_LESS (strictly less) is bit
 // value 0, the hardware DEFAULT, and POLY_DEPTH_TEST_EQUAL is a separate,
 // opt-in glPolyFmt bit -- there is no combined less-or-equal mode on this
 // GPU at all, only these two.
 //
-// Real-hardware bug this caused: any 2D overlay drawn at the exact same
-// zLevel as something already on screen (a very common Minecraft GUI
-// pattern -- an icon's "full/half" coloured overlay on top of its own
-// "empty" background at identical Z, e.g. GuiIngame.cpp's hearts/food/armor
-// rows) requests RenderCompare::LessEqual specifically so the second draw
-// is accepted at that matching depth. With this a no-op, the hardware's
-// actual default (strictly less) rejected every such overlay outright --
-// its fragments never even reached the colour/blend stage -- leaving only
-// the first (background) layer visible. This is the real cause of the
-// "hearts/food render solid black" report (RenderAPI_DSI.cpp's separate
-// vertex-colour default-to-white fix, shipped earlier, was a real but
-// unrelated bug -- it made the CPU-only diagnosis look done when the
-// visible symptom's actual cause was still this). The same mechanism was
-// already suspected, but left unconfirmed for lack of hardware-doc
-// evidence, for a second report: hotbar item icons staying visible drawn
-// over a later screen's own 2D overlay (see GuiIngame.cpp's
-// PLATFORM_GUI_FORCE_DEPTH_DISABLED comment).
+// The first fix treated BOTH RenderCompare::Equal and RenderCompare::LessEqual
+// as "turn POLY_DEPTH_TEST_EQUAL on". That is correct for Equal -- every call
+// site that passes it (RenderLiving.cpp's armor glint, RenderDragon.cpp,
+// ItemRenderer.cpp's glint pass) is deliberately asking for "accept only a
+// fragment at the exact same depth as what's already there" and always pairs
+// it with a LessEqual call right after to switch back. It is NOT correct for
+// LessEqual on its own: that value is this codebase's overwhelmingly common
+// BASELINE depth mode -- Minecraft.cpp's one-time startup call
+// (renderEnable(DepthTest); renderDepthFunc(RenderCompare::LessEqual);,
+// mirroring vanilla's GL11.glDepthFunc(GL_LEQUAL)), GuiIngame.cpp's
+// resetOverlayGLState()/finishOverlayGLState() bracketing the entire HUD
+// pass, GuiContainer.cpp's 3D item-icon depth sort, and every "switch back
+// to normal" call after an explicit Equal pass -- none of which mean "stay
+// in same-depth-only mode". Mapping LessEqual to POLY_DEPTH_TEST_EQUAL put
+// the hardware in strict-equal mode for virtually the whole game, including
+// the very first polygon drawn after any depth clear (which needs its depth
+// to exactly equal GL_MAX_DEPTH, the clear value, to pass at all -- normal
+// geometry never does). Real-hardware symptom: the OptiCraft splash/logo
+// screens still displayed (LegacyStartup::run() draws them BEFORE
+// Minecraft.cpp's startup block ever calls renderDepthFunc(), so depth test
+// wasn't yet in its broken state for them), then the screen went solid black
+// the moment the main menu tried to draw -- the panorama and every UI
+// element failed this impossible-to-satisfy equal-depth test and never
+// reached the colour/blend stage, while the CPU-side game loop kept ticking
+// normally (nothing crashed; every fragment was just silently discarded).
 //
-// Fixed by actually driving POLY_DEPTH_TEST_EQUAL from here: Equal and
-// LessEqual (the only two RenderCompare values this game ever requests
-// whose intent -- "accept a fragment at the same depth as what's already
-// there" -- this one hardware bit can express) turn it on; everything else
-// (notably Less, the hardware default, and the rarer Greater/GreaterEqual/
-// NotEqual/Always/Never this codebase does use in a few places -- see
-// RenderItem.cpp's Greater/RenderCompare::LessEqual glint pass and
-// GuiAchievements.cpp's GreaterEqual -- which this single opt-in bit cannot
-// represent either way) leaves the hardware on its default (strictly
-// less), i.e. unchanged behaviour for every call site that isn't reporting
-// this exact "overlay at identical depth" bug shape.
+// Fixed again: only Equal now drives POLY_DEPTH_TEST_EQUAL. LessEqual goes
+// back to the hardware default (strictly less), the same behaviour this
+// function had before it did anything at all. This reintroduces the
+// original, narrower "hearts/food/xp/armor overlay at identical zLevel"
+// invisibility this function was first written to fix -- GuiIngame.cpp's
+// status-row draws rely on the ambient LessEqual mode alone (no explicit
+// Equal bracket) to accept their same-depth overlay quads, and DSi bakes
+// that whole row into one static mesh/one draw call, so it cannot toggle
+// depth mode mid-draw the way RenderLiving.cpp etc. do around their own
+// Equal passes. That narrower, purely cosmetic regression is fixed
+// separately and locally in GuiIngame.cpp's dsiRenderPlayerStatusHud()/
+// dsiRenderHotbarFrame() (depth test disabled for just those two draws --
+// flat same-Z 2D icon rows have no real occlusion to resolve, so correct
+// compositing only ever needed submission order plus alpha blending, not
+// depth testing at all) rather than reintroducing this function's
+// catastrophic whole-scene failure mode to chase it.
 void renderDepthFunc(RenderCompare compare)
 {
-	const bool wantEqual = compare == RenderCompare::Equal || compare == RenderCompare::LessEqual;
+	const bool wantEqual = compare == RenderCompare::Equal;
 	if (wantEqual == g_poly.depthTestEqual)
 		return;
 	g_poly.depthTestEqual = wantEqual;

@@ -782,13 +782,28 @@ void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 		}
 	}
 
+	// The selected-slot highlight quad sits at the exact same zLevel as the
+	// frame quad underneath it (both -90 above), and this whole thing is one
+	// baked mesh / one draw call on DSi, so there is no depth mode that
+	// accepts both "the frame drawing over whatever came before it" and "the
+	// highlight drawing over the frame at an identical depth" at once -- see
+	// RenderAPI_DSI.cpp's renderDepthFunc() comment for why LessEqual can no
+	// longer paper over this the way it used to. Flat same-Z 2D HUD art has
+	// no real occlusion to resolve either way; submission order plus alpha
+	// blending already composites it correctly, so depth testing is just
+	// disabled for this one draw instead.
+	renderDisable(RenderCapability::DepthTest);
 	if (cache.hotbarValid && renderStaticMeshDraw(cache.hotbar))
+	{
+		renderEnable(RenderCapability::DepthTest);
 		return;
+	}
 
 	cache.hotbarValid = false;
 	zLevel = -90.0f;
 	drawTexturedModalRect(sw / 2 - 91, sh - 22, 0, 0, 182, 22);
 	drawTexturedModalRect((sw / 2 - 91 - 1) + currentItem * 20, sh - 23, 0, 22, 24, 22);
+	renderEnable(RenderCapability::DepthTest);
 }
 
 void GuiIngame::dsiRenderCrosshair(int_t sw, int_t sh)
@@ -821,10 +836,25 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 {
 	DsiHudCache &cache = *dsiHudCache;
 	const PcLegacyHudStatusState state = makeHudStatusState(mc);
+
+	// Every armor/heart/food/xp bar in this row draws its "empty" background
+	// then its "filled" overlay at the identical zLevel, and the whole row is
+	// one baked mesh / one draw call here, so no single depth mode can accept
+	// both "this row drawing over whatever came before it" and "each overlay
+	// drawing over its own background a moment later in the same draw" --
+	// see RenderAPI_DSI.cpp's renderDepthFunc() comment. As with
+	// dsiRenderHotbarFrame() above, this flat same-Z 2D row has no real
+	// occlusion to resolve, so depth testing is disabled for just this draw
+	// instead; submission order plus alpha blending already composites it
+	// correctly. Covers both the cached static-mesh draw below and every
+	// renderPlayerStatusHudUncached() fallback, since all of them emit the
+	// same same-zLevel background+overlay pairs.
+	renderDisable(RenderCapability::DepthTest);
 	if (!pcLegacyCanCacheHudStatus(state))
 	{
 		cache.statusValid = false;
 		renderPlayerStatusHudUncached(sw, sh);
+		renderEnable(RenderCapability::DepthTest);
 		return;
 	}
 
@@ -847,10 +877,14 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 	}
 
 	if (cache.statusValid && renderStaticMeshDraw(cache.status))
+	{
+		renderEnable(RenderCapability::DepthTest);
 		return;
+	}
 
 	cache.statusValid = false;
 	renderPlayerStatusHudUncached(sw, sh);
+	renderEnable(RenderCapability::DepthTest);
 }
 #endif
 
@@ -941,17 +975,16 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	// the reported bug (hotbar item icons staying visible over the pause
 	// menu/creative inventory drawn afterward).
 	//
-	// RESOLVED (see RenderAPI_DSI.cpp's renderDepthFunc() for the fix and the
-	// real-hardware evidence): this platform's actual depth-test default is
-	// strictly less (POLY_DEPTH_TEST_LESS, libnds videoGL.h bit value 0), not
-	// less-or-equal as an earlier version of that function's own comment
-	// incorrectly claimed. renderDepthFunc() was an unconditional no-op, so
-	// LessEqual requests here never took effect and any 2D overlay drawn at
-	// the same zLevel as something already on screen was silently rejected by
-	// the hardware default. That function now actually drives
-	// POLY_DEPTH_TEST_EQUAL for Equal/LessEqual requests, which is what these
-	// three calls below need to have any effect on this backend -- they are
-	// no longer a same-behavior-either-way no-op here.
+	// This platform's actual depth-test default is strictly less
+	// (POLY_DEPTH_TEST_LESS, libnds videoGL.h bit value 0), not less-or-equal
+	// as an earlier version of RenderAPI_DSI.cpp's renderDepthFunc() comment
+	// incorrectly claimed -- see that function's own comment for the full
+	// history. LessEqual here maps to that same hardware default (strictly
+	// less), which is exactly what real depth sorting between these 3D item
+	// icons' own faces needs -- unlike GuiIngame.cpp's flat 2D status-row
+	// icons above (dsiRenderPlayerStatusHud()), these inventory-slot items
+	// are genuine 3D models at genuinely different depths, not a same-zLevel
+	// overlay trick.
 	renderEnable(RenderCapability::DepthTest);
 	renderDepthMask(true);
 	renderDepthFunc(RenderCompare::LessEqual);

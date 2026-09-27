@@ -145,6 +145,13 @@ private:
     float fogColorBlue;
     float fogColor2;  // Valor anterior de niebla
     float fogColor1;  // Valor actual de niebla
+    // fogDistanceFactor depends only on gameSettings->renderDistance, which
+    // only changes from a menu action, but updateFogColor() runs every frame
+    // and used to recompute it (a division plus a pow(x, 0.25) call) every
+    // time regardless. Cached so the division+pow only runs once per actual
+    // renderDistance change -- see updateFogColor()'s own comment.
+    int_t cachedFogDistanceRenderDistance;
+    float cachedFogDistanceFactor;
     float fovModifierHand;
     int lightmapTexture;
     std::vector<int_t> lightmapColors;

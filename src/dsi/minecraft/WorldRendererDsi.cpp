@@ -114,11 +114,23 @@ namespace
 
 	// See dsiGetTotalRendererRebuilds()'s own comment (DsiEarlyInit.h).
 	unsigned int g_dsiTotalRendererRebuilds = 0u;
+	// See dsiGetTotalBuildRestarts()'s own comment (DsiEarlyInit.h).
+	unsigned int g_dsiTotalBuildRestarts = 0u;
 }
 
 unsigned int dsiGetTotalRendererRebuilds()
 {
 	return g_dsiTotalRendererRebuilds;
+}
+
+unsigned int dsiGetTotalBuildRestarts()
+{
+	return g_dsiTotalBuildRestarts;
+}
+
+void dsiRecordBuildRestart()
+{
+	++g_dsiTotalBuildRestarts;
 }
 
 void WorldRenderer::updateRenderer()

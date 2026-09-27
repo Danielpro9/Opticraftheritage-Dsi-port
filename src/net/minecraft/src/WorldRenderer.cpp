@@ -36,6 +36,9 @@
 #ifdef PS2_PLATFORM
 #include "platform/RenderTerrainStaging.h"
 #endif
+#ifdef DSI_PLATFORM
+#include "dsi/DsiEarlyInit.h"
+#endif
 
 
 
@@ -625,7 +628,14 @@ void WorldRenderer::markDirty()
 		if (worldObj != nullptr && worldObj->isChunkPopulationPendingForRendering(chunkX, chunkZ))
 			dsiBuildDirtyDuringBuild = true;
 		else
+		{
+			// See dsiGetTotalBuildRestarts()'s own comment (DsiEarlyInit.h):
+			// this is the one call site it measures -- an ACTIVE build's
+			// progress discarded by an ordinary tick, not a fresh build
+			// starting from idle.
+			dsiRecordBuildRestart();
 			dsiResetBuildState();
+		}
 	}
 #else
 	dsiResetBuildState();

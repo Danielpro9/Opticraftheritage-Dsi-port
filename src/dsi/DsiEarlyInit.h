@@ -74,4 +74,32 @@ std::size_t dsiTextureVramBytes(int name);
 // and over rather than replayed cheaply, instead of guessing at the cause.
 unsigned int dsiGetTotalRendererRebuilds();
 
+// Cumulative count of every time WorldRenderer::markDirty() discarded an
+// ACTIVE build's progress (WorldRenderer.cpp's DSI branch: dsiBuildActive
+// true and isChunkPopulationPendingForRendering() false, so it calls
+// dsiResetBuildState() instead of coalescing) -- an ordinary gameplay tick
+// (flowing water/lava, a growing crop, redstone, any markDirty() while a
+// section is still incrementally building) landing mid-build, not a
+// section being recycled/torn down (dsiResetBuildState() has other,
+// unrelated callers this does NOT count -- see its own call sites). Only
+// ever increments, never reflects a completed build (dsiGetTotalRenderer
+// Rebuilds() above is that counter). Exists to test a specific hypothesis:
+// that this coalescing gap (present, identically, in PS2's and Wii's own
+// markDirty() branches too -- not a DSi-only oversight) costs disproportion-
+// ately more on DSi's much weaker ARM9 every time it fires, since each
+// restart re-does a section's entire scanned-so-far build cost from zero.
+// Surfaced on Minecraft.cpp's memtrend line next to rebuilds=: if this
+// climbs quickly while rebuilds= stays flat/low, sections are being
+// interrupted and restarted far more than they ever finish -- the
+// mechanism a real-hardware test needs to confirm or rule out before
+// deciding whether to loosen this coalescing condition for DSi specifically
+// (PS2/Wii apparently don't need it, likely because their faster CPUs make
+// a wasted restart cheap enough not to matter).
+unsigned int dsiGetTotalBuildRestarts();
+
+// Called only from WorldRenderer.cpp's markDirty() DSI branch, the one call
+// site this counter measures -- see dsiGetTotalBuildRestarts()'s own
+// comment just above for what "a restart" means here and why.
+void dsiRecordBuildRestart();
+
 #endif // DSI_PLATFORM

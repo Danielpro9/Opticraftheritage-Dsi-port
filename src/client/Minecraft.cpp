@@ -1945,13 +1945,22 @@ void Minecraft::runTick()
                 // climbing while chunks/entities/tileEntities all stay flat, the
                 // same already-loaded section(s) are being rebuilt over and over
                 // instead of replayed cheaply -- see that function's own comment.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u\n",
+                // restarts= is dsiGetTotalBuildRestarts(): counts a narrower,
+                // earlier event than rebuilds= -- an ACTIVE build's progress
+                // discarded by an ordinary tick before it ever finished, not a
+                // completed section publish. If this climbs much faster than
+                // rebuilds= (sections restarting far more than they finish),
+                // that confirms the coalescing-gap hypothesis WorldRenderer.cpp's
+                // markDirty() comment and dsiGetTotalBuildRestarts()'s own
+                // comment describe -- see those for the full account.
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
                     (unsigned)theWorld->loadedEntityList.size(),
                     (unsigned)theWorld->loadedTileEntityList.size(),
-                    dsiGetTotalRendererRebuilds());
+                    dsiGetTotalRendererRebuilds(),
+                    dsiGetTotalBuildRestarts());
 
                 // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() already
                 // proved /mob/*.png (~40 distinct skins vanilla can load across a

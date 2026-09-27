@@ -2020,6 +2020,19 @@ void EntityRenderer::addRainParticles()
     double soundZ = 0.0;
     int_t rainParticleCount = 0;
     int_t particleCount = static_cast<int_t>(100.0f * rainStrength * rainStrength);
+#if PLATFORM_PS2
+    // PS2 does not draw the full weather curtains, but this splash path still
+    // ran the vanilla 100-attempt burst every tick. Bound it before applying the
+    // user's particle setting so "Decreased" still halves the console budget.
+    if (particleCount > PS2_RAIN_SPLASH_PARTICLES_PER_TICK)
+        particleCount = PS2_RAIN_SPLASH_PARTICLES_PER_TICK;
+#elif PLATFORM_DSI
+    // Ported from PS2's own fix above (DsiWorldTuning.h's own comment on
+    // DSI_RAIN_SPLASH_PARTICLES_PER_TICK has the full account) -- this fork's
+    // PS2 code predates that fix, so DSi never had it either until now.
+    if (particleCount > DSI_RAIN_SPLASH_PARTICLES_PER_TICK)
+        particleCount = DSI_RAIN_SPLASH_PARTICLES_PER_TICK;
+#endif
 
     if (mc->gameSettings->particleSetting == 1)
         particleCount >>= 1;

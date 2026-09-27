@@ -63,8 +63,25 @@ void Render::renderEntityOnFire(Entity* entity, double x, double y, double z, fl
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     float f14 = 0.0f;
     int l = 0;
+#if PLATFORM_PS2
+    const float fireLayerStep = PS2_ENTITY_FIRE_LAYER_STEP;
+#elif PLATFORM_DSI
+    // Ported from PS2's own fix (DsiWorldTuning.h's own comment on
+    // DSI_ENTITY_FIRE_MAX_LAYERS/DSI_ENTITY_FIRE_LAYER_STEP has the full
+    // account) -- this fork's PS2 code predates that fix, so DSi never had
+    // it either until now.
+    const float fireLayerStep = DSI_ENTITY_FIRE_LAYER_STEP;
+#else
+    const float fireLayerStep = 0.45f;
+#endif
     tessellator->startDrawingQuads();
-    while (f12 > 0.0f) {
+    while (f12 > 0.0f
+#if PLATFORM_PS2
+           && l < PS2_ENTITY_FIRE_MAX_LAYERS
+#elif PLATFORM_DSI
+           && l < DSI_ENTITY_FIRE_MAX_LAYERS
+#endif
+    ) {
         float f2, f4, f6, f8;
         if (l % 2 == 0) {
             f2 = (float)j / 256.0f;
@@ -86,8 +103,8 @@ void Render::renderEntityOnFire(Entity* entity, double x, double y, double z, fl
         tessellator->addVertexWithUV(-f10 - f11, 0.0f - f13, f14, f2, f8);
         tessellator->addVertexWithUV(-f10 - f11, 1.4f - f13, f14, f2, f6);
         tessellator->addVertexWithUV(f10 - f11, 1.4f - f13, f14, f4, f6);
-        f12 -= 0.45f;
-        f13 -= 0.45f;
+        f12 -= fireLayerStep;
+        f13 -= fireLayerStep;
         f10 *= 0.9f;
         f14 += 0.03f;
         l++;

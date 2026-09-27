@@ -236,16 +236,26 @@ bool dsi_is_greedy_cube(Block *block)
 	if (block == nullptr || block->blockID < 0 || block->blockID >= Block::BLOCK_REGISTRY_SIZE)
 		return false;
 
-	// Grass uses a side overlay/tint path and leaves change opacity/tint with
-	// graphics settings -- keep both in RenderBlocks so the greedy stream never
-	// caches state-dependent colors or textures. Matches ps2_is_greedy_cube's
-	// own exclusions exactly.
+	// Grass uses a side overlay/tint path and stays in RenderBlocks. Leaves are
+	// different: ported from upstream OptiCraft Heritage Edition's PS2 fix
+	// (ps2_is_greedy_cube) -- in Fast graphics BlockLeaves::isOpaqueCube()
+	// returns true (== !graphicsLevel) and already culls leaf-to-leaf faces
+	// the same as any other opaque cube, so it is safe to let Fast leaves
+	// through the same conservative greedy path as terrain: fewer quads and
+	// faster rebuilds for dense canopies. DsiEarlyInit's GameDefaults.cpp
+	// already defaults DSi to Fast graphics (fancyGraphics = false) for
+	// exactly this culling behaviour, so this applies on every DSi world
+	// unless the player explicitly switches to Fancy. Fancy leaves
+	// (isOpaqueCube() false, translucent) still fall through to RenderBlocks
+	// below, unmerged, same as before.
 	if (block == static_cast<Block *>(Block::grass) ||
-		block == static_cast<Block *>(Block::leaves) ||
 		Block::isBlockContainer[block->blockID])
 	{
 		return false;
 	}
+
+	if (block == static_cast<Block *>(Block::leaves))
+		return block->isOpaqueCube();
 
 	return dsiGetBlockRenderInfo(block->blockID).simpleOpaqueCube;
 }

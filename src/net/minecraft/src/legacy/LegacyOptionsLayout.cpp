@@ -35,6 +35,40 @@ constexpr int_t LEGACY_FORM_ROW_SPACING = 3;
 constexpr int_t LEGACY_FORM_TOP_PADDING = 24;
 constexpr int_t LEGACY_FORM_BOTTOM_PADDING = 10;
 
+#if PLATFORM_DSI
+// Real-hardware report: adding a 6th Form-preset row (LegacyCreateWorldScreen's
+// new World Size toggle, CREATE_SELECTION_COUNT 5->6) made the "More World
+// Options" panel overflow the screen -- the title/seed label overlapped at the
+// top and the bottom hint row got cramped/overlapped by the panel's own last
+// rows running past it. Root cause: Form is the one LegacyOptionsLayoutPreset
+// with scaleRows=false (unlike Compact/Wide, which already scale their row
+// height/spacing down via scaledRowHeight()/scaledRowSpacing() and already
+// render correctly on DSi's much smaller screen) -- Form's row metrics were
+// only ever sized against PS2 (640x448)/WII (out of PLATFORM_LEGACY_CREATE_WORLD_
+// PANEL_WIDTH's own per-platform overrides just above, the only other Form
+// knob DSi previously inherited unmodified), never revisited for DSi's 256x192.
+//
+// Values below are computed, not guessed, against this screen's own actual
+// content band (LegacySceneLayout.cpp's legacySceneLayout()/legacyCenteredPanelY()):
+// on a 192px-tall screen the title reserves ~58px at the top and the hint row
+// reserves ~29px at the bottom (legacyHintRowY() - LEGACY_OPTIONS_FOOTER_GAP),
+// leaving ~105px for the whole panel (padding + rows + spacing). Six rows at
+// PS2/WII's own 17px height + 3px spacing need 117px alone, before any padding
+// -- always overflowing regardless of how padding is trimmed. 14px is the same
+// row-height floor scaledRowHeight() already uses for Compact/Wide on this
+// exact screen (an already-real, already-rendering value on DSi, not a new
+// guess), and 2px matches scaledRowSpacing()'s own floor the same way. Six
+// rows at 14+2 need 94px, leaving just enough for a small top/bottom padding
+// (4px each) to land at 102px total -- under the ~105px budget with a few
+// pixels to spare. Needs a real-hardware screenshot to confirm the fit exactly
+// (see the report this was traced from), same as everything else in this file
+// tagged against real hardware rather than measured directly.
+constexpr int_t LEGACY_FORM_ROW_HEIGHT_DSI = 14;
+constexpr int_t LEGACY_FORM_ROW_SPACING_DSI = 2;
+constexpr int_t LEGACY_FORM_TOP_PADDING_DSI = 4;
+constexpr int_t LEGACY_FORM_BOTTOM_PADDING_DSI = 4;
+#endif
+
 LegacyOptionsLayoutProfile layoutProfile(LegacyOptionsLayoutPreset preset)
 {
     switch (preset)
@@ -45,9 +79,15 @@ LegacyOptionsLayoutProfile layoutProfile(LegacyOptionsLayoutPreset preset)
             legacyOptionRowSpacing(), legacyOptionContentPadding(), legacyOptionContentPadding(),
             LEGACY_OPTIONS_FOOTER_GAP, true};
     case LegacyOptionsLayoutPreset::Form:
+#if PLATFORM_DSI
+        return {PLATFORM_LEGACY_CREATE_WORLD_PANEL_WIDTH, LEGACY_FORM_MIN_PANEL_WIDTH,
+            LEGACY_FORM_CONTENT_PADDING, LEGACY_FORM_ROW_HEIGHT_DSI, LEGACY_FORM_ROW_SPACING_DSI,
+            LEGACY_FORM_TOP_PADDING_DSI, LEGACY_FORM_BOTTOM_PADDING_DSI, LEGACY_OPTIONS_FOOTER_GAP, false};
+#else
         return {PLATFORM_LEGACY_CREATE_WORLD_PANEL_WIDTH, LEGACY_FORM_MIN_PANEL_WIDTH,
             LEGACY_FORM_CONTENT_PADDING, LEGACY_FORM_ROW_HEIGHT, LEGACY_FORM_ROW_SPACING,
             LEGACY_FORM_TOP_PADDING, LEGACY_FORM_BOTTOM_PADDING, LEGACY_OPTIONS_FOOTER_GAP, false};
+#endif
     case LegacyOptionsLayoutPreset::Wide:
     default:
         return {legacyUiTheme().panelTargetWidth, 0, legacyOptionContentPadding(), legacyOptionRowHeight(),

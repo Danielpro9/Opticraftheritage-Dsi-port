@@ -346,4 +346,32 @@
 #undef  DSI_GREEDY_MESH_RUNTIME_ENABLED
 #define DSI_GREEDY_MESH_RUNTIME_ENABLED           1
 
+// Ported from upstream OptiCraft Heritage Edition's PS2 fix (Ps2MeshTuning.h's
+// PS2_RAIN_SPLASH_PARTICLES_PER_TICK/PS2_ENTITY_FIRE_MAX_LAYERS/
+// PS2_ENTITY_FIRE_LAYER_STEP), which this fork's own PS2 code predates and
+// therefore never had either -- these are DSi's own counterparts, not
+// aliased through the generic PLATFORM_ table because nothing else reads
+// them, same reasoning as DSI_GREEDY_MAX_MERGE above.
+//
+// EntityRenderer::addRainParticles() still runs vanilla's full 100-attempt
+// ground-splash burst every tick even with the rain/snow curtains themselves
+// already skipped (PLATFORM_SKIP_WORLD_PARTICLES only covers ambient
+// randomDisplayUpdates() particles, a separate system) -- each attempt that
+// lands can spawn an EntityRainFX with its own lifetime, alpha-tested quad,
+// and Tessellator vertex work. Reusing PS2's own measured value (4/tick,
+// ~80 new particles/second at 20 TPS -- enough for a continuous splash
+// effect) rather than guessing a DSi-specific number: DSi's ARM9 has no FPU
+// at all, strictly weaker than PS2's EE for this same per-particle float
+// work, so PS2's already-conservative number is not an over-cautious
+// starting point here.
+#define DSI_RAIN_SPLASH_PARTICLES_PER_TICK       4
+
+// Render::renderEntityOnFire() draws a stack of heavily overlapping fire
+// billboards -- vanilla's 0.45 step produces about five layers per burning
+// mob. Same reasoning and same values as PS2's fix: three broader-spaced
+// layers keep the silhouette covered while cutting fill-rate and generic
+// Tessellator vertex work for every burning entity on screen.
+#define DSI_ENTITY_FIRE_MAX_LAYERS                3
+#define DSI_ENTITY_FIRE_LAYER_STEP                0.70f
+
 #endif // PLATFORM_DSI

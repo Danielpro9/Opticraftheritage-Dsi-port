@@ -790,7 +790,22 @@ int_t RenderGlobal::chooseConsoleVerticalStartSection(int_t playerBlockY) const
 {
 	const int_t maxStartSection = std::max(0, WorldHeight::SECTION_COUNT - renderChunksTall);
 	const int_t playerSection = JavaArithmetic::intShr(playerBlockY, 4);
+#if PLATFORM_PS2 || PLATFORM_DSI
+	// Ported from upstream OptiCraft Heritage Edition's PS2 fix (our fork had
+	// fallen behind): the old +1 bias below actually produced TWO sections
+	// below the player and NONE above, clipping tree tops and mountain faces
+	// at the top of the current vertical window while moving -- upstream's
+	// own comment documents a centred window (one below, the player's own
+	// section, one above) as the actual intent. Ported to DSi too: upstream
+	// only fixed PS2 and left WII on the old formula (for reasons upstream
+	// doesn't explain), but DSi's window is the THINNEST of the three
+	// (PLATFORM_VERTICAL_CHUNK_COUNT=2, i.e. only 32 blocks tall --
+	// DsiWorldTuning.h), so this same clipping is, if anything, more visible
+	// here than on PS2, not less.
+	const int_t belowBias = renderChunksTall / 2;
+#else
 	const int_t belowBias = std::min(renderChunksTall - 1, renderChunksTall / 2 + 1);
+#endif
 	const int_t preferredStart = std::max(0, std::min(playerSection - belowBias, maxStartSection));
 
 	if (!verticalWindowInitialized)

@@ -456,14 +456,41 @@ void GuiIngame::renderBossHealth()
 
 void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *captureTessellator)
 {
-	auto emitRect = [&](int_t x, int_t y, int_t texX, int_t texY, int_t w, int_t h)
+	// layer 0 (the default) is an icon's "empty"/background art; layer 1+ is
+	// something drawn on top of it at the exact same screen position -- the
+	// xp/food bars' "filled" overlay, or (stacking up to layer 2) the health
+	// row's flash-previous-health and current-health overlays, which can
+	// both fire for the same heart index. On real GL hardware (PC/PS2/WII)
+	// this needs nothing extra: GL_LEQUAL already accepts a same-depth
+	// fragment. DS/DSi has no combined less-or-equal mode and no way to
+	// disable depth testing at all (RenderAPI_DSI.cpp's renderEnable/
+	// renderDisable(RenderCapability::DepthTest) are both unconditional
+	// no-ops on that backend, and renderDepthFunc() only has strictly-less
+	// or strictly-equal to offer -- see its own comment), so an overlay
+	// drawn a moment after its own background at an identical Z cannot rely
+	// on depth STATE to show through under the hardware's LESS default; it
+	// needs a genuinely nearer Z instead. The nudge is far smaller than any
+	// real zLevel gap this codebase relies on for draw order elsewhere
+	// (GuiIngame.cpp itself uses +-100.0f a few hundred lines down),
+	// comfortably inside the DS depth buffer's precision at these ortho HUD
+	// ranges.
+	auto emitRect = [&](int_t x, int_t y, int_t texX, int_t texY, int_t w, int_t h, int_t layer = 0)
 	{
+#if defined(DSI_PLATFORM)
+		const float_t drawZLevel = zLevel - 0.1f * static_cast<float_t>(layer);
+#else
+		const float_t drawZLevel = zLevel;
+		(void)layer;
+#endif
 		if (captureTessellator != nullptr)
 		{
-			appendTexturedModalRect(*captureTessellator, zLevel, x, y, texX, texY, w, h);
+			appendTexturedModalRect(*captureTessellator, drawZLevel, x, y, texX, texY, w, h);
 			return;
 		}
+		const float_t savedZLevel = zLevel;
+		zLevel = drawZLevel;
 		drawTexturedModalRect(x, y, texX, texY, w, h);
+		zLevel = savedZLevel;
 	};
 
 	bool flashHearts = (mc->thePlayer->heartsLife / 3) % 2 == 1;
@@ -483,7 +510,7 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		const int_t xpY = sh - 32 + 3;
 		emitRect(left, xpY, 0, 64, XP_BAR_WIDTH, 5);
 		if (filled > 0)
-			emitRect(left, xpY, 0, 69, filled, 5);
+			emitRect(left, xpY, 0, 69, filled, 5, 1);
 	}
 
 	const int_t healthY = sh - 39;
@@ -518,11 +545,11 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		emitRect(hx, hy, 16 + flash * 9, 9 * hardcoreRow, 9, 9);
 		if (flashHearts)
 		{
-			if (index * 2 + 1 < prevHealth)  emitRect(hx, hy, heartTextureX + 54, 9 * hardcoreRow, 9, 9);
-			if (index * 2 + 1 == prevHealth) emitRect(hx, hy, heartTextureX + 63, 9 * hardcoreRow, 9, 9);
+			if (index * 2 + 1 < prevHealth)  emitRect(hx, hy, heartTextureX + 54, 9 * hardcoreRow, 9, 9, 1);
+			if (index * 2 + 1 == prevHealth) emitRect(hx, hy, heartTextureX + 63, 9 * hardcoreRow, 9, 9, 1);
 		}
-		if (index * 2 + 1 < health)  emitRect(hx, hy, heartTextureX + 36, 9 * hardcoreRow, 9, 9);
-		if (index * 2 + 1 == health) emitRect(hx, hy, heartTextureX + 45, 9 * hardcoreRow, 9, 9);
+		if (index * 2 + 1 < health)  emitRect(hx, hy, heartTextureX + 36, 9 * hardcoreRow, 9, 9, 2);
+		if (index * 2 + 1 == health) emitRect(hx, hy, heartTextureX + 45, 9 * hardcoreRow, 9, 9, 2);
 	}
 
 	FoodStats *foodStats = mc->thePlayer->getFoodStats();
@@ -542,8 +569,8 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 			fy = healthY + (rand->nextInt(3) - 1);
 		const int_t fx = right - index * 8 - 9;
 		emitRect(fx, fy, 16 + backgroundOffset * 9, 27, 9, 9);
-		if (index * 2 + 1 < foodLevel)  emitRect(fx, fy, foodTextureX + 36, 27, 9, 9);
-		if (index * 2 + 1 == foodLevel) emitRect(fx, fy, foodTextureX + 45, 27, 9, 9);
+		if (index * 2 + 1 < foodLevel)  emitRect(fx, fy, foodTextureX + 36, 27, 9, 9, 1);
+		if (index * 2 + 1 == foodLevel) emitRect(fx, fy, foodTextureX + 45, 27, 9, 9, 1);
 	}
 
 	if (mc->thePlayer->isInsideOfMaterial(Material::water))
@@ -765,13 +792,30 @@ void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 	DsiHudCache &cache = *dsiHudCache;
 	const bool needsCompile = !cache.hotbarValid || cache.hotbarWidth != sw ||
 		cache.hotbarHeight != sh || cache.hotbarItem != currentItem;
+
+	// The selected-slot highlight quad sits directly over the frame quad
+	// underneath it, and used to share its exact zLevel -- fine back when
+	// RenderAPI_DSI.cpp's renderDepthFunc() no-op left the hardware's LESS
+	// default effectively disabled, but not with that function actually
+	// driving the depth test now (see its own comment). DS/DSi has only
+	// strictly-less or strictly-equal, and no way to disable depth testing
+	// at all (renderEnable/renderDisable(RenderCapability::DepthTest) are
+	// both unconditional no-ops on this backend), so a same-Z overlay drawn
+	// a moment after its own background cannot rely on depth STATE to show
+	// through -- it needs a genuinely nearer Z instead. This nudge is far
+	// smaller than any real zLevel gap this codebase relies on for draw
+	// order elsewhere (this same file uses +-100.0f a few functions down),
+	// comfortably inside the DS depth buffer's precision at these ortho HUD
+	// ranges.
+	constexpr float_t kDsiOverlayZNudge = -0.1f;
+
 	if (needsCompile)
 	{
 		Tessellator &tessellator = Tessellator::instance;
 		zLevel = -90.0f;
 		tessellator.startDrawingQuads();
 		appendTexturedModalRect(tessellator, zLevel, sw / 2 - 91, sh - 22, 0, 0, 182, 22);
-		appendTexturedModalRect(tessellator, zLevel,
+		appendTexturedModalRect(tessellator, zLevel + kDsiOverlayZNudge,
 			(sw / 2 - 91 - 1) + currentItem * 20, sh - 23, 0, 22, 24, 22);
 		cache.hotbarValid = tessellator.finishStaticMesh(cache.hotbar);
 		if (cache.hotbarValid)
@@ -782,28 +826,15 @@ void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 		}
 	}
 
-	// The selected-slot highlight quad sits at the exact same zLevel as the
-	// frame quad underneath it (both -90 above), and this whole thing is one
-	// baked mesh / one draw call on DSi, so there is no depth mode that
-	// accepts both "the frame drawing over whatever came before it" and "the
-	// highlight drawing over the frame at an identical depth" at once -- see
-	// RenderAPI_DSI.cpp's renderDepthFunc() comment for why LessEqual can no
-	// longer paper over this the way it used to. Flat same-Z 2D HUD art has
-	// no real occlusion to resolve either way; submission order plus alpha
-	// blending already composites it correctly, so depth testing is just
-	// disabled for this one draw instead.
-	renderDisable(RenderCapability::DepthTest);
 	if (cache.hotbarValid && renderStaticMeshDraw(cache.hotbar))
-	{
-		renderEnable(RenderCapability::DepthTest);
 		return;
-	}
 
 	cache.hotbarValid = false;
 	zLevel = -90.0f;
 	drawTexturedModalRect(sw / 2 - 91, sh - 22, 0, 0, 182, 22);
+	zLevel += kDsiOverlayZNudge;
 	drawTexturedModalRect((sw / 2 - 91 - 1) + currentItem * 20, sh - 23, 0, 22, 24, 22);
-	renderEnable(RenderCapability::DepthTest);
+	zLevel -= kDsiOverlayZNudge;
 }
 
 void GuiIngame::dsiRenderCrosshair(int_t sw, int_t sh)
@@ -837,24 +868,17 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 	DsiHudCache &cache = *dsiHudCache;
 	const PcLegacyHudStatusState state = makeHudStatusState(mc);
 
-	// Every armor/heart/food/xp bar in this row draws its "empty" background
-	// then its "filled" overlay at the identical zLevel, and the whole row is
-	// one baked mesh / one draw call here, so no single depth mode can accept
-	// both "this row drawing over whatever came before it" and "each overlay
-	// drawing over its own background a moment later in the same draw" --
-	// see RenderAPI_DSI.cpp's renderDepthFunc() comment. As with
-	// dsiRenderHotbarFrame() above, this flat same-Z 2D row has no real
-	// occlusion to resolve, so depth testing is disabled for just this draw
-	// instead; submission order plus alpha blending already composites it
-	// correctly. Covers both the cached static-mesh draw below and every
-	// renderPlayerStatusHudUncached() fallback, since all of them emit the
-	// same same-zLevel background+overlay pairs.
-	renderDisable(RenderCapability::DepthTest);
+	// The same-zLevel background+overlay stacking every bar in this row does
+	// (xp/heart/food) is handled inside renderPlayerStatusHudGeometry()
+	// itself now -- see its own comment -- via a small per-layer Z nudge,
+	// not by touching depth state here. Depth testing can't actually be
+	// turned off on this backend anyway (RenderAPI_DSI.cpp's
+	// renderEnable/renderDisable(RenderCapability::DepthTest) are both
+	// unconditional no-ops there).
 	if (!pcLegacyCanCacheHudStatus(state))
 	{
 		cache.statusValid = false;
 		renderPlayerStatusHudUncached(sw, sh);
-		renderEnable(RenderCapability::DepthTest);
 		return;
 	}
 
@@ -877,14 +901,10 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 	}
 
 	if (cache.statusValid && renderStaticMeshDraw(cache.status))
-	{
-		renderEnable(RenderCapability::DepthTest);
 		return;
-	}
 
 	cache.statusValid = false;
 	renderPlayerStatusHudUncached(sw, sh);
-	renderEnable(RenderCapability::DepthTest);
 }
 #endif
 

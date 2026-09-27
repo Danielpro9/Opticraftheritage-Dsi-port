@@ -138,6 +138,25 @@ void GuiContainerCreative::initGui()
         return;
     }
 
+#if PLATFORM_DSI
+    // Same release onGuiClosed() below already does, moved to also run on
+    // OPEN: that fix only helped the SECOND time this screen was entered in
+    // a session -- freeing tunnel.png/particlefield.png (the End Portal
+    // item-icon assets, almost never actually needed) on close came too
+    // late for the very FIRST open, when this screen's own '/gui/allitems.png'
+    // and every real item icon it draws (via '/gui/items.png') still had to
+    // compete with whatever those two were holding. Real-hardware report:
+    // opening creative for the first time in a session could still show a
+    // blank inventory (VRAM already tight from a freshly-loaded world's
+    // terrain.png/mob skins) -- releasing here too gives that first attempt
+    // the same headroom every later one already gets.
+    if (mc != nullptr && mc->renderEngine != nullptr)
+    {
+        mc->renderEngine->releaseTexture("/misc/tunnel.png");
+        mc->renderEngine->releaseTexture("/misc/particlefield.png");
+    }
+#endif
+
     GuiContainer::initGui();
     for (GuiButton *button : controlList)
         delete button;

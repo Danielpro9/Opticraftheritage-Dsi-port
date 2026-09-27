@@ -939,25 +939,19 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	// CORRECT and needed on PS2/WII, where these three calls are real state
 	// changes -- but confirmed by the user to make no difference on DSi for
 	// the reported bug (hotbar item icons staying visible over the pause
-	// menu/creative inventory drawn afterward). Traced why: RenderAPI_DSI.cpp's
-	// renderEnable/renderDisable(DepthTest) fall through to a silent no-op
-	// for that specific capability (that switch's own comment: "DepthTest is
-	// always on for opaque polygons"), renderDepthFunc() is unconditionally a
-	// no-op there too ("DS depth comparison is fixed at less-or-equal"), and
-	// renderDepthMask() only affects TRANSLUCENT polygons' depth WRITES, not
-	// opaque ones like these icons -- so none of the three calls below change
-	// anything on this backend. Left in place (harmless, and correct for
-	// PS2/WII) rather than special-cased out.
+	// menu/creative inventory drawn afterward).
 	//
-	// The real DSi mechanism is still unconfirmed but has a concrete next
-	// lead: opaque polygons on this hardware always write depth, and the
-	// comparison is fixed at less-or-equal, so a screen's later flat 2D
-	// overlay quad only fails to redraw over an icon if the icon's own
-	// geometry is genuinely NEARER in Z -- plausible if RenderItem::
-	// renderItemIntoGUI()'s 3D icon model pushes itself toward the camera
-	// (a common "raised icon" technique) by more than whatever Z gap the
-	// subsequent screen's own 2D draws use. Needs a real-hardware Z-value
-	// comparison to confirm before attempting a fix here, not another guess.
+	// RESOLVED (see RenderAPI_DSI.cpp's renderDepthFunc() for the fix and the
+	// real-hardware evidence): this platform's actual depth-test default is
+	// strictly less (POLY_DEPTH_TEST_LESS, libnds videoGL.h bit value 0), not
+	// less-or-equal as an earlier version of that function's own comment
+	// incorrectly claimed. renderDepthFunc() was an unconditional no-op, so
+	// LessEqual requests here never took effect and any 2D overlay drawn at
+	// the same zLevel as something already on screen was silently rejected by
+	// the hardware default. That function now actually drives
+	// POLY_DEPTH_TEST_EQUAL for Equal/LessEqual requests, which is what these
+	// three calls below need to have any effect on this backend -- they are
+	// no longer a same-behavior-either-way no-op here.
 	renderEnable(RenderCapability::DepthTest);
 	renderDepthMask(true);
 	renderDepthFunc(RenderCompare::LessEqual);

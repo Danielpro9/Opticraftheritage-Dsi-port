@@ -107,13 +107,20 @@ static bool isTileAtlasResource(const std::string &name)
 // next screenshot. All three are menu/boot-only: never resident at the
 // same time as gameplay's own textures, so the extra RGBA bytes cost
 // nothing that would otherwise go to terrain/items/mob skins.
+//
+// cursor.png (GuiScreen.cpp's drawCursorTexture(), the touch-screen menu
+// pointer added this same session) added after the identical real-hardware
+// report: a solid box with no transparent crosshair cutout. 32x32,
+// resident only while a GuiScreen with PLATFORM_CURSOR_TEXTURE is open, so
+// this costs nothing terrain/items/mob skins would otherwise get either.
 static bool dsiNeedsRealAlphaTransparency(const std::string &name)
 {
 	const std::string path = normalizedTexturePath(name);
 	return path == "/gui/icons.png" || path == "/item/xporb.png" ||
 		path == "/font/default.png" || path == "/font/alternate.png" ||
 		path == legacyUiTitleResourcePath() ||
-		path == "/legacy/logo1.png" || path == "/legacy/logo2.png";
+		path == "/legacy/logo1.png" || path == "/legacy/logo2.png" ||
+		path == "/cursor.png";
 }
 #endif
 

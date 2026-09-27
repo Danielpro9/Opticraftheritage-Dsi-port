@@ -66,6 +66,32 @@
 #undef  PLATFORM_CHUNK_MAP_RESERVE
 #define PLATFORM_CHUNK_MAP_RESERVE               16
 
+// EntityLiving::shouldRunEntityDecisionAI() (EntityLiving.cpp) throttles a
+// mob's expensive per-tick AI/pathfinding decisions based on distance from
+// the nearest player: full rate inside PLATFORM_ENTITY_AI_NEAR_RADIUS_BLOCKS,
+// PLATFORM_ENTITY_AI_MID_TICK_DIVISOR inside FAR_RADIUS, and the much
+// cheaper FAR_TICK_DIVISOR beyond it. PlatformGameTuning.h aliases these to
+// PS2's values (16/40 blocks) unmodified for DSi, but PS2 sized that 40-block
+// far threshold against ITS OWN chunk footprint: PS2_CHUNK_CACHE_RADIUS=2 /
+// PS2_CHUNK_UNLOAD_RADIUS=3 (32/48-block radii, Ps2CoreTuning.h), so a mob
+// actually reaches PS2's far bucket before its chunk unloads. DSi's own
+// radii just above are half of PS2's (cache 1 / unload 2, i.e. 16/32
+// blocks): a DSi mob's chunk unloads well before it could ever cross PS2's
+// 40-block far threshold, so PLATFORM_ENTITY_AI_FAR_TICK_DIVISOR -- the
+// biggest AI-cost cut this mechanism offers -- was structurally unreachable
+// on DSi, and the far/near split was rarely enough separated from a mob's
+// max possible distance to do much either. Halved in step with DSi's own
+// halved cache/unload radii above, the same proportion PS2's own thresholds
+// keep against its radii, so a mob near DSi's unload boundary now actually
+// reaches the cheapest tick rate instead of every mob in a loaded chunk
+// always paying full AI cost. Same reasoning as this file's other numbers:
+// derived from the radius ratio already established above, not a measured
+// frame-time run -- revisit if a real profile suggests otherwise.
+#undef  PLATFORM_ENTITY_AI_NEAR_RADIUS_BLOCKS
+#define PLATFORM_ENTITY_AI_NEAR_RADIUS_BLOCKS    8.0f
+#undef  PLATFORM_ENTITY_AI_FAR_RADIUS_BLOCKS
+#define PLATFORM_ENTITY_AI_FAR_RADIUS_BLOCKS     20.0f
+
 // Eviction rate: reused from PS2 as-is. These bound how many chunks unload
 // (write to SD + free) per tick, not how much RAM the cache holds, so they do
 // not scale with the smaller radius above -- they exist to keep a save-to-SD

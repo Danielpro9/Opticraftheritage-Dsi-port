@@ -50,6 +50,8 @@ private:
 	void ps2RenderPlayerStatusHud(int_t sw, int_t sh);
 #endif
 #ifdef DSI_PLATFORM
+	void dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem);
+	void dsiRenderCrosshair(int_t sw, int_t sh);
 	void dsiRenderPlayerStatusHud(int_t sw, int_t sh);
 #endif
 

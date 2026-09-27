@@ -200,11 +200,25 @@ struct Ps2HudCache
 // skipped automatically whenever the geometry itself needs to jitter every
 // frame (low health flash, hunger shake), so this never freezes a HUD that
 // is supposed to be animating.
+// Hotbar frame and crosshair added alongside the status row above: same
+// per-draw-call cost, much smaller win each (2->1 and 1->1 draws versus the
+// status row's 30-40->1), which is why they were left for a later pass when
+// the status row was first ported -- ported now since any draw-call cut
+// still counts on this platform's own established bottleneck.
 struct DsiHudCache
 {
+	RenderStaticMesh hotbar;
+	RenderStaticMesh crosshair;
 	RenderStaticMesh status;
+	int_t hotbarWidth = -1;
+	int_t hotbarHeight = -1;
+	int_t hotbarItem = -1;
+	int_t crosshairWidth = -1;
+	int_t crosshairHeight = -1;
 	int_t statusWidth = -1;
 	int_t statusHeight = -1;
+	bool hotbarValid = false;
+	bool crosshairValid = false;
 	bool statusValid = false;
 	unsigned long long statusSignature = 0;
 };
@@ -247,6 +261,8 @@ GuiIngame::GuiIngame(Minecraft *minecraft)
 	renderStaticMeshCreate(ps2HudCache->status);
 #endif
 #ifdef DSI_PLATFORM
+	renderStaticMeshCreate(dsiHudCache->hotbar);
+	renderStaticMeshCreate(dsiHudCache->crosshair);
 	renderStaticMeshCreate(dsiHudCache->status);
 #endif
 }
@@ -273,6 +289,8 @@ GuiIngame::~GuiIngame()
 #ifdef DSI_PLATFORM
 	if (dsiHudCache != nullptr)
 	{
+		renderStaticMeshDestroy(dsiHudCache->hotbar);
+		renderStaticMeshDestroy(dsiHudCache->crosshair);
 		renderStaticMeshDestroy(dsiHudCache->status);
 		delete dsiHudCache;
 		dsiHudCache = nullptr;
@@ -779,6 +797,63 @@ void GuiIngame::ps2RenderPlayerStatusHud(int_t sw, int_t sh)
 }
 #endif
 #ifdef DSI_PLATFORM
+void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
+{
+	DsiHudCache &cache = *dsiHudCache;
+	const bool needsCompile = !cache.hotbarValid || cache.hotbarWidth != sw ||
+		cache.hotbarHeight != sh || cache.hotbarItem != currentItem;
+	if (needsCompile)
+	{
+		Tessellator &tessellator = Tessellator::instance;
+		zLevel = -90.0f;
+		tessellator.startDrawingQuads();
+		appendTexturedModalRect(tessellator, zLevel, sw / 2 - 91, sh - 22, 0, 0, 182, 22);
+		appendTexturedModalRect(tessellator, zLevel,
+			(sw / 2 - 91 - 1) + currentItem * 20, sh - 23, 0, 22, 24, 22);
+		cache.hotbarValid = tessellator.finishStaticMesh(cache.hotbar);
+		if (cache.hotbarValid)
+		{
+			cache.hotbarWidth = sw;
+			cache.hotbarHeight = sh;
+			cache.hotbarItem = currentItem;
+		}
+	}
+
+	if (cache.hotbarValid && renderStaticMeshDraw(cache.hotbar))
+		return;
+
+	cache.hotbarValid = false;
+	zLevel = -90.0f;
+	drawTexturedModalRect(sw / 2 - 91, sh - 22, 0, 0, 182, 22);
+	drawTexturedModalRect((sw / 2 - 91 - 1) + currentItem * 20, sh - 23, 0, 22, 24, 22);
+}
+
+void GuiIngame::dsiRenderCrosshair(int_t sw, int_t sh)
+{
+	DsiHudCache &cache = *dsiHudCache;
+	const bool needsCompile = !cache.crosshairValid || cache.crosshairWidth != sw || cache.crosshairHeight != sh;
+	if (needsCompile)
+	{
+		Tessellator &tessellator = Tessellator::instance;
+		zLevel = -90.0f;
+		tessellator.startDrawingQuads();
+		appendTexturedModalRect(tessellator, zLevel, sw / 2 - 7, sh / 2 - 7, 0, 0, 16, 16);
+		cache.crosshairValid = tessellator.finishStaticMesh(cache.crosshair);
+		if (cache.crosshairValid)
+		{
+			cache.crosshairWidth = sw;
+			cache.crosshairHeight = sh;
+		}
+	}
+
+	if (cache.crosshairValid && renderStaticMeshDraw(cache.crosshair))
+		return;
+
+	cache.crosshairValid = false;
+	zLevel = -90.0f;
+	drawTexturedModalRect(sw / 2 - 7, sh / 2 - 7, 0, 0, 16, 16);
+}
+
 void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 {
 	DsiHudCache &cache = *dsiHudCache;
@@ -851,6 +926,8 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	pcLegacyRenderHotbarFrame(sw, hudHeight, inv->currentItem);
 #elif defined(PS2_PLATFORM)
 	ps2RenderHotbarFrame(sw, hudHeight, inv->currentItem);
+#elif defined(DSI_PLATFORM)
+	dsiRenderHotbarFrame(sw, hudHeight, inv->currentItem);
 #else
 	zLevel = -90.0f;
 	drawTexturedModalRect(sw / 2 - 91, hudHeight - 22, 0,  0, 182, 22);
@@ -864,6 +941,8 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	pcLegacyRenderCrosshair(sw, sh);
 #elif defined(PS2_PLATFORM)
 	ps2RenderCrosshair(sw, sh);
+#elif defined(DSI_PLATFORM)
+	dsiRenderCrosshair(sw, sh);
 #else
 	drawTexturedModalRect(sw / 2 - 7, sh / 2 - 7, 0, 0, 16, 16);
 #endif

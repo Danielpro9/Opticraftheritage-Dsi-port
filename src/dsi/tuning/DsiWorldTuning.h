@@ -314,17 +314,36 @@
 // this platform's established non-greedy baseline (~130-165ms/frame render
 // under comparable load, from this same session's earlier logs).
 //
-// Root cause not yet isolated -- the algorithm in DsiGreedyMesh.cpp looks
-// sound by inspection (bounded 16x16 mask, no double-render against the
-// per-block loop's skip check) but has literally never run on a real
-// console until now, so something in it or in its interaction with the
-// static-mesh compile/replay path is wrong in a way static review missed.
-// Disabling the runtime path here (independent of the now-correct
-// isConnectedTextures() default, which stays fixed) restores the known-good
-// non-greedy baseline while that gets root-caused, rather than shipping a
-// build proven ~40x slower than intended. Flip to 1 once the real bug is
-// found and fixed and a real-hardware run confirms it no longer regresses.
+// ROOT-CAUSED: not a replay-cost regression at all, and not a bug in
+// DsiGreedyMesh.cpp's algorithm (which really is sound -- bounded 16x16
+// mask, no double-render against the per-block loop's skip check, same
+// capture/repack/replay path as ordinary terrain, all independently
+// re-confirmed while chasing this). The real bug was a step-accounting gap
+// in WorldRendererDsi.cpp's dsiBuildRendererStep(): the greedy branch did
+// real, non-trivial work (up to DSI_GREEDY_BATCHES_PER_CALL batches of
+// DSI_GREEDY_SLICES_PER_STEP mask slices each call) but never incremented
+// `processed`, the one signal dsiStepDidWork -- and therefore
+// RenderGlobal.cpp's MeshBudget::run(), via lastTerrainBuildStepDidWork()
+// -- uses to decide whether a call's real measured wall-clock cost counts
+// toward the per-frame build budget (PLATFORM_CHUNK_BUILD_BUDGET_MS, ~6ms)
+// and the per-frame update-count cap (~10). Every greedy-only call looked
+// like "did nothing" to the scheduler, so neither cap ever tripped: up to
+// PLATFORM_RENDERER_UPDATE_CANDIDATES_PER_FRAME (32) sections mid-greedy-
+// build could each get a full, uncapped greedy call in the SAME frame,
+// with zero budget enforcement -- exactly the "render time pinned at a
+// scene-independent constant, rebuilds frozen" signature the original
+// report described (it depends on how many sections are mid-build, not
+// what's actually visible), not a per-vertex replay problem. Fixed by
+// charging `processed += dsiGreedyBatchesThisCall` at the end of the
+// greedy branch, restoring the same accounting the per-block loop's own
+// `++processed` already gives the scheduler.
+//
+// Re-enabled. Needs a real-hardware frame-time confirmation like every
+// other fix in this file -- if it regresses again, the restarts=/rebuilds=
+// memtrend counters (Minecraft.cpp) and a per-frame "greedy calls this
+// frame" count are the next diagnostic to reach for before assuming the
+// algorithm itself is at fault again.
 #undef  DSI_GREEDY_MESH_RUNTIME_ENABLED
-#define DSI_GREEDY_MESH_RUNTIME_ENABLED           0
+#define DSI_GREEDY_MESH_RUNTIME_ENABLED           1
 
 #endif // PLATFORM_DSI

@@ -389,6 +389,33 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 					dsiBuildGreedyFace++;
 				}
 			}
+
+			// Real root cause of the catastrophic steady-state regression this
+			// emergency-disabled path was blamed for (see
+			// DSI_GREEDY_MESH_RUNTIME_ENABLED's own comment in
+			// DsiWorldTuning.h): `processed` is what RenderGlobal.cpp's
+			// MeshBudget::run() uses (via lastTerrainBuildStepDidWork(), set
+			// from dsiStepDidWork below, which is `processed > 0`) to decide
+			// whether this call's real measured wall-clock cost counts toward
+			// the per-frame build budget (PLATFORM_CHUNK_BUILD_BUDGET_MS,
+			// ~6ms) and the per-frame update-count cap (~10). The greedy
+			// branch above does real, non-trivial work -- up to
+			// DSI_GREEDY_BATCHES_PER_CALL batches of DSI_GREEDY_SLICES_PER_STEP
+			// 16-wide mask slices each, every cell running several block-
+			// registry/texture/brightness lookups -- but never touched
+			// `processed`, so every one of those calls looked like "did
+			// nothing" to the scheduler. Nothing ever capped how many
+			// sections' worth of greedy work could run in one frame: up to
+			// PLATFORM_RENDERER_UPDATE_CANDIDATES_PER_FRAME (32) candidates
+			// could each get a full, uncapped greedy call the same frame,
+			// which is exactly the "render time pinned at a scene-independent
+			// constant, rebuilds frozen" signature the incident report
+			// describes -- not a real per-vertex replay cost regression.
+			// Charging the batch count actually run restores the same
+			// accounting the per-block loop's `++processed` above already
+			// gives the scheduler, so the existing 6ms/10-update caps apply
+			// to greedy calls too.
+			processed += dsiGreedyBatchesThisCall;
 		}
 		else
 #endif

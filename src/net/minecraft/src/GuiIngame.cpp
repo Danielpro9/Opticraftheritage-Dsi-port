@@ -469,15 +469,24 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 	// or strictly-equal to offer -- see its own comment), so an overlay
 	// drawn a moment after its own background at an identical Z cannot rely
 	// on depth STATE to show through under the hardware's LESS default; it
-	// needs a genuinely nearer Z instead. The nudge is far smaller than any
-	// real zLevel gap this codebase relies on for draw order elsewhere
-	// (GuiIngame.cpp itself uses +-100.0f a few hundred lines down),
-	// comfortably inside the DS depth buffer's precision at these ortho HUD
-	// ranges.
+	// needs a genuinely nearer Z instead. "Nearer" here means a LARGER
+	// zLevel, not smaller: EntityRenderer.cpp's setupOverlayRendering()
+	// loads an ortho projection (near=1000, far=3000) and then translates
+	// the modelview by (0,0,-2000), so a vertex's view-space Z is
+	// zLevel - 2000 -- increasing zLevel moves that less negative, i.e.
+	// closer to the near plane, i.e. nearer the camera. (First shipped with
+	// the sign backwards -- zLevel MINUS the per-layer step -- which moved
+	// every overlay further away instead of nearer, so it failed the LESS
+	// test exactly like the un-nudged original bug; confirmed wrong via a
+	// real-hardware report of hearts/food still black after that build.)
+	// The nudge is far smaller than any real zLevel gap this codebase
+	// relies on for draw order elsewhere (GuiIngame.cpp itself uses
+	// +-100.0f a few hundred lines down), comfortably inside the DS depth
+	// buffer's precision at these ortho HUD ranges.
 	auto emitRect = [&](int_t x, int_t y, int_t texX, int_t texY, int_t w, int_t h, int_t layer = 0)
 	{
 #if defined(DSI_PLATFORM)
-		const float_t drawZLevel = zLevel - 0.1f * static_cast<float_t>(layer);
+		const float_t drawZLevel = zLevel + 0.1f * static_cast<float_t>(layer);
 #else
 		const float_t drawZLevel = zLevel;
 		(void)layer;
@@ -802,12 +811,19 @@ void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 	// at all (renderEnable/renderDisable(RenderCapability::DepthTest) are
 	// both unconditional no-ops on this backend), so a same-Z overlay drawn
 	// a moment after its own background cannot rely on depth STATE to show
-	// through -- it needs a genuinely nearer Z instead. This nudge is far
-	// smaller than any real zLevel gap this codebase relies on for draw
-	// order elsewhere (this same file uses +-100.0f a few functions down),
-	// comfortably inside the DS depth buffer's precision at these ortho HUD
-	// ranges.
-	constexpr float_t kDsiOverlayZNudge = -0.1f;
+	// through -- it needs a genuinely nearer Z instead. "Nearer" means a
+	// LARGER zLevel here, not smaller -- see renderPlayerStatusHudGeometry()'s
+	// identical comment for the sign derivation (EntityRenderer.cpp's
+	// setupOverlayRendering() translates the modelview by (0,0,-2000), so
+	// increasing zLevel moves a vertex's view-space Z closer to the near
+	// plane). First shipped negative, which moved the highlight further
+	// away instead of nearer -- fixed alongside the same bug in
+	// renderPlayerStatusHudGeometry() (real-hardware report: hearts/food
+	// still black after that build). This nudge is far smaller than any
+	// real zLevel gap this codebase relies on for draw order elsewhere
+	// (this same file uses +-100.0f a few functions down), comfortably
+	// inside the DS depth buffer's precision at these ortho HUD ranges.
+	constexpr float_t kDsiOverlayZNudge = 0.1f;
 
 	if (needsCompile)
 	{

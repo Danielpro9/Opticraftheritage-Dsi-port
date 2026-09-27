@@ -53,15 +53,29 @@ void dsiPushGameplayKeyEvents();
 // plays on Wii (see WiiPointer.cpp) -- touching the bottom screen moves a
 // cursor drawn on the top screen, since DSi's GUI canvas is the same native
 // 256x192 as the touch screen's own pixel space (DsiPresentationTuning.h),
-// no scaling needed. Also owns the pointer-vs-D-pad handoff
-// platformMenuPointerActive() reports: touching claims pointer ownership,
-// a D-pad/A/B press hands it back, mirroring Wii's "aim to use the cursor,
-// press a direction to go back to navigation" behaviour (see GuiScreen.cpp's
-// menuPointerInputSuppressed() comment). Call with inMenu=false does nothing
-// but reset that ownership state, so a fresh GuiScreen never inherits a
-// previous one's pointer/pad ownership. Must run once a frame, same place
-// and for the same reason as dsiUpdateTouchCameraDelta() above -- Display_dsi.cpp's
-// processMessages() is the one call site.
+// no scaling needed.
+//
+// Tap-to-click, not click-on-touch: dragging across the screen only
+// repositions the cursor. The click itself fires on release (at wherever
+// the finger lifted), or on an A press while the pointer owns input (at
+// the cursor's current position) -- real-hardware request, so lining the
+// cursor up over something doesn't activate it before the player meant to.
+//
+// Also owns the pointer-vs-D-pad handoff platformMenuPointerActive()
+// reports: touching claims pointer ownership and it stays claimed after
+// release (the cursor keeps showing at the last touched position, not
+// wherever a stale touchRead() sample after release would land -- another
+// real-hardware request), until a D-pad direction or B hands it back to
+// the pad, mirroring Wii's "aim to use the cursor, press a direction to go
+// back to navigation" behaviour (see GuiScreen.cpp's
+// menuPointerInputSuppressed() comment). A does not hand ownership back --
+// it is a pointer action in its own right, not navigation.
+//
+// Call with inMenu=false does nothing but reset that ownership state, so a
+// fresh GuiScreen never inherits a previous one's pointer/pad ownership.
+// Must run once a frame, same place and for the same reason as
+// dsiUpdateTouchCameraDelta() above -- Display_dsi.cpp's processMessages()
+// is the one call site.
 void dsiUpdateMenuPointer(bool inMenu);
 
 // Bytes of the 512 KB texture-image VRAM budget (four 128 KB banks, see

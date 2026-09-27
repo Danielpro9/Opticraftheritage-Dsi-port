@@ -81,12 +81,36 @@ std::uint32_t g_prevActionButtons = 0;
 // Menu-pointer ownership state -- see dsiUpdateMenuPointer()'s own comment
 // and DsiEarlyInit.h's declaration for the full picture. Separate from the
 // touch-drag camera state above: that one tracks a delta for gameplay,
-// this tracks an absolute position and a down/up edge for menu clicks, and
-// the two run in different situations (inMenu false vs true) so they never
-// fight over the same touchRead() sample in a way that matters.
+// this tracks an absolute position and a tap-to-click gesture for menu
+// input, and the two run in different situations (inMenu false vs true) so
+// they never fight over the same touchRead() sample in a way that matters.
 enum class DsiMenuInputOwner { Pad, Pointer };
 DsiMenuInputOwner g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
 bool g_dsiMenuTouchWasDown = false;
+// Cursor position at the last frame the screen was actually touched, in
+// lwjgl::Mouse's coordinate space (already Y-flipped -- see
+// dsiUpdateMenuPointer()). Real-hardware report this exists to fix: reading
+// a fresh touchRead() sample on the exact release frame (the panel is no
+// longer pressed by then) made the cursor jump to wherever the digitizer's
+// last raw/settling reading happened to be instead of staying where the
+// player actually lifted their finger -- looked like the pointer vanishing.
+// Every use of "the cursor's position" outside an active touch (the
+// release-triggered click, the cursor staying visible afterward) reads
+// this instead of touchRead() directly.
+int g_dsiMenuLastTouchX = 0;
+int g_dsiMenuLastTouchY = 0;
+
+// Synthesizes a full click (press immediately followed by release, both at
+// the last known touch position) into lwjgl::Mouse -- see
+// dsiUpdateMenuPointer()'s own comment for when this fires. Pushing both
+// halves lets GuiButton's normal mousePressed()/mouseReleased() pair run
+// exactly as it would for a real mouse click, rather than leaving
+// GuiScreen::selectedButton latched with no matching release.
+void dsiFireMenuPointerClick()
+{
+	lwjgl::Mouse::detail::pushButton(0, true, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
+	lwjgl::Mouse::detail::pushButton(0, false, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
+}
 
 float normalizeDrag(float deltaPixels)
 {
@@ -173,32 +197,56 @@ void dsiUpdateMenuPointer(bool inMenu)
 	touchRead(&touch);
 	const bool touching = (keysHeld() & KEY_TOUCH) != 0;
 
-	// LWJGL's Mouse::getY() is bottom-left origin (see PlatformCompat.h's
-	// getMouseState()), but touchRead()'s px/py -- like every other pixel
-	// coordinate in this codebase (e.g. DsiEarlyVideo.cpp's glViewport) --
-	// are top-left origin. Flip once here, at the one place a real touch
-	// position enters lwjgl::Mouse, rather than asking every reader of
-	// Mouse::getY() to know DSi needs special handling.
-	const int lwjglY = lwjgl::Display::getHeight() - 1 - static_cast<int>(touch.py);
-
 	if (touching)
 	{
 		g_dsiMenuInputOwner = DsiMenuInputOwner::Pointer;
-		lwjgl::Mouse::detail::pushMotion(touch.px, lwjglY, 0, 0);
+
+		// LWJGL's Mouse::getY() is bottom-left origin (see PlatformCompat.h's
+		// getMouseState()), but touchRead()'s px/py -- like every other pixel
+		// coordinate in this codebase (e.g. DsiEarlyVideo.cpp's glViewport) --
+		// are top-left origin. Flip once here, at the one place a real touch
+		// position enters lwjgl::Mouse, rather than asking every reader of
+		// Mouse::getY() to know DSi needs special handling.
+		g_dsiMenuLastTouchX = touch.px;
+		g_dsiMenuLastTouchY = lwjgl::Display::getHeight() - 1 - static_cast<int>(touch.py);
+		lwjgl::Mouse::detail::pushMotion(g_dsiMenuLastTouchX, g_dsiMenuLastTouchY, 0, 0);
 	}
-	if (touching != g_dsiMenuTouchWasDown)
-		lwjgl::Mouse::detail::pushButton(0, touching, touch.px, lwjglY);
+
+	// Tap-to-click, real-hardware request: touching and dragging only
+	// repositions the cursor (no click on touch-down, unlike the first
+	// version of this function), so lining the cursor up doesn't activate
+	// whatever it happened to start on top of. The click itself fires on
+	// release, at g_dsiMenuLastTouchX/Y rather than a fresh touchRead()
+	// sample -- see that variable's own comment for why the sample cannot
+	// be trusted once the panel is no longer pressed.
+	if (!touching && g_dsiMenuTouchWasDown)
+		dsiFireMenuPointerClick();
 	g_dsiMenuTouchWasDown = touching;
 
-	// A D-pad direction or A/B hands ownership back to the pad, mirroring
+	const std::uint32_t pressedEdge = keysDown();
+
+	// A also clicks, at the same last-touched position lifting the finger
+	// would -- the other real-hardware request, so the cursor can be
+	// aimed and then confirmed without needing to lift and re-tap. Only
+	// while the pointer currently owns menu input: with nothing touched
+	// yet this screen (ownership still Pad), A falls through unchanged to
+	// handleConsoleJavaUiNavigation()'s normal keyboard-selection
+	// activation below. Deliberately does NOT also hand ownership back to
+	// the pad the way a D-pad direction does (see below) -- doing so would
+	// make handleConsoleJavaUiNavigation() see platformMenuPointerActive()
+	// as already false this same frame and run its own
+	// activateKeyboardSelection() too, double-firing whatever both paths
+	// agree on.
+	if (g_dsiMenuInputOwner == DsiMenuInputOwner::Pointer && (pressedEdge & KEY_A))
+		dsiFireMenuPointerClick();
+
+	// A D-pad direction or B hands ownership back to the pad, mirroring
 	// Wii's updateMenuInputOwner() (WiiPadState.cpp) -- "aim to use the
 	// cursor, press a direction to go back to navigation" (GuiScreen.cpp's
-	// menuPointerInputSuppressed() comment). Checked after the touch handling
-	// above so a tap-and-hold-while-pressing-a-direction (unlikely, but not
-	// impossible on real hardware) still resolves to Pad, the safer default:
-	// stale hover/click state is easier to get from a lingering Pointer
-	// ownership than a D-pad press silently doing nothing.
-	if (keysDown() & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_A | KEY_B))
+	// menuPointerInputSuppressed() comment). A is excluded (see just above):
+	// it stays a pointer action while the pointer owns input, not a
+	// navigation handoff.
+	if (pressedEdge & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT | KEY_B))
 		g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
 }
 

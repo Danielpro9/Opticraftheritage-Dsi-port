@@ -183,12 +183,25 @@ jobs:
             # blobs the way it can text). There is nothing to actually merge
             # for a build artifact like this one -- the ROM this job just
             # built should simply win over whatever was pushed in the
-            # meantime. `reset --soft` moves the branch pointer to the new
-            # remote tip without touching the index or working tree, so the
-            # commit made above stays staged as-is and gets re-committed
-            # cleanly on top of that tip below, with no merge/rebase
-            # machinery (and no conflict) involved.
-            git reset --soft "origin/$GITHUB_REF_NAME"
+            # meantime.
+            #
+            # NOT `git reset --soft` either (this used to be `--soft`, and it
+            # silently REVERTED unrelated source files the first time a push
+            # landed *during* this job's build: `--soft` moves the branch
+            # pointer to the new remote tip but leaves the index/working tree
+            # exactly as they were, i.e. the source tree from this job's own
+            # (now stale) checkout at job start. The next commit below then
+            # commits that stale tree on top of the new tip, which *is* a
+            # revert of every source file anyone else pushed in the meantime
+            # -- exactly what happened to EntityRenderer.cpp/RenderGlobal.cpp/
+            # RenderItem.cpp on 2026-09-27. `reset --hard` instead makes the
+            # index and working tree fully match the new remote tip -- source
+            # files included -- and then only the freshly-copied ROM is
+            # re-added and re-committed on top, so nothing else can be carried
+            # forward stale.
+            git reset --hard "origin/$GITHUB_REF_NAME"
+            cp src/dsi/OptiCraftDsi.nds dist/dsi/OptiCraftDsi.nds
+            git add dist/dsi/OptiCraftDsi.nds
             if git diff --cached --quiet; then
               echo "Built ROM matches the latest push; nothing to commit."
               exit 0
@@ -238,17 +251,23 @@ jobs:
           fi
           git commit -m "CI: update built DsiBringup.nds [skip ci]"
           # Same race game-build's own commit step guards against (two
-          # pushes to this branch close together): retry with `reset --soft`
-          # rather than `git rebase`, since there is nothing to merge for a
-          # build artifact -- see that step's comment for why a rebase can
-          # hit an unresolvable binary conflict here.
+          # pushes to this branch close together): retry rather than
+          # `git rebase`, since there is nothing to merge for a build
+          # artifact -- see that step's comment for why a rebase can hit an
+          # unresolvable binary conflict here. `reset --hard` (not `--soft`
+          # -- see that same comment for the real-incident account of why
+          # `--soft` here silently reverted unrelated source files) syncs
+          # the index/working tree fully with the new remote tip before the
+          # freshly-built ROM is re-copied, re-added and re-committed on top.
           for attempt in 1 2 3 4 5; do
             if git push; then
               exit 0
             fi
             echo "Push rejected (attempt $attempt), reapplying this build on top of the latest push..."
             git fetch origin "$GITHUB_REF_NAME"
-            git reset --soft "origin/$GITHUB_REF_NAME"
+            git reset --hard "origin/$GITHUB_REF_NAME"
+            cp src/dsi/DsiBringup.nds dist/dsi/DsiBringup.nds
+            git add dist/dsi/DsiBringup.nds
             if git diff --cached --quiet; then
               echo "Built ROM matches the latest push; nothing to commit."
               exit 0

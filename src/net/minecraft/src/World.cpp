@@ -640,6 +640,14 @@ void World::generateSpawnPoint()
         delete position;
     }
 
+    if (isLimitedWorld())
+    {
+        if (spawnX < -100) spawnX = -100;
+        else if (spawnX > 100) spawnX = 100;
+        if (spawnZ < -100) spawnZ = -100;
+        else if (spawnZ > 100) spawnZ = 100;
+    }
+
 #if defined(PS2_PLATFORM)
     // Hardware PS2 cannot afford vanilla's synchronous spawn probing here.
     // Every canCoordinateBeSpawn() can force another complete chunk generation
@@ -6120,6 +6128,11 @@ ISaveHandler *World::getSaveHandler() const
 WorldInfo* World::getWorldInfo()
 {
     return worldInfo;
+}
+
+bool World::isLimitedWorld() const
+{
+    return worldInfo != nullptr && worldInfo->isLimitedWorld();
 }
 
 void World::updateAllPlayersSleepingFlag()

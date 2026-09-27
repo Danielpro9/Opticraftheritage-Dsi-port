@@ -286,6 +286,21 @@ void ChunkProvider::setChunkLoadRadiusFromRenderDistance(int_t renderDistance)
 
 bool ChunkProvider::canChunkExist(int_t i, int_t j) const
 {
+	// Ported from upstream OptiCraft Heritage Edition's finite "Classic
+	// 256x256" world-size option (WorldInfo::isLimitedWorld(), set from
+	// GuiCreateWorld/LegacyCreateWorldScreen's world-size toggle): a hard,
+	// absolute +-8 chunk (256x256 block) border, layered on top of this
+	// fork's own sliding chunk-cache-window logic below -- a chunk inside
+	// the current streaming window is still rejected if it falls outside
+	// the world's finite border. Unrelated to, and does not replace,
+	// PLATFORM_BOUNDED_WORLD (this fork's own DSi/PS2 chunk-cache-window
+	// mechanism, active on every world regardless of size); a name
+	// collision between the two is coincidental.
+	if (worldObj != nullptr && worldObj->isLimitedWorld())
+	{
+		if (i < -8 || i > 7 || j < -8 || j > 7)
+			return false;
+	}
 	const int_t minX = JavaArithmetic::intSub(curChunkX, chunkLoadRadius);
 	const int_t minZ = JavaArithmetic::intSub(curChunkZ, chunkLoadRadius);
 	const int_t maxX = JavaArithmetic::intAdd(curChunkX, chunkLoadRadius);

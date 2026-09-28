@@ -56,12 +56,22 @@ bool EntityAINearestAttackableTarget::shouldExecute()
 		if (living != nullptr)
 			candidates.push_back(living);
 	}
-	std::stable_sort(candidates.begin(), candidates.end(), [this](EntityLiving *left, EntityLiving *right)
-	{
-		return taskOwner->getDistanceSqToEntity(left) < taskOwner->getDistanceSqToEntity(right);
-	});
+	// Precompute each candidate's distance once instead of recomputing it on
+	// both sides of every comparison -- positions don't change during this
+	// single sort call, so decorate-sort-undecorate gives the identical order
+	// for O(n) distance calls instead of the O(n log n) the naive comparator
+	// makes via stable_sort.
+	std::vector<std::pair<double, EntityLiving *>> rankedCandidates;
+	rankedCandidates.reserve(candidates.size());
 	for (EntityLiving *candidate : candidates)
+		rankedCandidates.emplace_back(taskOwner->getDistanceSqToEntity(candidate), candidate);
+	std::stable_sort(rankedCandidates.begin(), rankedCandidates.end(), [](const auto &left, const auto &right)
 	{
+		return left.first < right.first;
+	});
+	for (const auto &ranked : rankedCandidates)
+	{
+		EntityLiving *candidate = ranked.second;
 		if (isSuitableTarget(candidate, false))
 		{
 			targetEntityId = candidate->entityId;

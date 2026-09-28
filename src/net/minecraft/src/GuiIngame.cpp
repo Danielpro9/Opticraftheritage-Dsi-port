@@ -1105,7 +1105,7 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 			int_t color = 0xffffff;
 			if (field_22065_l)
 				color = hsbToRgb(f2 / 50.0f, 0.7f, 0.6f) & 0xffffff;
-			fr->drawString(recordPlaying, -fr->getStringWidth(recordPlaying) / 2, -4, JavaArithmetic::intAdd(color, JavaArithmetic::intShl(alpha, 24)));
+			fr->drawString(recordPlaying, -recordPlayingWidth / 2, -4, JavaArithmetic::intAdd(color, JavaArithmetic::intShl(alpha, 24)));
 			renderDisable(RenderCapability::Blend);
 			renderPopMatrix();
 		}
@@ -1422,6 +1422,7 @@ ChatClickData *GuiIngame::getChatClickData(int_t rawMouseX, int_t rawMouseY)
 void GuiIngame::setRecordPlayingMessage(const std::string &record)
 {
 	recordPlaying = "Now playing: " + record;
+	recordPlayingWidth = mc->fontRenderer != nullptr ? mc->fontRenderer->getStringWidth(recordPlaying) : 0;
 	recordPlayingUpFor = 60;
 	field_22065_l = true;
 }

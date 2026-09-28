@@ -92,6 +92,7 @@ public:
 private:
 	int_t updateCounter;
 	std::string recordPlaying;
+	int_t recordPlayingWidth = 0;  // measured once in setRecordPlayingMessage(), not every frame it's shown
 	int_t recordPlayingUpFor;
 	bool field_22065_l;        // record playing with color effect
 	int_t chatScroll;

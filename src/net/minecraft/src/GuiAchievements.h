@@ -1,8 +1,11 @@
 #pragma once
 
+#include <string>
+
 #include "GuiScreen.h"
 
 class StatFileWriter;
+class Achievement;
 
 // net.minecraft.src.GuiAchievements
 class GuiAchievements : public GuiScreen
@@ -44,4 +47,15 @@ protected:
 private:
 	int_t mouseState;
 	StatFileWriter *statFileWriter;
+
+	// Hover tooltip text/measurements: recomputed only when the hovered
+	// achievement or its unlock state changes, not every frame the mouse
+	// sits still over the same icon.
+	Achievement *cachedTooltipAchievement = nullptr;
+	bool cachedTooltipCanUnlock = false;
+	bool cachedTooltipUnlocked = false;
+	std::string cachedTooltipBody;
+	std::string cachedTooltipTakenText;
+	int_t cachedTooltipWidth = 0;
+	int_t cachedTooltipHeight = 0;
 };

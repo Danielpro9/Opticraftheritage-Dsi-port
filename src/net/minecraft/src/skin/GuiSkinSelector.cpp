@@ -502,9 +502,14 @@ void GuiSkinSelector::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick
     const int totalSkins = SkinManager::getSkinCountForPack(currentPackIndex);
     if (totalSkins > 0)
     {
-        std::string countStr = std::to_string(currentSkinIndex + 1) + " / " + std::to_string(totalSkins);
-        int_t countW = fontRenderer->getStringWidth(countStr);
-        fontRenderer->drawStringWithShadow(countStr, rightX2 - countW - 10, rightY1 + 5, 0xAAAAAA);
+        if (cachedCounterSkinIndex != currentSkinIndex || cachedCounterTotalSkins != totalSkins)
+        {
+            cachedCounterSkinIndex = currentSkinIndex;
+            cachedCounterTotalSkins = totalSkins;
+            cachedCounterText = std::to_string(currentSkinIndex + 1) + " / " + std::to_string(totalSkins);
+            cachedCounterWidth = fontRenderer->getStringWidth(cachedCounterText);
+        }
+        fontRenderer->drawStringWithShadow(cachedCounterText, rightX2 - cachedCounterWidth - 10, rightY1 + 5, 0xAAAAAA);
     }
 
     if (totalSkins > 0)

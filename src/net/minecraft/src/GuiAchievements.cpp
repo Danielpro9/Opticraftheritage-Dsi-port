@@ -326,29 +326,52 @@ void GuiAchievements::drawAchievementsPanel(int_t i, int_t j, float_t f)
 	if (hoveredAchievement != nullptr)
 	{
 		Achievement *achievement2 = hoveredAchievement;
-		std::string s  = achievement2->statName;
-		std::string s1 = achievement2->getDescription();
+		const bool canUnlock2 = statFileWriter->canUnlockAchievement(achievement2);
+		const bool unlocked2  = statFileWriter->hasAchievementUnlocked(achievement2);
+		if (cachedTooltipAchievement != achievement2 || cachedTooltipCanUnlock != canUnlock2 || cachedTooltipUnlocked != unlocked2)
+		{
+			cachedTooltipAchievement = achievement2;
+			cachedTooltipCanUnlock = canUnlock2;
+			cachedTooltipUnlocked = unlocked2;
+			if (canUnlock2)
+			{
+				cachedTooltipWidth = std::max(fontRenderer->getStringWidth(achievement2->statName), 120);
+				cachedTooltipBody = achievement2->getDescription();
+				cachedTooltipHeight = fontRenderer->splitStringWidth(cachedTooltipBody, cachedTooltipWidth);
+				if (unlocked2)
+				{
+					cachedTooltipHeight += 12;
+					cachedTooltipTakenText = StatCollector::translateToLocal("achievement.taken");
+				}
+			}
+			else
+			{
+				cachedTooltipWidth = std::max(fontRenderer->getStringWidth(achievement2->statName), 120);
+				cachedTooltipBody = StatCollector::translateToLocalFormatted("achievement.requires", achievement2->parentAchievement->statName.c_str());
+				cachedTooltipHeight = fontRenderer->splitStringWidth(cachedTooltipBody, cachedTooltipWidth);
+			}
+		}
+
+		std::string s = achievement2->statName;
 		int_t k5 = i + 12;
 		int_t j6 = j - 4;
-		if (statFileWriter->canUnlockAchievement(achievement2))
+		if (canUnlock2)
 		{
-			int_t l6 = std::max(fontRenderer->getStringWidth(s), 120);
-			int_t j7 = fontRenderer->splitStringWidth(s1, l6);
-			if (statFileWriter->hasAchievementUnlocked(achievement2)) j7 += 12;
+			int_t l6 = cachedTooltipWidth;
+			int_t j7 = cachedTooltipHeight;
 			drawGradientRect(k5 - 3, j6 - 3, k5 + l6 + 3, j6 + j7 + 3 + 12, 0xc0000000, 0xc0000000);
-			fontRenderer->drawSplitString(s1, k5, j6 + 12, l6, 0xffa0a0a0);
-			if (statFileWriter->hasAchievementUnlocked(achievement2))
-				fontRenderer->drawStringWithShadow(StatCollector::translateToLocal("achievement.taken"), k5, j6 + j7 + 4, 0xff9090ff);
+			fontRenderer->drawSplitString(cachedTooltipBody, k5, j6 + 12, l6, 0xffa0a0a0);
+			if (unlocked2)
+				fontRenderer->drawStringWithShadow(cachedTooltipTakenText, k5, j6 + j7 + 4, 0xff9090ff);
 		}
 		else
 		{
-			int_t i7 = std::max(fontRenderer->getStringWidth(s), 120);
-			std::string s2 = StatCollector::translateToLocalFormatted("achievement.requires", achievement2->parentAchievement->statName.c_str());
-			int_t k7 = fontRenderer->splitStringWidth(s2, i7);
+			int_t i7 = cachedTooltipWidth;
+			int_t k7 = cachedTooltipHeight;
 			drawGradientRect(k5 - 3, j6 - 3, k5 + i7 + 3, j6 + k7 + 12 + 3, 0xc0000000, 0xc0000000);
-			fontRenderer->drawSplitString(s2, k5, j6 + 12, i7, 0xff705050);
+			fontRenderer->drawSplitString(cachedTooltipBody, k5, j6 + 12, i7, 0xff705050);
 		}
-		int_t textColor = statFileWriter->canUnlockAchievement(achievement2)
+		int_t textColor = canUnlock2
 			? (achievement2->getSpecial() ? -128 : -1)
 			: (achievement2->getSpecial() ? 0xff808040 : 0xff808080);
 		fontRenderer->drawStringWithShadow(s, k5, j6, textColor);

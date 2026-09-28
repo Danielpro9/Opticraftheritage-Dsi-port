@@ -61,4 +61,11 @@ private:
 
     GuiButton *buttonTabDefault;
     GuiButton *buttonTabCustom;
+
+    // "n / total" counter text/width: recomputed only when the current skin
+    // or pack count changes, not every frame this screen is drawn.
+    int cachedCounterSkinIndex = -1;
+    int cachedCounterTotalSkins = -1;
+    std::string cachedCounterText;
+    int_t cachedCounterWidth = 0;
 };

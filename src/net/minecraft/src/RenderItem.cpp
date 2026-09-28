@@ -3,6 +3,8 @@
 #include "java/System.h"
 
 #include <cmath>
+#include <string>
+#include <unordered_map>
 #include "AxisAlignedBB.h"
 #include "EntityItem.h"
 #include "ItemStack.h"
@@ -389,10 +391,32 @@ void RenderItem::renderItemOverlayIntoGUI(FontRenderer* fontrenderer, RenderEngi
         return;
     }
     if (itemstack->stackSize > 1) {
-        std::string s = std::to_string(itemstack->stackSize);
+        // Runs for every hotbar slot every frame during normal gameplay (not
+        // just when a GUI is open), plus every stackable slot in any open
+        // inventory/chest/creative screen. stackSize is a small bounded
+        // int whose formatted text and measured width are a pure function
+        // of (stackSize, font) -- cache per count, wholesale-invalidated
+        // only when the font's own cache revision changes (same signal
+        // GuiButton/LegacyControlTooltipHud already key their own width
+        // caches on).
+        struct CachedCount { std::string text; int_t width; };
+        static std::unordered_map<int_t, CachedCount> cache;
+        static unsigned int cachedRevision = 0;
+        const unsigned int revision = fontrenderer->getTextCacheRevision();
+        if (revision != cachedRevision) {
+            cache.clear();
+            cachedRevision = revision;
+        }
+        auto it = cache.find(itemstack->stackSize);
+        if (it == cache.end()) {
+            CachedCount entry;
+            entry.text = std::to_string(itemstack->stackSize);
+            entry.width = fontrenderer->getStringWidth(entry.text);
+            it = cache.emplace(itemstack->stackSize, std::move(entry)).first;
+        }
         renderDisable(RenderCapability::Lighting);
         renderDisable(RenderCapability::DepthTest);
-        fontrenderer->drawStringWithShadow(s, (i + 19) - 2 - fontrenderer->getStringWidth(s), j + 6 + 3, 0xffffff);
+        fontrenderer->drawStringWithShadow(it->second.text, (i + 19) - 2 - it->second.width, j + 6 + 3, 0xffffff);
         renderEnable(RenderCapability::Lighting);
         renderEnable(RenderCapability::DepthTest);
     }

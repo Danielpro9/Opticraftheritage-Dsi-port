@@ -129,8 +129,16 @@ void GuiSlotStats::drawStatValue(StatCrafting *statcrafting, int_t x, int_t y, b
 	if (statcrafting != nullptr)
 	{
 		StatFileWriter *sfw = GuiStats::getStatFileWriter(parentGui);
-		std::string s = statcrafting->format(sfw->writeStat(statcrafting));
-		parentGui->drawString(fr, s, x - fr->getStringWidth(s), y + 5, color);
+		const int_t value = sfw->writeStat(statcrafting);
+		CachedStatValue &cached = cachedStatValues[statcrafting];
+		if (!cached.populated || cached.lastValue != value)
+		{
+			cached.lastValue = value;
+			cached.text = statcrafting->format(value);
+			cached.width = fr->getStringWidth(cached.text);
+			cached.populated = true;
+		}
+		parentGui->drawString(fr, cached.text, x - cached.width, y + 5, color);
 	}
 	else
 	{

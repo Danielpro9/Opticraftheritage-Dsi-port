@@ -4,6 +4,7 @@
 #include "GuiSlot.h"
 #include <vector>
 #include <functional>
+#include <unordered_map>
 
 class GuiStats;
 class StatCrafting;
@@ -40,4 +41,23 @@ public:
 	int_t sortColumn;
 	int_t sortDirection;
 	GuiStats *parentGui;
+
+private:
+	// drawStatValue() used to call StatCrafting::format() (StatBase::
+	// numberFormat(), which constructs an std::ostringstream and calls
+	// oss.imbue(std::locale("")) -- a real, non-trivial locale construction,
+	// not just a cheap lookup) plus FontRenderer::getStringWidth() every
+	// call, 3x per visible row (one per column), every frame either the
+	// items or blocks stats screen is open. statcrafting entries are static/
+	// long-lived (StatList's registry), so caching by pointer identity needs
+	// no list-rebuild invalidation hook, only a per-entry value check --
+	// same reasoning as GuiSlotStatsGeneral's already-fixed row cache.
+	struct CachedStatValue
+	{
+		int_t lastValue = 0;
+		std::string text;
+		int_t width = 0;
+		bool populated = false;
+	};
+	std::unordered_map<StatCrafting *, CachedStatValue> cachedStatValues;
 };

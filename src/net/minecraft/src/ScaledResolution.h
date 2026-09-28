@@ -10,8 +10,8 @@ class ScaledResolution
 public:
 	ScaledResolution(GameSettings *gamesettings, int_t i, int_t j);
 
-	int_t getScaledWidth();
-	int_t getScaledHeight();
+	int_t getScaledWidth() const;
+	int_t getScaledHeight() const;
 	double getScaleFactorExact() const;
 
 private:

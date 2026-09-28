@@ -12,6 +12,7 @@ class Random;
 class FontRenderer;
 class ChatClickData;
 class Tessellator;
+class ScaledResolution;
 #ifdef PS2_PLATFORM
 struct Ps2HudCache;
 #endif
@@ -26,7 +27,10 @@ public:
 	GuiIngame(Minecraft *minecraft);
 	~GuiIngame();
 
-	void renderGameOverlay(float_t partialTick, bool showDebug, int_t mouseX, int_t mouseY);
+	// scaledResolution is passed in from EntityRenderer::updateCameraAndRender(),
+	// which already builds one for this same frame's scaledWidth/scaledHeight --
+	// reused here instead of building a second one with identical inputs.
+	void renderGameOverlay(float_t partialTick, bool showDebug, int_t mouseX, int_t mouseY, const ScaledResolution &scaledResolution);
 
 private:
 	void renderPumpkinBlur(int_t w, int_t h);

@@ -65,6 +65,12 @@ public:
     void updateWorldLightLevels();
     void renderWorld(float partialTicks, int64_t renderTimeLimitNano);
     void setupOverlayRendering();
+    // Overload for callers that already have a ScaledResolution built this
+    // frame (gameSettings/displayWidth/displayHeight are frame-stable, so
+    // reusing one instead of constructing another skips its double-precision
+    // divide + 2 std::ceil() calls -- real soft-float cost on this FPU-less
+    // ARM9 for a value that's byte-identical to the one already in hand).
+    void setupOverlayRendering(const ScaledResolution &scaledResolution);
     void disableLightmap(double partialTicks);
     void enableLightmap(double partialTicks);
     

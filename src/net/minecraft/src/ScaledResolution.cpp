@@ -40,12 +40,12 @@ ScaledResolution::ScaledResolution(GameSettings *gamesettings, int_t i, int_t j)
 	scaledHeight = JavaArithmetic::doubleToInt(std::ceil(field_25120_b));
 }
 
-int_t ScaledResolution::getScaledWidth()
+int_t ScaledResolution::getScaledWidth() const
 {
 	return scaledWidth;
 }
 
-int_t ScaledResolution::getScaledHeight()
+int_t ScaledResolution::getScaledHeight() const
 {
 	return scaledHeight;
 }

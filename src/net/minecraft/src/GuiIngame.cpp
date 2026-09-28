@@ -924,14 +924,13 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 }
 #endif
 
-void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mouseX, int_t mouseY)
+void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mouseX, int_t mouseY, const ScaledResolution &sr)
 {
-	ScaledResolution sr(mc->gameSettings, mc->displayWidth, mc->displayHeight);
 	int_t sw = sr.getScaledWidth();
 	int_t sh = sr.getScaledHeight();
 	FontRenderer *fr = mc->fontRenderer;
 
-	mc->entityRenderer->setupOverlayRendering();
+	mc->entityRenderer->setupOverlayRendering(sr);
 	resetOverlayGLState();
 
 	if (Minecraft::isFancyGraphicsEnabled())
@@ -1064,9 +1063,21 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 
 	if (mc->playerController->func_35642_f() && mc->thePlayer->experienceLevel > 0)
 	{
-		const std::string level = std::to_string(mc->thePlayer->experienceLevel);
+		// experienceLevel only changes on level-up (rare); this HUD number is
+		// otherwise drawn every frame XP is held, so the text + its measured
+		// width are cached here instead of rebuilt/re-measured every frame.
+		static int_t cachedLevel = -1;
+		static std::string cachedLevelText;
+		static int_t cachedLevelWidth = 0;
+		if (cachedLevel != mc->thePlayer->experienceLevel)
+		{
+			cachedLevel = mc->thePlayer->experienceLevel;
+			cachedLevelText = std::to_string(cachedLevel);
+			cachedLevelWidth = fr->getStringWidth(cachedLevelText);
+		}
+		const std::string &level = cachedLevelText;
 		const int_t color = 0x80ff20;
-		const int_t x = (sw - fr->getStringWidth(level)) / 2;
+		const int_t x = (sw - cachedLevelWidth) / 2;
 		const int_t y = hudHeight - 35;
 		fr->drawString(level, x + 1, y, 0);
 		fr->drawString(level, x - 1, y, 0);

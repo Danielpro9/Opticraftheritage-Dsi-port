@@ -1428,7 +1428,7 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
             const PlatformDrawSnapshot hudDrawStart = platformProfileDrawSnapshot();
 #endif
             mc->ingameGUI->renderGameOverlay(partialTicks, mc->currentScreen != nullptr,
-                                             scaledMouseX, scaledMouseY);
+                                             scaledMouseX, scaledMouseY, scaledResolution);
 #if PLATFORM_PROFILE_RENDER_PHASES
             platformProfileRenderPhaseEnd(cycHud, PlatformRenderPhase::Hud);
 #endif
@@ -2325,6 +2325,11 @@ void EntityRenderer::renderRainSnow(float partialTicks)
 void EntityRenderer::setupOverlayRendering()
 {
     ScaledResolution scaledResolution(mc->gameSettings, mc->displayWidth, mc->displayHeight);
+    setupOverlayRendering(scaledResolution);
+}
+
+void EntityRenderer::setupOverlayRendering(const ScaledResolution &scaledResolution)
+{
 	renderViewport(0, 0, mc->displayWidth, mc->displayHeight);
 
     // Note for the Wii port: disabling GL_LIGHTING and GL_FOG here was tried, on

@@ -14,6 +14,16 @@ enum PlatformTextAction : std::uint32_t
     PLATFORM_TEXT_SHIFT  = 1u << 7,
     PLATFORM_TEXT_ENTER  = 1u << 8,
     PLATFORM_TEXT_CLOSE  = 1u << 9,
+    // Container-screen-only actions: "place one item from the held stack"
+    // (vanilla's right-click-on-a-slot) and "drop the whole held stack"
+    // (vanilla's left-click outside the inventory). Only DSi's
+    // mapTextButtons() sets these today (from L and R -- see
+    // InputBackend_DSI.cpp and ContainerSlotNavigator.cpp), added generically
+    // here rather than as a DSi-only constant in case another platform ever
+    // wants a dedicated binding too; PS2/WII's own snapshot builders simply
+    // never set them, so this is purely additive and changes nothing there.
+    PLATFORM_TEXT_SECONDARY = 1u << 10,
+    PLATFORM_TEXT_DROP      = 1u << 11,
 };
 
 struct PlatformTextInputSnapshot

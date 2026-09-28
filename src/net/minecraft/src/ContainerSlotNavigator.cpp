@@ -43,6 +43,7 @@ void ContainerSlotNavigator::notifyOpen(GuiContainer *guiContainer, const Layout
         controllerActive = false;
         pendingPrimary = false;
         pendingSecondary = false;
+        pendingDrop = false;
         nextRepeatMs = consoleInputNowMs() + REPEAT_DELAY_MS;
     }
     layout = guiLayout;
@@ -61,6 +62,7 @@ void ContainerSlotNavigator::notifyClosed(const GuiContainer *guiContainer)
     ignorePointerMotionOnce = false;
     pendingPrimary = false;
     pendingSecondary = false;
+    pendingDrop = false;
     nextRepeatMs = 0;
     platformSetContainerNavigationActive(false);
 }
@@ -157,6 +159,13 @@ bool ContainerSlotNavigator::consumeSecondaryClick()
     return value;
 }
 
+bool ContainerSlotNavigator::consumeDropClick()
+{
+    const bool value = pendingDrop;
+    pendingDrop = false;
+    return value;
+}
+
 Slot *ContainerSlotNavigator::pickSlot(int_t originX, int_t originY, int_t dirX, int_t dirY) const
 {
     if (screen == nullptr || screen->inventorySlots == nullptr)
@@ -246,13 +255,34 @@ void ContainerSlotNavigator::tick()
     // a GameCube pad, Classic Controller or Wiimote. The Wiimote's B also
     // reaches here as mouse button 1 through the pointer; GuiContainer::
     // mouseClicked drops that edge while the controller owns the selection,
-    // the same way it does for A, so the slot is not clicked twice.
+    // the same way it does for A, so the slot is not clicked twice -- hence
+    // gating this specific trigger on !pointerOwnsClick.
     if (!pointerOwnsClick && (pad.pressed & PLATFORM_TEXT_BACK) != 0)
     {
         activateControllerSelection();
         if (controllerSelectionActive())
             pendingSecondary = true;
     }
+    // PLATFORM_TEXT_SECONDARY/DROP (DSi's L/R, see InputBackend_DSI.cpp's
+    // mapTextButtons()): dedicated physical buttons, not reachable through
+    // the touch pointer's own synthesized clicks at all (dsiPushGameplayKeyEvents()
+    // stops treating L/R as mouse buttons the moment a screen is open, exactly
+    // so they cannot double up with these), so unlike BACK above these are
+    // NOT gated on pointerOwnsClick -- they work the same whether the player
+    // is currently navigating this screen by touch or by D-pad. L still goes
+    // through activateControllerSelection() (place-one targets a slot, and
+    // that call is what lets a touch-hovered slot become the target the
+    // first time L is pressed, the same handoff A/BACK already do). R drops
+    // the whole held stack (vanilla's windowClick(slotId=-999, button=0)),
+    // which is not tied to any slot at all, so it skips that call.
+    if ((pad.pressed & PLATFORM_TEXT_SECONDARY) != 0)
+    {
+        activateControllerSelection();
+        if (controllerSelectionActive())
+            pendingSecondary = true;
+    }
+    if ((pad.pressed & PLATFORM_TEXT_DROP) != 0)
+        pendingDrop = true;
 
     int_t dirX = 0;
     int_t dirY = 0;

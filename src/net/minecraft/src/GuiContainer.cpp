@@ -97,6 +97,14 @@ void GuiContainer::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 		handleMouseClick(selectedSlot, selectedSlot->slotNumber, 0, false);
 	if (selectedSlot != nullptr && navigator.consumeSecondaryClick())
 		handleMouseClick(selectedSlot, selectedSlot->slotNumber, 1, false);
+	// Drop the held stack (DSi's R -- see ContainerSlotNavigator.cpp's own
+	// comment): slot-independent, so this fires whether or not a slot is
+	// currently selected, unlike primary/secondary above. slotId -999 with
+	// button 0 is vanilla's own "clicked outside the inventory" convention
+	// (Container::windowClick()), the same thing a real mouse click past the
+	// panel edge would produce; a no-op if nothing is currently held.
+	if (navigator.consumeDropClick())
+		handleMouseClick(nullptr, -999, 0, false);
 #endif
 
 	drawGuiContainerBackgroundLayer(partialTick);

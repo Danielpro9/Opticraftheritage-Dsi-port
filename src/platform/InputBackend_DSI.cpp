@@ -18,9 +18,17 @@
 // In-game controls, added directly on request. Full scheme:
 //   D-pad            movement (platformGamepadSnapshot()'s leftX/leftY, see
 //                     below)
-//   Touch screen      camera (rightX/rightY, see below)
-//   L                 place block  (keyBindUseItem)
-//   R                 break block  (keyBindAttack)
+//   Touch screen      camera (rightX/rightY, see below) -- a fixed-anchor
+//                     virtual stick, not a raw drag: see the
+//                     g_touchAnchorX/g_touchStickX comment below for why.
+//   L                 place block  (keyBindUseItem) with no screen open;
+//                     place ONE item from the held stack (vanilla's
+//                     right-click) inside a container screen -- see
+//                     ContainerSlotNavigator.cpp
+//   R                 break block  (keyBindAttack) with no screen open;
+//                     drop the held stack (vanilla's click-outside-the-
+//                     inventory) inside a container screen -- see
+//                     ContainerSlotNavigator.cpp
 //   A                 jump         (keyBindJump)
 //   X                 inventory    (keyBindInventory)
 //   Y                 chat         (keyBindChat -- multiplayer only, see
@@ -53,24 +61,54 @@
 // presses -- this only ever reads back the state that scan already captured.
 namespace
 {
-// Touch-drag camera state. Updated once a frame by dsiUpdateTouchCameraDelta()
-// (called from Display_dsi.cpp's processMessages(), see that function's own
-// comment on why this can only happen once a frame), read as often as needed
-// by platformGamepadSnapshot() afterwards without disturbing it.
+// Touch-as-analog-stick camera state. Updated once a frame by
+// dsiUpdateTouchCameraDelta() (called from Display_dsi.cpp's
+// processMessages(), see that function's own comment on why this can only
+// happen once a frame), read as often as needed by
+// platformGamepadSnapshot() afterwards without disturbing it.
+//
+// REDESIGNED from a frame-to-frame drag delta to a fixed-anchor virtual
+// stick, on real-hardware feedback: the old scheme reported the pixel
+// distance the finger moved SINCE LAST FRAME, which drops back to zero the
+// instant the finger stops moving even if it is still held down and away
+// from where it started -- turning the camera meant repeatedly swipe,
+// (motion stops, turn stops), lift, swipe again, exactly like nudging a
+// D-pad instead of holding a stick over. Consulted ClassiCube's own DS
+// port (src/nds/Window_NDS.c's ProcessTouchInput()) for comparison: it
+// only forwards raw touch positions into its generic multi-touch
+// abstraction and does not implement anything DS-specific here either, so
+// there was no existing "reference implementation" to copy -- this is a
+// fresh design, not a port.
+//
+// New model: the FIRST touched position each press becomes a fixed anchor
+// (like a stick's center); every frame after that while still touching
+// reports the CURRENT offset from that anchor, not from the previous
+// frame's position. Holding the finger stationary at an offset keeps
+// reporting that same nonzero offset every frame -- exactly the "hold in a
+// direction to keep turning" feel EntityRenderer.cpp's direct-camera path
+// already expects (it already treats rightX/rightY as a continuous
+// per-frame rate, scaled by elapsed time -- see its own comment -- not a
+// one-shot delta to consume; only the OLD production side here was
+// mismatched with that consumer, not the consumer itself). Releasing and
+// touching down again picks a new anchor whereever the finger lands next,
+// so there is no stale offset from a finished gesture.
 bool g_touchWasDown = false;
-int g_prevTouchX = 0;
-int g_prevTouchY = 0;
-float g_touchDeltaX = 0.0f;
-float g_touchDeltaY = 0.0f;
+int g_touchAnchorX = 0;
+int g_touchAnchorY = 0;
+float g_touchStickX = 0.0f;
+float g_touchStickY = 0.0f;
 
-// A full-speed drag across this many pixels in one frame reads as a fully
-// deflected stick (matches the [-1, 1] range Ps2AnalogFilter::apply()
-// produces for PS2's real stick, which PLATFORM_DIRECT_CAMERA_SCALE and
-// friends were tuned against -- see DsiInputTuning.h). Picked as a fraction
-// of the 256px-wide touch screen that leaves room for a controlled, less-
-// than-full-screen drag to still reach full turn speed; unverified against
-// real hardware feel, same caveat as DsiInputTuning.h's own.
-constexpr float kTouchDragPixelsForFullDeflection = 24.0f;
+// The anchor-to-finger offset, in pixels, that reads as a fully deflected
+// stick (matches the [-1, 1] range Ps2AnalogFilter::apply() produces for
+// PS2's real stick, which PLATFORM_DIRECT_CAMERA_SCALE and friends were
+// tuned against -- see DsiInputTuning.h). Larger than the old drag-delta
+// version's 24px on purpose: that number sized a single FRAME's worth of
+// motion, this one sizes a SUSTAINED hold offset a thumb can comfortably
+// keep still at without drifting past the physical screen edge from a
+// reasonably-centred touch-down point. Unverified against real hardware
+// feel, same caveat as DsiInputTuning.h's own -- the first real-hardware
+// test of this redesign is what confirms whether 40px feels right.
+constexpr float kTouchStickPixelsForFullDeflection = 40.0f;
 
 // Previous frame's held mask for the L/R/A/X/Y action buttons, so
 // dsiPushGameplayKeyEvents() can tell a fresh press/release apart from a
@@ -112,9 +150,9 @@ void dsiFireMenuPointerClick()
 	lwjgl::Mouse::detail::pushButton(0, false, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
 }
 
-float normalizeDrag(float deltaPixels)
+float normalizeStickOffset(float offsetPixels)
 {
-	float value = deltaPixels / kTouchDragPixelsForFullDeflection;
+	float value = offsetPixels / kTouchStickPixelsForFullDeflection;
 	if (value < -1.0f) value = -1.0f;
 	if (value > 1.0f) value = 1.0f;
 	return value;
@@ -134,6 +172,15 @@ std::uint32_t mapTextButtons(std::uint32_t bits)
 	// checks -- Circle for CLOSE, the "leave this screen" check most legacy
 	// screens gate on, e.g. LegacyOptionsScreen.cpp's CLOSE|SHIFT check).
 	if (bits & KEY_B)     value |= PLATFORM_TEXT_BACK | PLATFORM_TEXT_CLOSE;
+	// Real-hardware request: L/R (world "place block"/"break block" while no
+	// screen is open -- see dsiPushGameplayKeyEvents() below, which stops
+	// synthesizing those while a screen IS open specifically so this doesn't
+	// double up) double as dedicated container-screen actions instead:
+	// ContainerSlotNavigator.cpp reads these two bits to place one item from
+	// the held stack (L) or drop the whole held stack (R), independent of
+	// whichever slot A/B's existing primary/secondary click targets.
+	if (bits & KEY_L)     value |= PLATFORM_TEXT_SECONDARY;
+	if (bits & KEY_R)     value |= PLATFORM_TEXT_DROP;
 	return value;
 }
 }
@@ -153,26 +200,26 @@ void dsiUpdateTouchCameraDelta()
 	touchRead(&touch);
 	const bool touching = (keysHeld() & KEY_TOUCH) != 0;
 
-	// Only a real drag (touching now, was touching last frame too) produces a
-	// delta. A fresh touch-down has no previous position on this drag to
-	// diff against -- reporting one would be the jump from wherever the last
-	// drag ended to this new, unrelated touch-down point.
-	if (touching && g_touchWasDown)
+	// A fresh touch-down (touching now, was NOT touching last frame) plants
+	// a new anchor right where the finger landed -- this press's stick
+	// center, unrelated to wherever the previous press's anchor was.
+	if (touching && !g_touchWasDown)
 	{
-		g_touchDeltaX = static_cast<float>(static_cast<int>(touch.px) - g_prevTouchX);
-		g_touchDeltaY = static_cast<float>(static_cast<int>(touch.py) - g_prevTouchY);
-	}
-	else
-	{
-		g_touchDeltaX = 0.0f;
-		g_touchDeltaY = 0.0f;
+		g_touchAnchorX = touch.px;
+		g_touchAnchorY = touch.py;
 	}
 
 	if (touching)
 	{
-		g_prevTouchX = touch.px;
-		g_prevTouchY = touch.py;
+		g_touchStickX = static_cast<float>(static_cast<int>(touch.px) - g_touchAnchorX);
+		g_touchStickY = static_cast<float>(static_cast<int>(touch.py) - g_touchAnchorY);
 	}
+	else
+	{
+		g_touchStickX = 0.0f;
+		g_touchStickY = 0.0f;
+	}
+
 	g_touchWasDown = touching;
 }
 
@@ -250,7 +297,7 @@ void dsiUpdateMenuPointer(bool inMenu)
 		g_dsiMenuInputOwner = DsiMenuInputOwner::Pad;
 }
 
-void dsiPushGameplayKeyEvents()
+void dsiPushGameplayKeyEvents(bool inMenu)
 {
 	const std::uint32_t held = keysHeld();
 	// keysDown(): bits newly pressed since the scanKeys() call Display_dsi.cpp's
@@ -259,13 +306,26 @@ void dsiPushGameplayKeyEvents()
 	const std::uint32_t pressedEdge = keysDown();
 	const std::uint32_t changed = held ^ g_prevActionButtons;
 
-	// L/R: place/break. keyBindUseItem/keyBindAttack default to mouse
-	// buttons 1/0 (GameSettings.cpp's -99/-100 keyCodes), so a real mouse
-	// press is what these need to look like, not a keyboard key.
-	if (changed & KEY_L)
-		lwjgl::Mouse::detail::pushButton(1, (held & KEY_L) != 0, 0, 0);
-	if (changed & KEY_R)
-		lwjgl::Mouse::detail::pushButton(0, (held & KEY_R) != 0, 0, 0);
+	// L/R: place/break, but ONLY with no screen open. keyBindUseItem/
+	// keyBindAttack default to mouse buttons 1/0 (GameSettings.cpp's
+	// -99/-100 keyCodes), so a real mouse press is what these need to look
+	// like, not a keyboard key -- and that is exactly the problem while a
+	// screen IS open: GuiContainer::mouseClicked() reacts to those same
+	// button 0/1 events as a real click at wherever the cursor currently
+	// is, which would double up with (or fire instead of) the dedicated L=
+	// place-one/R=drop container actions mapTextButtons() now derives from
+	// these same two physical buttons (see ContainerSlotNavigator.cpp).
+	// Gating on inMenu the same way dsiUpdateMenuPointer() already does
+	// keeps L/R meaning exactly one thing at a time -- world block place/
+	// break with nothing open, dedicated inventory actions with a container
+	// screen open -- instead of both at once.
+	if (!inMenu)
+	{
+		if (changed & KEY_L)
+			lwjgl::Mouse::detail::pushButton(1, (held & KEY_L) != 0, 0, 0);
+		if (changed & KEY_R)
+			lwjgl::Mouse::detail::pushButton(0, (held & KEY_R) != 0, 0, 0);
+	}
 
 	// A/X/Y: jump/inventory/chat, keyBindJump/keyBindInventory/keyBindChat's
 	// default keyboard keys (space/E/T).
@@ -340,14 +400,14 @@ PlatformGamepadSnapshot platformGamepadSnapshot(int)
 	out.leftX = hotbarChordActive ? 0.0f : (held & KEY_LEFT) ? -1.0f : (held & KEY_RIGHT) ? 1.0f : 0.0f;
 	out.leftY = (held & KEY_UP)   ? -1.0f : (held & KEY_DOWN)  ? 1.0f : 0.0f;
 
-	// Touch-drag delta, normalized to the same [-1, 1] "stick deflection"
-	// range EntityRenderer.cpp's direct-camera path expects. See
+	// Touch-as-stick offset, normalized to the same [-1, 1] "stick
+	// deflection" range EntityRenderer.cpp's direct-camera path expects. See
 	// dsiUpdateTouchCameraDelta() for where this is actually computed --
 	// exactly once a frame, not here, so calling this more than once in the
 	// same frame (movement and camera each call it separately) reads a
 	// stable value instead of consuming it.
-	out.rightX = normalizeDrag(g_touchDeltaX);
-	out.rightY = normalizeDrag(g_touchDeltaY);
+	out.rightX = normalizeStickOffset(g_touchStickX);
+	out.rightY = normalizeStickOffset(g_touchStickY);
 
 	return out;
 }

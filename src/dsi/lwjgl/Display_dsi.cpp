@@ -100,15 +100,17 @@ void processMessages()
 {
 	scanKeys();
 	dsiUpdateTouchCameraDelta();
-	dsiPushGameplayKeyEvents();
 
 	// Same "ask the game directly" approach Display_wii.cpp's processMessages()
 	// already uses (see its own comment): the input layer cannot infer
 	// whether a GuiScreen is open, and getting it wrong either feeds the menu
 	// pointer gameplay camera-drag touches or feeds gameplay a stray menu
-	// click.
+	// click. Computed once and shared: dsiPushGameplayKeyEvents() also needs
+	// it now, to know whether L/R currently mean world place/break or a
+	// container screen's place-one/drop actions (see its own comment).
 	Minecraft *mc = Minecraft::getMinecraft();
 	const bool inMenu = (mc != nullptr && mc->currentScreen != nullptr);
+	dsiPushGameplayKeyEvents(inMenu);
 	dsiUpdateMenuPointer(inMenu);
 }
 

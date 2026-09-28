@@ -37,6 +37,11 @@ public:
     void activateControllerSelection();
     bool consumePrimaryClick();
     bool consumeSecondaryClick();
+    // Drop the whole held stack (vanilla's click-outside-the-inventory).
+    // DSi-only today (mapped from R, see ContainerSlotNavigator.cpp's
+    // tick()); slot-independent, so unlike primary/secondary this does not
+    // need a selected slot to consume.
+    bool consumeDropClick();
 
 private:
     ContainerSlotNavigator() = default;
@@ -54,6 +59,7 @@ private:
     bool ignorePointerMotionOnce = false;
     bool pendingPrimary = false;
     bool pendingSecondary = false;
+    bool pendingDrop = false;
     int nextRepeatMs = 0;
 };
 

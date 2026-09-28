@@ -31,22 +31,29 @@ bool dsiEnsureStorage();
 // null pointer to check. Calls dsiEnsureStorage() for you.
 const char* dsiGetSaveDir();
 
-// Reads the touch screen and updates the per-frame stylus-drag delta
+// Reads the touch screen and updates the fixed-anchor virtual-stick offset
 // InputBackend_DSI.cpp's platformGamepadSnapshot() reports as the camera's
-// "right stick". Must run exactly once per frame -- Display_dsi.cpp's
-// processMessages() is the one call site, same place scanKeys() already runs
-// once per frame for the same reason (see that function's own comment).
-// Calling this more than once a frame, or from platformGamepadSnapshot()
-// itself, would compute the delta against a position already moved past by
-// an earlier call the same frame, undercounting fast drags.
+// "right stick" -- see that file's own g_touchAnchorX/g_touchStickX comment
+// for the redesign this replaced (a frame-to-frame drag delta that reset to
+// zero the instant the finger stopped moving, instead of a sustained offset
+// from where the finger first touched down). Must run exactly once per
+// frame -- Display_dsi.cpp's processMessages() is the one call site, same
+// place scanKeys() already runs once per frame for the same reason (see
+// that function's own comment). Calling this more than once a frame, or
+// from platformGamepadSnapshot() itself, would recompute the offset against
+// a touch sample already consumed this frame.
 void dsiUpdateTouchCameraDelta();
 
 // Turns the L/R/A/X/Y/hotbar-chord action buttons into the same
 // lwjgl::Keyboard/Mouse events a real keyboard/mouse press would queue (see
 // InputBackend_DSI.cpp's header comment for the full button scheme). Must
 // run once a frame, same place and for the same reason as
-// dsiUpdateTouchCameraDelta() above.
-void dsiPushGameplayKeyEvents();
+// dsiUpdateTouchCameraDelta() above. inMenu (computed the same way
+// dsiUpdateMenuPointer()'s own caller does, see Display_dsi.cpp) suppresses
+// L/R's world place/break synthesis specifically while a screen is open, so
+// they can double as ContainerSlotNavigator.cpp's dedicated place-one/drop
+// container actions instead without the two meanings firing at once.
+void dsiPushGameplayKeyEvents(bool inMenu);
 
 // Feeds the touch screen into lwjgl::Mouse as an absolute-position pointer
 // while a GuiScreen is open (inMenu), the same role the Wiimote IR pointer

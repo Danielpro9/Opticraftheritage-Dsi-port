@@ -222,9 +222,16 @@ PlatformTextInputSnapshot platformTextInputSnapshot(int)
 // mouse-sensitivity formula (EntityRenderer.cpp, unmodified, exactly PC's)
 // compensates for that physical difference at the source rather than
 // changing the shared formula itself, which PC still relies on for its own
-// feel. 2.5x is a first real-hardware-informed guess, not a measurement --
-// raise or lower it based on the next round of hands-on feedback.
-constexpr float kTouchCameraSensitivityScale = 2.5f;
+// feel. The original 2.5x (applied equally to both axes) was a first
+// real-hardware-informed guess, not a measurement -- first hands-on
+// feedback round: overall feel was too slow, yaw (turning left/right)
+// noticeably more so than pitch (looking up/down), which already felt
+// close to right. Split into two knobs instead of one shared scale so yaw
+// can be raised more without over-shooting pitch; still just an informed
+// estimate from that one feedback round, not a measurement -- keep tuning
+// from further hands-on rounds.
+constexpr float kTouchCameraSensitivityScaleX = 3.5f;
+constexpr float kTouchCameraSensitivityScaleY = 2.8f;
 
 void dsiUpdateTouchCameraDelta(bool inMenu)
 {
@@ -244,8 +251,8 @@ void dsiUpdateTouchCameraDelta(bool inMenu)
 		const int rawDy = static_cast<int>(touch.py) - g_touchLastY;
 		if (rawDx != 0 || rawDy != 0)
 		{
-			const int dx = static_cast<int>(std::lround(rawDx * kTouchCameraSensitivityScale));
-			const int dy = static_cast<int>(std::lround(-rawDy * kTouchCameraSensitivityScale));
+			const int dx = static_cast<int>(std::lround(rawDx * kTouchCameraSensitivityScaleX));
+			const int dy = static_cast<int>(std::lround(-rawDy * kTouchCameraSensitivityScaleY));
 			lwjgl::Mouse::detail::pushMotion(touch.px, touch.py, dx, dy);
 		}
 	}

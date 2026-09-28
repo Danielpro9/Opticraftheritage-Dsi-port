@@ -107,6 +107,13 @@ private:
 	// func_949_a — marks all WorldRenderers whose chunk coords fall in [i..l, j..i1, k..j1] dirty
 	void markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_t i1, int_t j1);
 	void renderStars();
+#ifdef DSI_PLATFORM
+	// Builds the fast-cloud quad grid once (position + UV only, no per-vertex
+	// color -- clouds' color is fog-dependent and applied per frame via
+	// renderColor4f right before renderStaticMeshDraw, same precedent as
+	// skyMesh2's renderColor3f above its own renderStaticMeshDraw call).
+	void buildCloudMesh();
+#endif
 	void markRenderersForNewPosition(int_t i, int_t j, int_t k);
 #if PLATFORM_CENTER_VERTICAL_RENDERERS
 	void remapCenteredVerticalRendererSlots(int_t newStartSection);
@@ -177,6 +184,14 @@ private:
 	RenderStaticMesh starMesh;
 	RenderStaticMesh skyMesh;
 	RenderStaticMesh skyMesh2;
+#ifdef DSI_PLATFORM
+	// Fast-cloud grid: static once built (renderClouds() no longer
+	// re-tessellates its ~1024 vertices every frame -- scroll/height are
+	// applied via the texture matrix and a modelview translate instead, see
+	// buildCloudMesh()/renderClouds()). PS2/WII keep the original per-frame
+	// tessellation path unchanged; this is DSi-only.
+	RenderStaticMesh cloudMesh;
+#endif
 #else
 	int_t starGLCallList = 0;
 	int_t glSkyList = 0;

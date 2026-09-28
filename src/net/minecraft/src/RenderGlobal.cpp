@@ -176,6 +176,10 @@ RenderGlobal::RenderGlobal(Minecraft *minecraft, RenderEngine *renderengine)
 	renderStaticMeshCreate(starMesh);
 	renderStaticMeshCreate(skyMesh);
 	renderStaticMeshCreate(skyMesh2);
+#ifdef DSI_PLATFORM
+	renderStaticMeshCreate(cloudMesh);
+	buildCloudMesh();
+#endif
 
 #if !PLATFORM_PS2 || PS2_ENABLE_SKY_STARS
 	renderStars();
@@ -289,6 +293,9 @@ RenderGlobal::~RenderGlobal()
 	renderStaticMeshDestroy(starMesh);
 	renderStaticMeshDestroy(skyMesh);
 	renderStaticMeshDestroy(skyMesh2);
+#ifdef DSI_PLATFORM
+	renderStaticMeshDestroy(cloudMesh);
+#endif
 #endif
 #if !PLATFORM_PS2
 	for (RenderList *&renderList : allRenderLists)
@@ -1865,6 +1872,37 @@ void RenderGlobal::renderSky(float f)
 	renderDepthMask(true);
 }
 
+#ifdef DSI_PLATFORM
+void RenderGlobal::buildCloudMesh()
+{
+	// Local-space grid only -- no baked height or scroll offset (both change
+	// every frame and are applied at draw time instead: height via a
+	// modelview translate, scroll via the texture matrix, same technique
+	// already shipped for the enchant glint overlay -- see
+	// RenderLiving.cpp's resetLivingRenderGLState()/glint texture-matrix
+	// translate). No per-vertex color either, same precedent as skyMesh2.
+	constexpr byte_t byte0 = 32;
+	constexpr int_t i = 256 / byte0;
+	constexpr float f6 = 0.0004882813f;
+
+	Tessellator *tessellator = &Tessellator::instance;
+	tessellator->startDrawingQuads();
+
+	for (int_t l = -byte0 * i; l < byte0 * i; l += byte0)
+	{
+		for (int_t i1 = -byte0 * i; i1 < byte0 * i; i1 += byte0)
+		{
+			tessellator->addVertexWithUV(l + 0, 0.0f, i1 + byte0, (float)(l + 0) * f6, (float)(i1 + byte0) * f6);
+			tessellator->addVertexWithUV(l + byte0, 0.0f, i1 + byte0, (float)(l + byte0) * f6, (float)(i1 + byte0) * f6);
+			tessellator->addVertexWithUV(l + byte0, 0.0f, i1 + 0, (float)(l + byte0) * f6, (float)(i1 + 0) * f6);
+			tessellator->addVertexWithUV(l + 0, 0.0f, i1 + 0, (float)(l + 0) * f6, (float)(i1 + 0) * f6);
+		}
+	}
+
+	tessellator->finishStaticMesh(cloudMesh);
+}
+#endif
+
 void RenderGlobal::renderClouds(float f)
 {
 	if (!mc->theWorld->worldProvider->func_48217_e())
@@ -1882,11 +1920,6 @@ void RenderGlobal::renderClouds(float f)
 	renderDisable(RenderCapability::CullFace);
 
 	float f1 = (float)(mc->renderViewEntity->lastTickPosY + (mc->renderViewEntity->posY - mc->renderViewEntity->lastTickPosY) * (double)f);
-
-	byte_t byte0 = 32;
-	int_t i = 256 / byte0;
-
-	Tessellator *tessellator = &Tessellator::instance;
 
 	// Cached rather than looked up fresh every frame -- clouds default to
 	// "Fast" (on) rather than off on DSi (GameDefaults.cpp), so this is this
@@ -1932,6 +1965,31 @@ void RenderGlobal::renderClouds(float f)
 	float f10 = static_cast<float>(cloudLocalX * static_cast<tess_coord_t>(f6));
 	float f11 = static_cast<float>(cloudLocalZ * static_cast<tess_coord_t>(f6));
 
+#ifdef DSI_PLATFORM
+	// Static grid built once in the constructor (buildCloudMesh()); height
+	// and scroll are the only per-frame-varying quantities, applied here via
+	// a modelview translate and a texture-matrix translate instead of
+	// rebuilding all ~1024 vertices every frame.
+	renderColor4f(f2, f3, f4, 0.8f);
+
+	renderMatrixMode(RenderMatrixMode::Texture);
+	renderLoadIdentity();
+	renderTranslate(f10, f11, 0.0f);
+	renderMatrixMode(RenderMatrixMode::ModelView);
+
+	renderPushMatrix();
+	renderTranslate(0.0f, f9, 0.0f);
+	renderStaticMeshDraw(cloudMesh);
+	renderPopMatrix();
+
+	renderMatrixMode(RenderMatrixMode::Texture);
+	renderLoadIdentity();
+	renderMatrixMode(RenderMatrixMode::ModelView);
+#else
+	byte_t byte0 = 32;
+	int_t i = 256 / byte0;
+
+	Tessellator *tessellator = &Tessellator::instance;
 	tessellator->startDrawingQuads();
 	tessellator->setColorRGBA_F(f2, f3, f4, 0.8f);
 
@@ -1947,6 +2005,7 @@ void RenderGlobal::renderClouds(float f)
 	}
 
 	tessellator->draw();
+#endif
 
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	renderDisable(RenderCapability::Blend);

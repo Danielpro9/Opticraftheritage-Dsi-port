@@ -8,6 +8,7 @@
 #include "AxisAlignedBB.h"
 #include "EntityLiving.h"
 #include "Item.h"
+#include "MathHelper.h"
 #include "ItemPotion.h"
 #include "MovingObjectPosition.h"
 #include "Potion.h"
@@ -70,7 +71,7 @@ void EntityPotion::onImpact(MovingObjectPosition *hit)
                 if (distanceSq >= 16.0)
                     continue;
 
-                double strength = 1.0 - JavaMath::sqrt(distanceSq) / 4.0;
+                double strength = 1.0 - MathHelper::sqrt_double(distanceSq) / 4.0;
                 if (hit != nullptr && entity == hit->entityHit)
                     strength = 1.0;
 

@@ -97,7 +97,7 @@ void Explosion::doExplosionA()
                 double d  = ((float)j  / ((float)i - 1.0f)) * 2.0f - 1.0f;
                 double d1 = ((float)l  / ((float)i - 1.0f)) * 2.0f - 1.0f;
                 double d2 = ((float)j1 / ((float)i - 1.0f)) * 2.0f - 1.0f;
-                double d3 = JavaMath::sqrt(d * d + d1 * d1 + d2 * d2);
+                double d3 = MathHelper::sqrt_double(d * d + d1 * d1 + d2 * d2);
                 d  /= d3;
                 d1 /= d3;
                 d2 /= d3;

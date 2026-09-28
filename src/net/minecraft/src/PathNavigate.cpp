@@ -360,9 +360,9 @@ bool PathNavigate::isDirectPathBetweenPoints(double startX, double startY, doubl
 	if (lengthSq < static_cast<path_math_t>(1.0e-8))
 		return false;
 #if PLATFORM_FLOAT_ENTITY_AI_MATH
-	path_math_t invLength = 1.0f / std::sqrt(lengthSq);
+	path_math_t invLength = 1.0f / MathHelper::sqrt_float(lengthSq);
 #else
-	path_math_t invLength = 1.0 / JavaMath::sqrt(lengthSq);
+	path_math_t invLength = 1.0 / MathHelper::sqrt_double(lengthSq);
 #endif
 	dx *= invLength;
 	dz *= invLength;

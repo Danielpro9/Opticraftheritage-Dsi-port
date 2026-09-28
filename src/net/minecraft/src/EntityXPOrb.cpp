@@ -81,7 +81,7 @@ void EntityXPOrb::onUpdate()
 		const double dx = (player->posX - posX) / attractionRange;
 		const double dy = (player->posY + static_cast<double>(player->getEyeHeight()) - posY) / attractionRange;
 		const double dz = (player->posZ - posZ) / attractionRange;
-		const double distance = JavaMath::sqrt(dx * dx + dy * dy + dz * dz);
+		const double distance = MathHelper::sqrt_double(dx * dx + dy * dy + dz * dz);
 		double strength = 1.0 - distance;
 		if (strength > 0.0 && distance > 0.0)
 		{

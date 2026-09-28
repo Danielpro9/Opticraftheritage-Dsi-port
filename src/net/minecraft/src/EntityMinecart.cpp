@@ -353,20 +353,20 @@ void EntityMinecart::onUpdate()
 		const int_t (&ai)[2][3] = railDirections[i1];
 		double d9  = (double)(ai[1][0] - ai[0][0]);
 		double d10 = (double)(ai[1][2] - ai[0][2]);
-		double d11 = JavaMath::sqrt(d9 * d9 + d10 * d10);
+		double d11 = MathHelper::sqrt_double(d9 * d9 + d10 * d10);
 		double d12 = motionX * d9 + motionZ * d10;
 		if (d12 < 0.0)
 		{
 			d9  = -d9;
 			d10 = -d10;
 		}
-		double d13 = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+		double d13 = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 		motionX = (d13 * d9)  / d11;
 		motionZ = (d13 * d10) / d11;
 
 		if (flag2)
 		{
-			double d16 = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+			double d16 = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 			if (d16 < 0.029999999999999999)
 			{
 				motionX *= 0.0;
@@ -475,7 +475,7 @@ void EntityMinecart::onUpdate()
 		if (vec3d1 != nullptr && vec3d != nullptr)
 		{
 			double d28 = (vec3d->yCoord - vec3d1->yCoord) * 0.050000000000000003;
-			double d14 = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+			double d14 = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 			if (d14 > 0.0)
 			{
 				motionX = (motionX / d14) * (d14 + d28);
@@ -488,7 +488,7 @@ void EntityMinecart::onUpdate()
 		int_t l1 = MathHelper::floor_double(posZ);
 		if (k1 != i || l1 != k)
 		{
-			double d15 = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+			double d15 = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 			motionX = d15 * (double)(k1 - i);
 			motionZ = d15 * (double)(l1 - k);
 		}
@@ -515,7 +515,7 @@ void EntityMinecart::onUpdate()
 
 		if (flag1)
 		{
-			double d31 = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+			double d31 = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 			if (d31 > 0.01)
 			{
 				double d32 = 0.059999999999999998;
@@ -636,7 +636,7 @@ Vec3D *EntityMinecart::getNextRailPosition(double d, double d1, double d2, doubl
 	const int_t (&ai)[2][3] = railDirections[i1];
 	double d4 = (double)(ai[1][0] - ai[0][0]);
 	double d5 = (double)(ai[1][2] - ai[0][2]);
-	double d6 = JavaMath::sqrt(d4 * d4 + d5 * d5);
+	double d6 = MathHelper::sqrt_double(d4 * d4 + d5 * d5);
 	d4 /= d6;
 	d5 /= d6;
 	d  += d4 * d3;

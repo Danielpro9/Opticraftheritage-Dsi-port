@@ -192,7 +192,7 @@ void EntityBoat::onUpdate()
 			d += 1.0 / (double)i;
 		}
 	}
-	const double horizontalSpeed = JavaMath::sqrt(motionX * motionX + motionZ * motionZ);
+	const double horizontalSpeed = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ);
 	if (horizontalSpeed > 0.15)
 	{
 #if PLATFORM_FLOAT_ENTITY_CORE_MATH

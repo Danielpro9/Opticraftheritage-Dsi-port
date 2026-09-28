@@ -214,7 +214,7 @@ void EntityDragon::updateDragon()
             targetZ = target->posZ;
             const double targetDx = targetX - posX;
             const double targetDz = targetZ - posZ;
-            const double horizontalDistance = JavaMath::sqrt(targetDx * targetDx + targetDz * targetDz);
+            const double horizontalDistance = MathHelper::sqrt_double(targetDx * targetDx + targetDz * targetDz);
             double targetYOffset = static_cast<double>(0.4f) + horizontalDistance / 80.0 - 1.0;
             if (targetYOffset > 10.0)
                 targetYOffset = 10.0;
@@ -268,7 +268,7 @@ void EntityDragon::updateDragon()
 
         randomYawVelocity *= 0.8f;
         const float horizontalSpeed = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ) + 1.0f;
-        double speed = JavaMath::sqrt(motionX * motionX + motionZ * motionZ) + 1.0;
+        double speed = MathHelper::sqrt_double(motionX * motionX + motionZ * motionZ) + 1.0;
         if (speed > 40.0)
             speed = 40.0;
         randomYawVelocity = static_cast<float>(static_cast<double>(randomYawVelocity) +

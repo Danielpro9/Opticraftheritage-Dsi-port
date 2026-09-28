@@ -1743,8 +1743,19 @@ void RenderGlobal::renderSky(float f)
 
 	if (Config::isSunMoonEnabled())
 	{
+		// Cached rather than looked up fresh every frame -- same reasoning as
+		// EntityRenderer.cpp's cachedTerrainTextureId. renderSky() runs every
+		// frame whenever it's called at all (gated by renderDistance < 2 in
+		// EntityRenderer.cpp, not by anything that changes frame to frame).
+		static int cachedSunTextureId = -1;
+		if (cachedSunTextureId < 0)
+			cachedSunTextureId = renderEngine->getTexture("/terrain/sun.png");
+		static int cachedMoonTextureId = -1;
+		if (cachedMoonTextureId < 0)
+			cachedMoonTextureId = renderEngine->getTexture("/terrain/moon_phases.png");
+
 		float f15 = 30.0f;
-		renderBindTexture(renderEngine->getTexture("/terrain/sun.png"));
+		renderBindTexture(cachedSunTextureId);
 		tessellator->startDrawingQuads();
 		tessellator->addVertexWithUV(-f15, 100.0f, -f15, 0.0f, 0.0f);
 		tessellator->addVertexWithUV(f15, 100.0f, -f15, 1.0f, 0.0f);
@@ -1753,7 +1764,7 @@ void RenderGlobal::renderSky(float f)
 		tessellator->draw();
 
 		f15 = 20.0f;
-		renderBindTexture(renderEngine->getTexture("/terrain/moon_phases.png"));
+		renderBindTexture(cachedMoonTextureId);
 		const int_t moonPhase = worldObj->getMoonPhase(f);
 		const int_t moonPhaseColumn = moonPhase % 4;
 		const int_t moonPhaseRow = moonPhase / 4 % 2;
@@ -1879,7 +1890,13 @@ void RenderGlobal::renderClouds(float f)
 
 	Tessellator *tessellator = &Tessellator::instance;
 
-	renderBindTexture(renderEngine->getTexture("/environment/clouds.png"));
+	// Cached rather than looked up fresh every frame -- clouds default to
+	// "Fast" (on) rather than off on DSi (GameDefaults.cpp), so this is this
+	// platform's actively used per-frame cloud path.
+	static int cachedCloudsTextureId = -1;
+	if (cachedCloudsTextureId < 0)
+		cachedCloudsTextureId = renderEngine->getTexture("/environment/clouds.png");
+	renderBindTexture(cachedCloudsTextureId);
 	renderEnable(RenderCapability::Blend);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 
@@ -3400,7 +3417,7 @@ void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 		// never on whether a mesh exists, so testing an empty renderer is both
 		// valid and cheap: the full grid is 75 boxes against six float planes.
 		worldRenderers[i]->updateInFrustrum(icamera);
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_DSI
 		// Drop vanilla's `& 0xf` re-test throttle, but keep the
 		// skipAllRenderPasses() gate. The PS2 rationale above applies only in
 		// part here, and the two halves are worth separating.
@@ -3424,6 +3441,20 @@ void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 		// isFullyInFrustum is not involved: WorldRenderer::updateInFrustrum never
 		// sets it on Wii, so the correctness half of the PS2 note has no Wii
 		// equivalent to fix.
+		//
+		// DSi shares this branch with Wii (added here rather than getting its own
+		// copy): DSi's grid is only PLATFORM_VISIBLE_CHUNK_RADIUS=1 x
+		// PLATFORM_VERTICAL_CHUNK_COUNT=2 (3x2x3 = 18 sections, DsiWorldTuning.h)
+		// -- smaller than PS2's 75-section grid this same box-test-is-cheap
+		// reasoning was already proven against above, so the extra per-frame box
+		// tests this drops the throttle for are trivial. Real-hardware evidence
+		// (this session's own "hand"/"build" renderphase spikes) already
+		// establishes draw-call count as DSi's dominant cost, and a stale
+		// isInFrustum=true is exactly a whole section's worth of draw calls
+		// (dsiBuildRendererStep()'s captured-mesh replay via drawCapturedTerrain())
+		// submitted for a section that has already turned out of view -- worst
+		// exactly while the camera is turning, the same case PS2's own comment
+		// singles out.
 		if (!worldRenderers[i]->skipAllRenderPasses())
 			worldRenderers[i]->updateInFrustrum(icamera);
 #else

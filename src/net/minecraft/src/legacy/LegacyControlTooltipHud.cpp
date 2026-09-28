@@ -80,6 +80,17 @@ int_t visiblePromptCount(const std::string *texts, int_t count)
 // 22 ms render, i.e. batching the glyph submission had not moved it. The setup
 // is what the phase is made of.
 //
+// captureRow()/drawRow() below extend PS2's fix (capture the tessellated
+// glyph quads once and replay them every frame the row is unchanged, instead
+// of re-walking and re-tessellating the same four strings) to DSi too: the
+// underlying mechanism (FontRenderer::captureTextBatch()/drawCapturedText(),
+// Tessellator::capture(), RenderAPI_DSI.cpp's renderDrawCaptured()) is
+// already generic, already PLATFORM_FONT_IMMEDIATE-enabled for DSi, and
+// already proven on real DSi hardware for the (far larger and more complex)
+// case of captured terrain meshes -- this hint row is a much smaller, simpler
+// case of the same capture path, not new machinery. Not yet confirmed on
+// real hardware for this specific use.
+//
 // The cache is keyed on the LABELS rather than on the bindings behind them,
 // because the three backends disagree about what a label depends on: PS2 reads
 // GameSettings for the displayed actions, PC reads them from settings, and Wii
@@ -183,7 +194,7 @@ void emitRow(FontRenderer *font, const PromptRow &row)
 
 bool captureRow(FontRenderer *font, PromptRow &row)
 {
-#if PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT
+#if (PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT) || PLATFORM_DSI
     if (font == nullptr || visiblePromptCount(row.texts, PROMPT_COUNT) <= 0)
         return false;
 
@@ -212,7 +223,7 @@ void drawRow(FontRenderer *font, PromptRow &row)
     if (visiblePromptCount(row.texts, PROMPT_COUNT) <= 0)
         return;
 
-#if PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT
+#if (PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT) || PLATFORM_DSI
     if (!row.capturedValid)
         (void)captureRow(font, row);
     if (row.capturedValid && font->drawCapturedText(row.captured))
@@ -238,7 +249,7 @@ void LegacyControlTooltipHud::render(Minecraft *mc, int_t screenWidth, int_t scr
     if (!refreshRowKey(settings, font, s_row, screenWidth, screenHeight))
     {
         rebuildRow(settings, font, s_row, screenWidth, screenHeight);
-#if PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT
+#if (PLATFORM_PS2 && PS2_CACHE_LEGACY_HINT_TEXT) || PLATFORM_DSI
         (void)captureRow(font, s_row);
 #endif
     }

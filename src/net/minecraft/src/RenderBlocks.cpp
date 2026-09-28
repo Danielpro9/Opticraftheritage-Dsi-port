@@ -407,9 +407,15 @@ bool RenderBlocks::renderSimpleOpaqueCubeLegacy(Block *block, int_t i, int_t j, 
 		if (!usePackedWhiteFaceState)
 		{
 			const int_t color = CustomColorizer::getColorMultiplier(block, blockAccess, i, j, k);
-			red = (float)(color >> 16 & 0xff) / 255.0f;
-			green = (float)(color >> 8 & 0xff) / 255.0f;
-			blue = (float)(color & 0xff) / 255.0f;
+			// *(1.0f/255.0f) instead of /255.0f: a soft-float multiply is
+			// cheaper than a soft-float divide on this FPU-less ARM9, and this
+			// runs for every non-AO block face during every chunk mesh build
+			// (AO is off by default on DSi -- GameDefaults.cpp -- so this is
+			// the actively used path). Same reciprocal-multiply substitution
+			// applied to the other 255.0f/100.0f divides in this file below.
+			red = (float)(color >> 16 & 0xff) * (1.0f / 255.0f);
+			green = (float)(color >> 8 & 0xff) * (1.0f / 255.0f);
+			blue = (float)(color & 0xff) * (1.0f / 255.0f);
 			if (EntityRenderer::anaglyphEnabled)
 			{
 				const float anaglyphRed = (red * 30.0f + green * 59.0f + blue * 11.0f) / 100.0f;
@@ -1781,9 +1787,9 @@ bool RenderBlocks::renderBlockRedstoneWire(Block *block, int_t i, int_t j, int_t
 	const int_t customRedstoneColor = CustomColorizer::getRedstoneColor(l);
 	if (customRedstoneColor >= 0)
 	{
-		f2 = ((customRedstoneColor >> 16) & 255) / 255.0f;
-		f3 = ((customRedstoneColor >> 8) & 255) / 255.0f;
-		f4 = (customRedstoneColor & 255) / 255.0f;
+		f2 = ((customRedstoneColor >> 16) & 255) * (1.0f / 255.0f);
+		f3 = ((customRedstoneColor >> 8) & 255) * (1.0f / 255.0f);
+		f4 = (customRedstoneColor & 255) * (1.0f / 255.0f);
 	}
 	tessellator->setColorOpaque_F(f2, f3, f4);
 	int_t j1 = (i1 & 0xf) << 4;
@@ -2105,9 +2111,9 @@ bool RenderBlocks::renderCrossedSquares(Block *block, int_t i, int_t j, int_t k)
 	Tessellator *tessellator = &Tessellator::instance;
 	tessellator->setBrightness(block->getMixedBrightnessForBlock(blockAccess, i, j, k));
 	int_t l = CustomColorizer::getColorMultiplier(block, blockAccess, i, j, k);
-	float f1 = (float)(l >> 16 & 0xff) / 255.0f;
-	float f2 = (float)(l >> 8 & 0xff) / 255.0f;
-	float f3 = (float)(l & 0xff) / 255.0f;
+	float f1 = (float)(l >> 16 & 0xff) * (1.0f / 255.0f);
+	float f2 = (float)(l >> 8 & 0xff) * (1.0f / 255.0f);
+	float f3 = (float)(l & 0xff) * (1.0f / 255.0f);
 	if (EntityRenderer::anaglyphEnabled)
 	{
 		float f4 = (f1 * 30.0f + f2 * 59.0f + f3 * 11.0f) / 100.0f;
@@ -2308,9 +2314,9 @@ bool RenderBlocks::renderBlockFluids(Block *block, int_t i, int_t j, int_t k)
 {
 	Tessellator *tessellator = &Tessellator::instance;
 	int_t l = CustomColorizer::getFluidColor(block, blockAccess, i, j, k);
-	float f = (float)(l >> 16 & 0xff) / 255.0f;
-	float f1 = (float)(l >> 8 & 0xff) / 255.0f;
-	float f2 = (float)(l & 0xff) / 255.0f;
+	float f = (float)(l >> 16 & 0xff) * (1.0f / 255.0f);
+	float f1 = (float)(l >> 8 & 0xff) * (1.0f / 255.0f);
+	float f2 = (float)(l & 0xff) * (1.0f / 255.0f);
 	bool flag = shouldRenderFace(block, i, j + 1, k, 1);
 	bool flag1 = shouldRenderFace(block, i, j - 1, k, 0);
 	bool aflag[4];
@@ -2541,9 +2547,14 @@ void RenderBlocks::renderBlockFallingSand(Block *block, World *world, int_t i, i
 bool RenderBlocks::renderStandardBlock(Block *block, int_t i, int_t j, int_t k)
 {
 	int_t l = CustomColorizer::getColorMultiplier(block, blockAccess, i, j, k);
-	float f = (float)(l >> 16 & 0xff) / 255.0f;
-		float f1 = (float)(l >> 8 & 0xff) / 255.0f;
-	float f2 = (float)(l & 0xff) / 255.0f;
+	// Hottest of the /255.0f -> *(1.0f/255.0f) substitutions in this file:
+	// renderStandardBlock() is the actively used per-block renderer on DSi
+	// (ambient occlusion, the other block-render path, defaults off --
+	// GameDefaults.cpp), so this runs for essentially every solid block
+	// during every chunk mesh build.
+	float f = (float)(l >> 16 & 0xff) * (1.0f / 255.0f);
+	float f1 = (float)(l >> 8 & 0xff) * (1.0f / 255.0f);
+	float f2 = (float)(l & 0xff) * (1.0f / 255.0f);
 	if (EntityRenderer::anaglyphEnabled)
 	{
 		float f3 = (f * 30.0f + f1 * 59.0f + f2 * 11.0f) / 100.0f;
@@ -3567,9 +3578,9 @@ bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i,
 bool RenderBlocks::renderBlockCactus(Block *block, int_t i, int_t j, int_t k)
 {
 	int_t l = CustomColorizer::getColorMultiplier(block, blockAccess, i, j, k);
-	float f = (float)(l >> 16 & 0xff) / 255.0f;
-	float f1 = (float)(l >> 8 & 0xff) / 255.0f;
-	float f2 = (float)(l & 0xff) / 255.0f;
+	float f = (float)(l >> 16 & 0xff) * (1.0f / 255.0f);
+	float f1 = (float)(l >> 8 & 0xff) * (1.0f / 255.0f);
+	float f2 = (float)(l & 0xff) * (1.0f / 255.0f);
 	if (EntityRenderer::anaglyphEnabled)
 	{
 		float f3 = (f * 30.0f + f1 * 59.0f + f2 * 11.0f) / 100.0f;
@@ -4565,9 +4576,9 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 		int_t j = block->getRenderColor(i);
 		if (block->blockID == Block::grass->blockID)
 			j = 0xffffff;
-		float f1 = (float)(j >> 16 & 0xff) / 255.0f;
-		float f3 = (float)(j >> 8 & 0xff) / 255.0f;
-		float f5 = (float)(j & 0xff) / 255.0f;
+		float f1 = (float)(j >> 16 & 0xff) * (1.0f / 255.0f);
+		float f3 = (float)(j >> 8 & 0xff) * (1.0f / 255.0f);
+		float f5 = (float)(j & 0xff) * (1.0f / 255.0f);
 		renderColor4f(f1 * f, f3 * f, f5 * f, 1.0f);
 	}
 	int_t k = block->getRenderType();

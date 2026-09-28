@@ -844,11 +844,16 @@ void EntityRenderer::setupViewBobbing(float partialTicks)
     float bobAmount = entityplayer->field_775_e + (entityplayer->field_774_f - entityplayer->field_775_e) * partialTicks;
     float cameraPitchBob = entityplayer->cameraPitch + (entityplayer->field_9328_R - entityplayer->cameraPitch) * partialTicks;
     
-    renderTranslate(MathHelper::sin(walkProgress * 3.1415927f) * bobAmount * 0.5f,
-                 -std::abs(MathHelper::cos(walkProgress * 3.1415927f) * bobAmount),
+    // walkProgress doesn't change across this function, so its sin() is
+    // computed once instead of twice (translate + first rotate below) --
+    // a table lookup + multiply that's not free on ARM946E-S without an FPU.
+    const float walkProgressAngle = walkProgress * 3.1415927f;
+    const float sinWalkProgress = MathHelper::sin(walkProgressAngle);
+    renderTranslate(sinWalkProgress * bobAmount * 0.5f,
+                 -std::abs(MathHelper::cos(walkProgressAngle) * bobAmount),
                  0.0f);
-    
-    renderRotate(MathHelper::sin(walkProgress * 3.1415927f) * bobAmount * 3.0f,
+
+    renderRotate(sinWalkProgress * bobAmount * 3.0f,
               0.0f, 0.0f, 1.0f);
     
     renderRotate(std::abs(MathHelper::cos(walkProgress * 3.1415927f - 0.2f) * bobAmount) * 5.0f,

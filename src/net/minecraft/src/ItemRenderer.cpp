@@ -242,11 +242,17 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
     if (itemstack != nullptr && Item::mapItem != nullptr && itemstack->itemID == Item::mapItem->shiftedIndex) {
         renderPushMatrix();
         float mapScale = 0.8f;
-        float swing = player->getSwingProgress(partialTick);
-        float swingSin = MathHelper::sin(swing * 3.1415927f);
-        float swingSqrtSin = MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f);
+        // getSwingProgress() is a pure read of swingProgress/prevSwingProgress (no
+        // side effects), and neither it nor swing itself changes across the
+        // rendering calls below -- hoisted once instead of being re-fetched and
+        // re-run through sqrt_float()/sin() a second time further down.
+        const float swing = player->getSwingProgress(partialTick);
+        const float sqrtSwing = MathHelper::sqrt_float(swing);
+        const float swingSin = MathHelper::sin(swing * 3.1415927f);
+        const float swingSqrtSin = MathHelper::sin(sqrtSwing * 3.1415927f);
+        const float swingSquaredSin = MathHelper::sin(swing * swing * 3.1415927f);
         renderTranslate(-swingSqrtSin * 0.4f,
-                        MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f * 2.0f) * 0.2f,
+                        MathHelper::sin(sqrtSwing * 3.1415927f * 2.0f) * 0.2f,
                         -swingSin * 0.2f);
 
         float mapPitch = 1.0f - pitch / 45.0f + 0.1f;
@@ -275,9 +281,6 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
             renderPopMatrix();
         }
 
-        swing = player->getSwingProgress(partialTick);
-        float swingSquaredSin = MathHelper::sin(swing * swing * 3.1415927f);
-        swingSqrtSin = MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f);
         renderRotate(-swingSquaredSin * 20.0f, 0.0f, 1.0f, 0.0f);
         renderRotate(-swingSqrtSin * 20.0f, 0.0f, 0.0f, 1.0f);
         renderRotate(-swingSqrtSin * 80.0f, 1.0f, 0.0f, 0.0f);
@@ -304,6 +307,15 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
         const float handScale = 0.8f;
         EnumAction action = EnumAction::none;
         const bool usingItem = player->getItemInUseCount() > 0;
+        // getSwingProgress() is a pure read (no side effects) and swing itself
+        // doesn't change across this branch; hoisted once instead of being
+        // re-fetched and re-run through sqrt_float()/sin() up to 3 more times
+        // further down (in the !usingItem branch, and again in the
+        // unconditional rotate block below it).
+        const float swing = player->getSwingProgress(partialTick);
+        const float sqrtSwing = MathHelper::sqrt_float(swing);
+        const float swingSqrtSin = MathHelper::sin(sqrtSwing * 3.1415927f);
+        const float swingSquaredSin = MathHelper::sin(swing * swing * 3.1415927f);
 
         if (usingItem) {
             action = itemstack->getItemUseAction();
@@ -326,11 +338,9 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
                 renderRotate(applied * 30.0f, 0.0f, 0.0f, 1.0f);
             }
         } else {
-            float swing = player->getSwingProgress(partialTick);
             float swingSin = MathHelper::sin(swing * 3.1415927f);
-            float swingSqrtSin = MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f);
             renderTranslate(-swingSqrtSin * 0.4f,
-                            MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f * 2.0f) * 0.2f,
+                            MathHelper::sin(sqrtSwing * 3.1415927f * 2.0f) * 0.2f,
                             -swingSin * 0.2f);
         }
 
@@ -338,9 +348,6 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
         renderRotate(45.0f, 0.0f, 1.0f, 0.0f);
         renderEnable(RenderCapability::RescaleNormal);
 
-        float swing = player->getSwingProgress(partialTick);
-        float swingSquaredSin = MathHelper::sin(swing * swing * 3.1415927f);
-        float swingSqrtSin = MathHelper::sin(MathHelper::sqrt_float(swing) * 3.1415927f);
         renderRotate(-swingSquaredSin * 20.0f, 0.0f, 1.0f, 0.0f);
         renderRotate(-swingSqrtSin * 20.0f, 0.0f, 0.0f, 1.0f);
         renderRotate(-swingSqrtSin * 80.0f, 1.0f, 0.0f, 0.0f);

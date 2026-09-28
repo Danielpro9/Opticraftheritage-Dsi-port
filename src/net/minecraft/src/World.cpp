@@ -286,7 +286,6 @@ World::World(ISaveHandler* saveHandler, const jstring& name, WorldProvider* worl
     unloadedEntityList.clear();
     scheduledTickTreeSet.clear();
     scheduledTickSet.clear();
-    scheduledTickOrder.clear();
     loadedTileEntityList.clear();
     tileEntitiesToAdd.clear();
     playerEntities.clear();
@@ -331,7 +330,6 @@ World::World(World* world, WorldProvider* worldProvider)
     unloadedEntityList.clear();
     scheduledTickTreeSet.clear();
     scheduledTickSet.clear();
-    scheduledTickOrder.clear();
     loadedTileEntityList.clear();
     tileEntitiesToAdd.clear();
     playerEntities.clear();
@@ -395,7 +393,6 @@ World::World(ISaveHandler* saveHandler, const jstring& name, WorldSettings* sett
     unloadedEntityList.clear();
     scheduledTickTreeSet.clear();
     scheduledTickSet.clear();
-    scheduledTickOrder.clear();
     loadedTileEntityList.clear();
     tileEntitiesToAdd.clear();
     playerEntities.clear();
@@ -485,7 +482,6 @@ World::World(ISaveHandler* saveHandler, const jstring& name, long_t seed, WorldP
     unloadedEntityList.clear();
     scheduledTickTreeSet.clear();
     scheduledTickSet.clear();
-    scheduledTickOrder.clear();
     loadedTileEntityList.clear();
     tileEntitiesToAdd.clear();
     playerEntities.clear();
@@ -3111,7 +3107,6 @@ void World::scheduleBlockUpdate(int x, int y, int z, int blockId, int delay)
     if (inserted.second)
     {
         scheduledTickTreeSet.insert(entry);
-        scheduledTickOrder.add(entry);
     }
     else
     {
@@ -3140,7 +3135,6 @@ void World::scheduleBlockUpdateFromLoad(int_t x, int_t y, int_t z, int_t blockId
     if (inserted.second)
     {
         scheduledTickTreeSet.insert(entry);
-        scheduledTickOrder.add(entry);
     }
     else
         delete entry;
@@ -3163,8 +3157,15 @@ std::vector<NextTickListEntry *> World::getPendingBlockUpdates(Chunk *chunk, boo
     const int_t minZ = JavaArithmetic::intShl(chunk->zPosition, 4);
     const int_t maxZ = JavaArithmetic::intAdd(minZ, 16);
 
-    const std::vector<NextTickListEntry *> pendingOrder = scheduledTickOrder.valuesInIterationOrder();
-    for (NextTickListEntry *entry : pendingOrder)
+    // Snapshotted into a vector first (rather than iterating scheduledTickSet
+    // directly) so the optional erase below -- which mutates that same set --
+    // never invalidates the iteration. This function's only caller
+    // (AnvilChunkLoader, at chunk-save time) doesn't need any particular
+    // order: each NextTickListEntry is a self-contained {blockId,x,y,z,time}
+    // record, so which order they're written to NBT in has no effect on
+    // reload.
+    const std::vector<NextTickListEntry *> pendingSnapshot(scheduledTickSet.begin(), scheduledTickSet.end());
+    for (NextTickListEntry *entry : pendingSnapshot)
     {
         if (entry == nullptr || entry->xCoord < minX || entry->xCoord >= maxX ||
             entry->zCoord < minZ || entry->zCoord >= maxZ)
@@ -3175,7 +3176,6 @@ std::vector<NextTickListEntry *> World::getPendingBlockUpdates(Chunk *chunk, boo
         {
             scheduledTickTreeSet.erase(entry);
             scheduledTickSet.erase(entry);
-            scheduledTickOrder.remove(entry);
         }
     }
 
@@ -5277,7 +5277,6 @@ bool World::TickUpdates(bool flag)
 
         scheduledTickTreeSet.erase(it);
         scheduledTickSet.erase(entry);
-        scheduledTickOrder.remove(entry);
 #endif
 
         const int RANGE = 8;

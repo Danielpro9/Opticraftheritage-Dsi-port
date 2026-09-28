@@ -485,7 +485,6 @@ private:
 	std::vector<Entity *> unloadedEntityList;
 	std::set<NextTickListEntry *, NextTickListEntryComparator> scheduledTickTreeSet;
 	std::unordered_set<NextTickListEntry *, NextTickListEntryHash, NextTickListEntryEqual> scheduledTickSet;
-	JavaHashSet<NextTickListEntry *, NextTickListEntryHash, NextTickListEntryEqual> scheduledTickOrder;
 #if PLATFORM_PC_LEGACY
 	PcLegacyTickScheduler *pcLegacyTickScheduler = nullptr;
 #endif

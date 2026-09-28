@@ -71,7 +71,20 @@ bool TileEntitySignRenderer::renderTileEntitySignParts(TileEntitySign *tileentit
                 std::string s = tileentitysign->signText[k];
                 if (k == tileentitysign->lineBeingEdited)
                     s = "> " + s + " <";
-                fontrenderer->drawString(s, -fontrenderer->getStringWidth(s) / 2, k * 10 - 20, 0);
+
+                int_t width;
+                if (tileentitysign->cachedLineValid[k] && tileentitysign->cachedRenderedLine[k] == s)
+                {
+                    width = tileentitysign->cachedRenderedWidth[k];
+                }
+                else
+                {
+                    width = fontrenderer->getStringWidth(s);
+                    tileentitysign->cachedRenderedLine[k] = s;
+                    tileentitysign->cachedRenderedWidth[k] = width;
+                    tileentitysign->cachedLineValid[k] = true;
+                }
+                fontrenderer->drawString(s, -width / 2, k * 10 - 20, 0);
             }
             renderDepthMask(true);
         }

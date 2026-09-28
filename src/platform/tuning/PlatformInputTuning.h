@@ -23,21 +23,33 @@
 #  define PLATFORM_DIRECT_CAMERA_REFERENCE_FPS PS2_DIRECT_CAMERA_REFERENCE_FPS
 #  define PLATFORM_DIRECT_CAMERA_MAX_DT       PS2_DIRECT_CAMERA_MAX_DT
 #elif PLATFORM_DSI
-// D-pad -> movement, touch screen -> camera. See DsiInputTuning.h for the
-// constants and InputBackend_DSI.cpp's platformGamepadSnapshot() for how the
-// D-pad/touch state is turned into the stick-shaped values this scheme
-// expects (MovementInputFromOptions.cpp / EntityRenderer.cpp), the same
-// PLATFORM_DIRECT_ANALOG_MOVEMENT / PLATFORM_DIRECT_CAMERA_ENABLED path PS2
-// already uses for its analog stick.
+// D-pad -> movement (still the PLATFORM_DIRECT_ANALOG_MOVEMENT path PS2's
+// analog stick also uses -- see DsiInputTuning.h for DSI_DIRECT_MOVE_SCALE
+// and InputBackend_DSI.cpp's platformGamepadSnapshot() for how the D-pad
+// produces leftX/leftY). Touch screen -> camera, but NOT through
+// PLATFORM_DIRECT_CAMERA_ENABLED's stick-rate model: touch is a drag, not a
+// self-centering stick, and integrating a held offset as a turn RATE (what
+// that path does, correctly, for PS2's real stick) read as slow and laggy
+// on real hardware. Left at 0 so EntityRenderer.cpp falls through to its
+// ordinary PC-style mouse-delta branch instead, fed by
+// dsiUpdateTouchCameraDelta() pushing real frame-to-frame drag pixels into
+// lwjgl::Mouse the same way a real mouse's hardware delta would arrive --
+// see that function's own comment (InputBackend_DSI.cpp) for the two
+// earlier designs this replaced and why. The DEADZONE/SCALE/INVERT/
+// REFERENCE_FPS/MAX_DT knobs below are meaningless once
+// PLATFORM_DIRECT_CAMERA_ENABLED is 0 (EntityRenderer.cpp's stick-rate
+// branch that reads them does not compile in), so DSi has no equivalents
+// to plug in here any more -- sensitivity is instead
+// GameSettings::mouseSensitivity, the same option PC's mouse already uses.
 #  define PLATFORM_ANALOG_MOVE_DEADZONE       0.0f
 #  define PLATFORM_ANALOG_MOVE_SCALE          DSI_DIRECT_MOVE_SCALE
-#  define PLATFORM_DIRECT_CAMERA_ENABLED      1
+#  define PLATFORM_DIRECT_CAMERA_ENABLED      0
 #  define PLATFORM_DIRECT_CAMERA_DEADZONE     0.0f
-#  define PLATFORM_DIRECT_CAMERA_SCALE        DSI_DIRECT_CAMERA_SCALE
-#  define PLATFORM_DIRECT_CAMERA_INVERT_X     DSI_DIRECT_CAMERA_INVERT_X
-#  define PLATFORM_DIRECT_CAMERA_INVERT_Y     DSI_DIRECT_CAMERA_INVERT_Y
-#  define PLATFORM_DIRECT_CAMERA_REFERENCE_FPS DSI_DIRECT_CAMERA_REFERENCE_FPS
-#  define PLATFORM_DIRECT_CAMERA_MAX_DT       DSI_DIRECT_CAMERA_MAX_DT
+#  define PLATFORM_DIRECT_CAMERA_SCALE        0.0f
+#  define PLATFORM_DIRECT_CAMERA_INVERT_X     0
+#  define PLATFORM_DIRECT_CAMERA_INVERT_Y     0
+#  define PLATFORM_DIRECT_CAMERA_REFERENCE_FPS 60.0f
+#  define PLATFORM_DIRECT_CAMERA_MAX_DT       0.10f
 #else
 #  define PLATFORM_ANALOG_MOVE_DEADZONE       0.20f
 #  define PLATFORM_ANALOG_MOVE_SCALE          1.0f

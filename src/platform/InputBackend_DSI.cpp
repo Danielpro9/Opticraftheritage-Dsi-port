@@ -18,9 +18,10 @@
 // In-game controls, added directly on request. Full scheme:
 //   D-pad            movement (platformGamepadSnapshot()'s leftX/leftY, see
 //                     below)
-//   Touch screen      camera (rightX/rightY, see below) -- a fixed-anchor
-//                     virtual stick, not a raw drag: see the
-//                     g_touchAnchorX/g_touchStickX comment below for why.
+//   Touch screen      camera -- a direct frame-to-frame drag delta fed
+//                     through lwjgl::Mouse, the same path a real mouse
+//                     drives on PC: see dsiUpdateTouchCameraDelta()'s own
+//                     comment for the two earlier designs this replaced.
 //   L                 place block  (keyBindUseItem) with no screen open;
 //                     place ONE item from the held stack (vanilla's
 //                     right-click) inside a container screen -- see
@@ -39,11 +40,15 @@
 //                     Display_dsi.cpp's header comment for why this replaced
 //                     START-quits-the-game)
 //
-// Movement/camera feed MovementInputFromOptions.cpp / EntityRenderer.cpp's
-// PLATFORM_DIRECT_ANALOG_MOVEMENT / PLATFORM_DIRECT_CAMERA_ENABLED paths, the
-// same ones PS2's analog stick already uses (see DsiInputTuning.h) -- nothing
-// new was invented for how a "stick" value turns into movement/camera motion,
-// only how the D-pad/touchscreen produce that value.
+// Movement feeds MovementInputFromOptions.cpp's PLATFORM_DIRECT_ANALOG_MOVEMENT
+// path, the same one PS2's analog stick already uses for its D-pad-shaped
+// leftX/leftY (see DsiInputTuning.h) -- nothing new was invented for how
+// that value turns into movement, only how the D-pad produces it. The
+// camera is different: PlatformInputTuning.h routes DSi through
+// EntityRenderer.cpp's ordinary PC-style mouse-delta path instead of PS2's
+// PLATFORM_DIRECT_CAMERA_ENABLED stick-rate one (see
+// dsiUpdateTouchCameraDelta()'s own comment for why), so rightX/rightY
+// below are not part of that path at all any more.
 //
 // L/R/A/X/Y/hotbar instead go through dsiPushGameplayKeyEvents() below,
 // which synthesizes the same lwjgl::Keyboard/Mouse events a real keyboard or
@@ -61,54 +66,58 @@
 // presses -- this only ever reads back the state that scan already captured.
 namespace
 {
-// Touch-as-analog-stick camera state. Updated once a frame by
+// Touch-drag camera state. Updated once a frame by
 // dsiUpdateTouchCameraDelta() (called from Display_dsi.cpp's
 // processMessages(), see that function's own comment on why this can only
-// happen once a frame), read as often as needed by
-// platformGamepadSnapshot() afterwards without disturbing it.
+// happen once a frame).
 //
-// REDESIGNED from a frame-to-frame drag delta to a fixed-anchor virtual
-// stick, on real-hardware feedback: the old scheme reported the pixel
-// distance the finger moved SINCE LAST FRAME, which drops back to zero the
-// instant the finger stops moving even if it is still held down and away
-// from where it started -- turning the camera meant repeatedly swipe,
-// (motion stops, turn stops), lift, swipe again, exactly like nudging a
-// D-pad instead of holding a stick over. Consulted ClassiCube's own DS
-// port (src/nds/Window_NDS.c's ProcessTouchInput()) for comparison: it
-// only forwards raw touch positions into its generic multi-touch
-// abstraction and does not implement anything DS-specific here either, so
-// there was no existing "reference implementation" to copy -- this is a
-// fresh design, not a port.
+// SECOND redesign of this function, on further real-hardware feedback: the
+// first version (a fixed-anchor virtual stick -- touch down plants a
+// center, holding the finger at an offset from it reported that offset
+// every frame as a stick deflection) fixed the original drag-delta
+// version's problem (turning required repeated swipe-lift-swipe, since a
+// delta that resets to zero the instant the finger stops moving cannot
+// sustain a turn) but overcorrected: reported feel was "tosca" (crude) and
+// laggy, because EntityRenderer.cpp's direct-camera path treats that
+// deflection as a RATE to integrate over time (exactly right for a
+// self-centering analog stick, which is what that path was built for), not
+// as a direct position -- so a small, natural hold-offset near the anchor
+// turned the camera only slowly, no matter how far the finger had actually
+// moved to get there.
 //
-// New model: the FIRST touched position each press becomes a fixed anchor
-// (like a stick's center); every frame after that while still touching
-// reports the CURRENT offset from that anchor, not from the previous
-// frame's position. Holding the finger stationary at an offset keeps
-// reporting that same nonzero offset every frame -- exactly the "hold in a
-// direction to keep turning" feel EntityRenderer.cpp's direct-camera path
-// already expects (it already treats rightX/rightY as a continuous
-// per-frame rate, scaled by elapsed time -- see its own comment -- not a
-// one-shot delta to consume; only the OLD production side here was
-// mismatched with that consumer, not the consumer itself). Releasing and
-// touching down again picks a new anchor whereever the finger lands next,
-// so there is no stale offset from a finished gesture.
+// Re-checked ClassiCube's DS port with that framing in mind: Window_NDS.c's
+// own ProcessTouchInput() is indeed just a thin forward into ClassiCube's
+// generic multi-touch abstraction, as found before, but that abstraction's
+// actual camera consumer (src/Input.c's TryUpdateTouch(), src/Camera.c's
+// Camera_OnRawMovement()/PerspectiveCamera_GetMouseDelta()) turns out to be
+// exactly the reference this needed: touch drag is fed as a raw FRAME-TO-
+// FRAME PIXEL DELTA (current sample minus the PREVIOUS frame's, not minus a
+// fixed anchor), consumed once and reset, precisely the way a mouse's
+// hardware delta already works -- not integrated as a sustained rate.
+//
+// This fork already has that exact consumption path, just never wired to
+// touch: EntityRenderer.cpp's PLATFORM_DIRECT_CAMERA_ENABLED-off branch
+// reads mc->mouseHelper->deltaX/deltaY (fed by lwjgl::Mouse::getDX/getDY,
+// PlatformInputTuning.h's PC leg) with the exact same sensitivity formula
+// PC's real mouse uses. So the fix is not a new formula, it is switching
+// DSi onto that existing path (PlatformInputTuning.h) and, here, feeding it
+// a real frame-to-frame pixel delta the same way dsiUpdateMenuPointer()
+// already feeds the menu cursor's position -- through lwjgl::Mouse::detail
+// ::pushMotion(), whose xrel/yrel arguments stage into
+// getDX()/getDY()'s accumulator and reset it on read, same shape as
+// ClassiCube's stage-then-consume.
+//
+// g_touchLastX/Y hold last frame's raw touch sample so this frame's delta
+// against it is well-defined; g_touchWasDown gates the very first frame of
+// a fresh touch-down (no prior sample yet, so no delta to report -- an
+// implicit small dead zone, similar in spirit to ClassiCube's own
+// MovedFromBeg() gate before it locks a touch to camera control, without
+// needing to port that state machine: DSi's touch screen has no on-screen
+// buttons to disambiguate against during gameplay, unlike a phone's
+// touch-over-the-viewport controls, so every drag is a camera drag here).
 bool g_touchWasDown = false;
-int g_touchAnchorX = 0;
-int g_touchAnchorY = 0;
-float g_touchStickX = 0.0f;
-float g_touchStickY = 0.0f;
-
-// The anchor-to-finger offset, in pixels, that reads as a fully deflected
-// stick (matches the [-1, 1] range Ps2AnalogFilter::apply() produces for
-// PS2's real stick, which PLATFORM_DIRECT_CAMERA_SCALE and friends were
-// tuned against -- see DsiInputTuning.h). Larger than the old drag-delta
-// version's 24px on purpose: that number sized a single FRAME's worth of
-// motion, this one sizes a SUSTAINED hold offset a thumb can comfortably
-// keep still at without drifting past the physical screen edge from a
-// reasonably-centred touch-down point. Unverified against real hardware
-// feel, same caveat as DsiInputTuning.h's own -- the first real-hardware
-// test of this redesign is what confirms whether 40px feels right.
-constexpr float kTouchStickPixelsForFullDeflection = 40.0f;
+int g_touchLastX = 0;
+int g_touchLastY = 0;
 
 // Previous frame's held mask for the L/R/A/X/Y action buttons, so
 // dsiPushGameplayKeyEvents() can tell a fresh press/release apart from a
@@ -150,14 +159,6 @@ void dsiFireMenuPointerClick()
 	lwjgl::Mouse::detail::pushButton(0, false, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
 }
 
-float normalizeStickOffset(float offsetPixels)
-{
-	float value = offsetPixels / kTouchStickPixelsForFullDeflection;
-	if (value < -1.0f) value = -1.0f;
-	if (value > 1.0f) value = 1.0f;
-	return value;
-}
-
 std::uint32_t mapTextButtons(std::uint32_t bits)
 {
 	std::uint32_t value = 0;
@@ -194,32 +195,31 @@ PlatformTextInputSnapshot platformTextInputSnapshot(int)
 	return out;
 }
 
-void dsiUpdateTouchCameraDelta()
+void dsiUpdateTouchCameraDelta(bool inMenu)
 {
 	touchPosition touch;
 	touchRead(&touch);
 	const bool touching = (keysHeld() & KEY_TOUCH) != 0;
 
-	// A fresh touch-down (touching now, was NOT touching last frame) plants
-	// a new anchor right where the finger landed -- this press's stick
-	// center, unrelated to wherever the previous press's anchor was.
-	if (touching && !g_touchWasDown)
+	// A menu is using the touch screen as a pointer this frame instead (see
+	// dsiUpdateMenuPointer(), called right after this one) -- do not also
+	// stage camera motion into the same lwjgl::Mouse accumulator underneath
+	// it. Still track g_touchLastX/Y below regardless, so leaving a menu
+	// mid-drag does not report one huge delta from a stale pre-menu sample
+	// on the first gameplay frame afterward.
+	if (touching && g_touchWasDown && !inMenu)
 	{
-		g_touchAnchorX = touch.px;
-		g_touchAnchorY = touch.py;
+		const int dx = static_cast<int>(touch.px) - g_touchLastX;
+		const int dy = static_cast<int>(touch.py) - g_touchLastY;
+		if (dx != 0 || dy != 0)
+			lwjgl::Mouse::detail::pushMotion(touch.px, touch.py, dx, dy);
 	}
 
 	if (touching)
 	{
-		g_touchStickX = static_cast<float>(static_cast<int>(touch.px) - g_touchAnchorX);
-		g_touchStickY = static_cast<float>(static_cast<int>(touch.py) - g_touchAnchorY);
+		g_touchLastX = touch.px;
+		g_touchLastY = touch.py;
 	}
-	else
-	{
-		g_touchStickX = 0.0f;
-		g_touchStickY = 0.0f;
-	}
-
 	g_touchWasDown = touching;
 }
 
@@ -400,14 +400,15 @@ PlatformGamepadSnapshot platformGamepadSnapshot(int)
 	out.leftX = hotbarChordActive ? 0.0f : (held & KEY_LEFT) ? -1.0f : (held & KEY_RIGHT) ? 1.0f : 0.0f;
 	out.leftY = (held & KEY_UP)   ? -1.0f : (held & KEY_DOWN)  ? 1.0f : 0.0f;
 
-	// Touch-as-stick offset, normalized to the same [-1, 1] "stick
-	// deflection" range EntityRenderer.cpp's direct-camera path expects. See
-	// dsiUpdateTouchCameraDelta() for where this is actually computed --
-	// exactly once a frame, not here, so calling this more than once in the
-	// same frame (movement and camera each call it separately) reads a
-	// stable value instead of consuming it.
-	out.rightX = normalizeStickOffset(g_touchStickX);
-	out.rightY = normalizeStickOffset(g_touchStickY);
+	// The touch screen no longer reports as a stick deflection here --
+	// PlatformInputTuning.h now routes DSi's camera through EntityRenderer.cpp's
+	// ordinary mouse-delta path instead (see dsiUpdateTouchCameraDelta()'s own
+	// comment for why), which reads mc->mouseHelper->deltaX/deltaY rather than
+	// this snapshot's rightX/rightY. Left at 0 rather than removed: PS2 still
+	// has a real analog stick reporting through this same field, so
+	// PlatformGamepadSnapshot keeps the member either way.
+	out.rightX = 0.0f;
+	out.rightY = 0.0f;
 
 	return out;
 }

@@ -31,18 +31,31 @@ bool dsiEnsureStorage();
 // null pointer to check. Calls dsiEnsureStorage() for you.
 const char* dsiGetSaveDir();
 
-// Reads the touch screen and updates the fixed-anchor virtual-stick offset
-// InputBackend_DSI.cpp's platformGamepadSnapshot() reports as the camera's
-// "right stick" -- see that file's own g_touchAnchorX/g_touchStickX comment
-// for the redesign this replaced (a frame-to-frame drag delta that reset to
-// zero the instant the finger stopped moving, instead of a sustained offset
-// from where the finger first touched down). Must run exactly once per
-// frame -- Display_dsi.cpp's processMessages() is the one call site, same
-// place scanKeys() already runs once per frame for the same reason (see
-// that function's own comment). Calling this more than once a frame, or
-// from platformGamepadSnapshot() itself, would recompute the offset against
-// a touch sample already consumed this frame.
-void dsiUpdateTouchCameraDelta();
+// Reads the touch screen and, while a drag is in progress and no menu is
+// open, pushes this frame's raw pixel delta into lwjgl::Mouse (the same
+// pushMotion() dsiUpdateMenuPointer() below uses for the menu cursor) so
+// EntityRenderer.cpp's ordinary PC-style mouse-look path drives the camera
+// from it -- see InputBackend_DSI.cpp's own comment on this function for why
+// a direct pixel delta replaced the earlier fixed-anchor "virtual stick"
+// scheme (real-hardware feedback: holding a small offset from an anchor
+// point turned the camera at a slow, laggy rate instead of tracking the
+// finger the way a drag naturally suggests it should -- ClassiCube's own DS
+// port turned out to use exactly this direct-delta model too, once the
+// search widened from Window_NDS.c to the generic Camera.c/Input.c layer
+// its touch events actually feed).
+//
+// inMenu (computed the same way dsiPushGameplayKeyEvents()'s own caller
+// does, see Display_dsi.cpp) suppresses this while a screen is open, so a
+// menu drag does not also feed the gameplay camera through the same
+// lwjgl::Mouse motion staging dsiUpdateMenuPointer() is using that frame for
+// the cursor.
+//
+// Must run exactly once per frame -- Display_dsi.cpp's processMessages() is
+// the one call site, same place scanKeys() already runs once per frame for
+// the same reason (see that function's own comment). Calling this more than
+// once a frame, or from platformGamepadSnapshot() itself, would push the
+// same touch sample's delta twice.
+void dsiUpdateTouchCameraDelta(bool inMenu);
 
 // Turns the L/R/A/X/Y/hotbar-chord action buttons into the same
 // lwjgl::Keyboard/Mouse events a real keyboard/mouse press would queue (see

@@ -307,7 +307,9 @@ void RenderLiving::renderLivingLabel(EntityLiving* entityliving, std::string s, 
     }
     renderDisable(RenderCapability::Texture2D);
     tessellator->startDrawingQuads();
-    int j = fontrenderer->getStringWidth(s) / 2;
+    // s is fixed for this whole call -- one measurement instead of three.
+    const int halfWidth = fontrenderer->getStringWidth(s) / 2;
+    int j = halfWidth;
     tessellator->setColorRGBA_F(0.0f, 0.0f, 0.0f, 0.25f);
     tessellator->addVertex(-j - 1, -1 + byte0, 0.0f);
     tessellator->addVertex(-j - 1, 8 + byte0, 0.0f);
@@ -315,10 +317,10 @@ void RenderLiving::renderLivingLabel(EntityLiving* entityliving, std::string s, 
     tessellator->addVertex(j + 1, -1 + byte0, 0.0f);
     tessellator->draw();
     renderEnable(RenderCapability::Texture2D);
-    fontrenderer->drawString(s, -fontrenderer->getStringWidth(s) / 2, byte0, 0x20ffffff);
+    fontrenderer->drawString(s, -halfWidth, byte0, 0x20ffffff);
     renderEnable(RenderCapability::DepthTest);
     renderDepthMask(true);
-    fontrenderer->drawString(s, -fontrenderer->getStringWidth(s) / 2, byte0, -1);
+    fontrenderer->drawString(s, -halfWidth, byte0, -1);
     renderEnable(RenderCapability::Lighting);
     renderDisable(RenderCapability::Blend);
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);

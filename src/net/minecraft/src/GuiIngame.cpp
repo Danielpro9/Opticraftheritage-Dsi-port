@@ -448,8 +448,11 @@ void GuiIngame::renderBossHealth()
 	if (filled > 0)
 		drawTexturedModalRect(x, y, 0, 79, filled, 5);
 
-	const std::string name = "Boss health";
-	fontRenderer->drawStringWithShadow(name, screenWidth / 2 - fontRenderer->getStringWidth(name) / 2, y - 10, 0xff00ff);
+	// Literal, so its measured width is a one-time compile-time-equivalent
+	// constant, not something to remeasure every frame this bar is shown.
+	static const std::string name = "Boss health";
+	static const int_t nameHalfWidth = fontRenderer->getStringWidth(name) / 2;
+	fontRenderer->drawStringWithShadow(name, screenWidth / 2 - nameHalfWidth, y - 10, 0xff00ff);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
 }

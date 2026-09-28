@@ -61,6 +61,15 @@ void GuiSelectWorld::loadSaves()
 	std::stable_sort(saveList.begin(), saveList.end(),
 		[](const SaveFormatComparator *a, const SaveFormatComparator *b) { return *a < *b; });
 	selectedWorld = -1;
+	// worldSlotContainer is null the very first time this runs (before
+	// initGui() constructs it just below) and is about to be replaced with a
+	// fresh GuiWorldSlot right after anyway in that case -- harmless either
+	// way. The case this actually matters for is loadSaves() being called
+	// again later (e.g. after deleting a world) on the SAME worldSlotContainer
+	// instance, whose per-row text cache must not outlive the saveList
+	// entries it was built from.
+	if (worldSlotContainer != nullptr)
+		worldSlotContainer->invalidateCache();
 }
 
 std::string GuiSelectWorld::getSaveFileName(int_t i)

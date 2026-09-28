@@ -43,31 +43,43 @@ void GuiWorldSlot::drawBackground()
 	parentWorldGui->drawDefaultBackground();
 }
 
+void GuiWorldSlot::invalidateCache()
+{
+	cachedRows.clear();
+}
+
 void GuiWorldSlot::drawSlot(int_t i, int_t x, int_t y, int_t h, Tessellator *tess)
 {
-	SaveFormatComparator *entry = parentWorldGui->saveList[i];
-	std::string name = entry->getDisplayName();
-	if (name.empty())
-		name = parentWorldGui->worldLabel + " " + std::to_string(i + 1);
+	if (cachedRows.size() != parentWorldGui->saveList.size())
+		cachedRows.assign(parentWorldGui->saveList.size(), CachedRowText());
 
-	std::string line2 = entry->getFileName() + " (" +
-		parentWorldGui->formatDate(entry->getLastTimePlayed()) + ")";
-
-	std::string line3;
-	if (entry->requiresConversion())
+	CachedRowText &cached = cachedRows[(std::size_t)i];
+	if (!cached.populated)
 	{
-		line3 = parentWorldGui->conversionLabel;
-	}
-	else
-	{
-		const int_t gameType = entry->getGameType();
-		if (gameType >= 0 && gameType < 2)
-			line3 = parentWorldGui->gameModeLabels[gameType];
-		if (entry->isHardcoreModeEnabled())
-			line3 = StatCollector::translateToLocal("gameMode.hardcore");
+		SaveFormatComparator *entry = parentWorldGui->saveList[i];
+		cached.name = entry->getDisplayName();
+		if (cached.name.empty())
+			cached.name = parentWorldGui->worldLabel + " " + std::to_string(i + 1);
+
+		cached.line2 = entry->getFileName() + " (" +
+			parentWorldGui->formatDate(entry->getLastTimePlayed()) + ")";
+
+		if (entry->requiresConversion())
+		{
+			cached.line3 = parentWorldGui->conversionLabel;
+		}
+		else
+		{
+			const int_t gameType = entry->getGameType();
+			if (gameType >= 0 && gameType < 2)
+				cached.line3 = parentWorldGui->gameModeLabels[gameType];
+			if (entry->isHardcoreModeEnabled())
+				cached.line3 = StatCollector::translateToLocal("gameMode.hardcore");
+		}
+		cached.populated = true;
 	}
 
-	parentWorldGui->drawString(parentWorldGui->fontRenderer, name,  x + 2, y + 1,  0xffffff);
-	parentWorldGui->drawString(parentWorldGui->fontRenderer, line2, x + 2, y + 12, 0x808080);
-	parentWorldGui->drawString(parentWorldGui->fontRenderer, line3, x + 2, y + 22, 0x808080);
+	parentWorldGui->drawString(parentWorldGui->fontRenderer, cached.name,  x + 2, y + 1,  0xffffff);
+	parentWorldGui->drawString(parentWorldGui->fontRenderer, cached.line2, x + 2, y + 12, 0x808080);
+	parentWorldGui->drawString(parentWorldGui->fontRenderer, cached.line3, x + 2, y + 22, 0x808080);
 }

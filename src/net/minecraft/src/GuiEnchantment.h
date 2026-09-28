@@ -46,4 +46,17 @@ private:
     // is open -- see GuiFurnace.h's identical fix for the full reasoning.
     std::string cachedTitle;
     std::string cachedInventoryLabel;
+
+    // drawGuiContainerBackgroundLayer() reseeds EnchantmentNameParts to
+    // containerEnchantment->nameSeed every frame before generating the 3
+    // option names, so the generated names are deterministic and identical
+    // frame to frame as long as nameSeed itself doesn't change (it only
+    // does in ContainerEnchantment::onCraftMatrixChanged(), i.e. when the
+    // item in the enchant slot changes) -- yet generateRandomEnchantName()
+    // still re-ran its rand.nextInt() calls + string concatenation 3x every
+    // single frame regardless. Cached here, invalidated only when nameSeed
+    // changes.
+    long_t cachedNameSeed = 0;
+    bool cachedNamesValid = false;
+    std::string cachedEnchantNames[3];
 };

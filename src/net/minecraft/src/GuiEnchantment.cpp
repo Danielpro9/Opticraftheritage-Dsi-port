@@ -188,14 +188,21 @@ void GuiEnchantment::drawGuiContainerBackgroundLayer(float_t partialTick)
 #endif
 
     mc->renderEngine->bindTexture(texture);
-    EnchantmentNameParts::getInstance().setRandSeed(containerEnchantment->nameSeed);
+    if (!cachedNamesValid || cachedNameSeed != containerEnchantment->nameSeed)
+    {
+        EnchantmentNameParts::getInstance().setRandSeed(containerEnchantment->nameSeed);
+        for (int_t option = 0; option < 3; ++option)
+            cachedEnchantNames[option] = EnchantmentNameParts::getInstance().generateRandomEnchantName();
+        cachedNameSeed = containerEnchantment->nameSeed;
+        cachedNamesValid = true;
+    }
     FontRenderer *enchantFont = mc->getStandardGalacticFontRenderer();
 
     for (int_t option = 0; option < 3; ++option)
     {
         mc->renderEngine->bindTexture(texture);
         zLevel = 0.0f;
-        const std::string name = EnchantmentNameParts::getInstance().generateRandomEnchantName();
+        const std::string &name = cachedEnchantNames[option];
         const int_t level = containerEnchantment->enchantLevels[option];
         renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 

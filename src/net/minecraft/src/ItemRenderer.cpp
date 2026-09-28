@@ -125,23 +125,28 @@ void ItemRenderer::renderItemIn2D(Tessellator* tessellator, float maxU, float mi
     const float size = 1.0f;
     const float thickness = 0.0625f;
 
+    // Single batch for the front/back faces and all four beveled-edge strips
+    // combined (6 draw() calls -> 1), same reasoning as RenderBlocks.cpp's
+    // renderBlockOnInventory(): draw-call count, not vertex count, is the
+    // cost on the consoles, and this is the render path for every non-block
+    // held item (tools, swords, food, ...) -- called every single frame,
+    // twice more per enchantment glint layer on top of that. Nothing but
+    // per-vertex normal/UV changes between these six pieces (no texture
+    // rebind, no blend/color change), the same condition that already makes
+    // batching safe for every multi-face case in renderBlockOnInventory.
     tessellator->startDrawingQuads();
     tessellator->setNormal(0.0f, 0.0f, 1.0f);
     tessellator->addVertexWithUV(0.0, 0.0, 0.0, maxU, maxV);
     tessellator->addVertexWithUV(size, 0.0, 0.0, minU, maxV);
     tessellator->addVertexWithUV(size, 1.0, 0.0, minU, minV);
     tessellator->addVertexWithUV(0.0, 1.0, 0.0, maxU, minV);
-    tessellator->draw();
 
-    tessellator->startDrawingQuads();
     tessellator->setNormal(0.0f, 0.0f, -1.0f);
     tessellator->addVertexWithUV(0.0, 1.0, -thickness, maxU, minV);
     tessellator->addVertexWithUV(size, 1.0, -thickness, minU, minV);
     tessellator->addVertexWithUV(size, 0.0, -thickness, minU, maxV);
     tessellator->addVertexWithUV(0.0, 0.0, -thickness, maxU, maxV);
-    tessellator->draw();
 
-    tessellator->startDrawingQuads();
     tessellator->setNormal(-1.0f, 0.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = static_cast<float>(i) / 16.0f;
@@ -152,9 +157,7 @@ void ItemRenderer::renderItemIn2D(Tessellator* tessellator, float maxU, float mi
         tessellator->addVertexWithUV(x, 1.0, 0.0, u, minV);
         tessellator->addVertexWithUV(x, 1.0, -thickness, u, minV);
     }
-    tessellator->draw();
 
-    tessellator->startDrawingQuads();
     tessellator->setNormal(1.0f, 0.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = static_cast<float>(i) / 16.0f;
@@ -165,9 +168,7 @@ void ItemRenderer::renderItemIn2D(Tessellator* tessellator, float maxU, float mi
         tessellator->addVertexWithUV(x, 0.0, 0.0, u, maxV);
         tessellator->addVertexWithUV(x, 0.0, -thickness, u, maxV);
     }
-    tessellator->draw();
 
-    tessellator->startDrawingQuads();
     tessellator->setNormal(0.0f, 1.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = static_cast<float>(i) / 16.0f;
@@ -178,9 +179,7 @@ void ItemRenderer::renderItemIn2D(Tessellator* tessellator, float maxU, float mi
         tessellator->addVertexWithUV(size, y, -thickness, minU, v);
         tessellator->addVertexWithUV(0.0, y, -thickness, maxU, v);
     }
-    tessellator->draw();
 
-    tessellator->startDrawingQuads();
     tessellator->setNormal(0.0f, -1.0f, 0.0f);
     for (int i = 0; i < 16; ++i) {
         float step = static_cast<float>(i) / 16.0f;

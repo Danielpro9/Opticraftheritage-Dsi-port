@@ -4626,37 +4626,33 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 		block->setBlockBoundsForItemRender();
 		renderTranslate(-0.5f, -0.5f, -0.5f);
 		float f2 = 0.0625f;
+		// Single batch for all six faces, same reasoning as k==0/16 above and
+		// k==10/11/21 below: this used to be six separate startDrawingQuads()/
+		// draw() pairs, one per face, which on the consoles pays for six draw
+		// calls to emit a block that k==0/16 already emits with one.
+		// setTranslationD() (absolute set, unlike setTranslationF()'s
+		// additive addTranslation() -- see Tessellator.cpp) sets the
+		// per-vertex emission offset each face needs directly, so the four
+		// side faces' inset nudges stay exactly what they were between
+		// separate draw() calls, with no reset dance needed in between.
 		tessellator->startDrawingQuads();
 		tessellator->setNormal(0.0f, -1.0f, 0.0f);
 		renderBottomFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(0));
-		tessellator->draw();
-		tessellator->startDrawingQuads();
 		tessellator->setNormal(0.0f, 1.0f, 0.0f);
 		renderTopFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(1));
-		tessellator->draw();
-		tessellator->startDrawingQuads();
 		tessellator->setNormal(0.0f, 0.0f, -1.0f);
-		tessellator->setTranslationF(0.0f, 0.0f, f2);
+		tessellator->setTranslationD(0.0, 0.0, f2);
 		renderEastFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(2));
-		tessellator->setTranslationF(0.0f, 0.0f, -f2);
-		tessellator->draw();
-		tessellator->startDrawingQuads();
 		tessellator->setNormal(0.0f, 0.0f, 1.0f);
-		tessellator->setTranslationF(0.0f, 0.0f, -f2);
+		tessellator->setTranslationD(0.0, 0.0, -f2);
 		renderWestFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(3));
-		tessellator->setTranslationF(0.0f, 0.0f, f2);
-		tessellator->draw();
-		tessellator->startDrawingQuads();
 		tessellator->setNormal(-1.0f, 0.0f, 0.0f);
-		tessellator->setTranslationF(f2, 0.0f, 0.0f);
+		tessellator->setTranslationD(f2, 0.0, 0.0);
 		renderNorthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(4));
-		tessellator->setTranslationF(-f2, 0.0f, 0.0f);
-		tessellator->draw();
-		tessellator->startDrawingQuads();
 		tessellator->setNormal(1.0f, 0.0f, 0.0f);
-		tessellator->setTranslationF(-f2, 0.0f, 0.0f);
+		tessellator->setTranslationD(-f2, 0.0, 0.0);
 		renderSouthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(5));
-		tessellator->setTranslationF(f2, 0.0f, 0.0f);
+		tessellator->setTranslationD(0.0, 0.0, 0.0);
 		tessellator->draw();
 		renderTranslate(0.5f, 0.5f, 0.5f);
 	}
@@ -4676,6 +4672,15 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 	}
 	else if (k == 10)
 	{
+		// Single batch for both boxes' six faces combined (12 draw() calls ->
+		// 1), same reasoning as k==0/16 and k==27 above: draw-call count, not
+		// vertex count, is the cost on the consoles, and this item is drawn
+		// nine times a frame for every stairs block sitting in the hotbar.
+		// The translate is a pure +-0.5 pair that cancels across iterations,
+		// so hoisting it outside the loop (matching k==27's own pattern)
+		// changes nothing about the emitted geometry.
+		renderTranslate(-0.5f, -0.5f, -0.5f);
+		tessellator->startDrawingQuads();
 		for (int_t l = 0; l < 2; l++)
 		{
 			if (l == 0)
@@ -4686,33 +4691,21 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 			{
 				block->setBlockBounds(0.0f, 0.0f, 0.5f, 1.0f, 0.5f, 1.0f);
 			}
-			renderTranslate(-0.5f, -0.5f, -0.5f);
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, -1.0f, 0.0f);
 			renderBottomFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(0));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 1.0f, 0.0f);
 			renderTopFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(1));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, -1.0f);
 			renderEastFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(2));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, 1.0f);
 			renderWestFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(3));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(-1.0f, 0.0f, 0.0f);
 			renderNorthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(4));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(1.0f, 0.0f, 0.0f);
 			renderSouthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(5));
-			tessellator->draw();
-			renderTranslate(0.5f, 0.5f, 0.5f);
 		}
+		tessellator->draw();
+		renderTranslate(0.5f, 0.5f, 0.5f);
 	}
 	else if (k == 27)
 	{
@@ -4759,6 +4752,13 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 	}
 	else if (k == 11)
 	{
+		// Single batch for all four posts' six faces combined (24 draw()
+		// calls -> 1) -- the worst case of this family: a fence in the
+		// hotbar used to cost as many draw calls as terrain.png's own
+		// per-section replay budget. Same translate-hoisting reasoning as
+		// k==10 above.
+		renderTranslate(-0.5f, -0.5f, -0.5f);
+		tessellator->startDrawingQuads();
 		for (int_t i1 = 0; i1 < 4; i1++)
 		{
 			float f4 = 0.125f;
@@ -4779,37 +4779,29 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 			{
 				block->setBlockBounds(0.5f - f4, 0.5f - f4 * 3.0f, -f4 * 2.0f, 0.5f + f4, 0.5f - f4, 1.0f + f4 * 2.0f);
 			}
-			renderTranslate(-0.5f, -0.5f, -0.5f);
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, -1.0f, 0.0f);
 			renderBottomFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(0));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 1.0f, 0.0f);
 			renderTopFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(1));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, -1.0f);
 			renderEastFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(2));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, 1.0f);
 			renderWestFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(3));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(-1.0f, 0.0f, 0.0f);
 			renderNorthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(4));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(1.0f, 0.0f, 0.0f);
 			renderSouthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(5));
-			tessellator->draw();
-			renderTranslate(0.5f, 0.5f, 0.5f);
 		}
+		tessellator->draw();
+		renderTranslate(0.5f, 0.5f, 0.5f);
 		block->setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 	}
 	else if (k == 21)
 	{
+		// Single batch for all three parts' six faces combined (18 draw()
+		// calls -> 1). Same translate-hoisting reasoning as k==10/11 above.
+		renderTranslate(-0.5f, -0.5f, -0.5f);
+		tessellator->startDrawingQuads();
 		for (int_t part = 0; part < 3; ++part)
 		{
 			float inset = 1.0f / 16.0f;
@@ -4820,33 +4812,21 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 			if (part == 2)
 				block->setBlockBounds(0.5f - inset, 0.5f, 0.0f, 0.5f + inset, 1.0f - inset, 1.0f);
 
-			renderTranslate(-0.5f, -0.5f, -0.5f);
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, -1.0f, 0.0f);
 			renderBottomFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(0));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 1.0f, 0.0f);
 			renderTopFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(1));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, -1.0f);
 			renderEastFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(2));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(0.0f, 0.0f, 1.0f);
 			renderWestFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(3));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(-1.0f, 0.0f, 0.0f);
 			renderNorthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(4));
-			tessellator->draw();
-			tessellator->startDrawingQuads();
 			tessellator->setNormal(1.0f, 0.0f, 0.0f);
 			renderSouthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSide(5));
-			tessellator->draw();
-			renderTranslate(0.5f, 0.5f, 0.5f);
 		}
+		tessellator->draw();
+		renderTranslate(0.5f, 0.5f, 0.5f);
 		block->setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 	}
 	else if (k == 22)

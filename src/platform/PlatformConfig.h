@@ -180,8 +180,15 @@
 #  define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD PLATFORM_PS2
 #endif
 
+// DSi added 2026-09-28: Profiler_DSI.cpp now actually records these brackets
+// (see its own comment) instead of discarding them, to find what is inside
+// the flat ~36ms "render" figure dsi.perf's frame/tick/render line has shown
+// with no further breakdown -- the same gap PS2/WII closed with this same
+// flag. The brackets themselves (EntityRenderer.cpp, RenderGlobal.cpp,
+// GuiIngame.cpp) are unconditional per-frame timer reads, already proven
+// cheap enough to ship on PS2's weaker-than-DSi EE core.
 #ifndef PLATFORM_PROFILE_RENDER_PHASES
-#  define PLATFORM_PROFILE_RENDER_PHASES (PLATFORM_PS2 || PLATFORM_WII)
+#  define PLATFORM_PROFILE_RENDER_PHASES (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI)
 #endif
 
 #ifndef PLATFORM_NATIVE_TERRAIN_PIPELINE

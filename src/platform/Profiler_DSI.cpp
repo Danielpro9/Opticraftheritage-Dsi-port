@@ -7,19 +7,78 @@
 #include <cstring>
 #include <cstdio>
 
-// Minimal for now: only render-phase timing and named tick phases are wired
-// up. The rest are no-ops. Wii's/PS2's equivalents accumulate all of this
-// into an on-screen/logged performance window (see
-// ClientProfilerBackend_WII.cpp), which is real engineering work worth doing
-// once there is a running frame loop to profile and a reason to believe any
-// particular number here matters -- not before.
+// Named tick phases and (as of 2026-09-28) render phases are wired up; the
+// rest are still no-ops. Wii's/PS2's equivalents accumulate more of this into
+// an on-screen/logged performance window (see ClientProfilerBackend_WII.cpp);
+// the extra pieces there (present-slip detection, GX/EE-specific swap
+// timing) have no DSi equivalent to measure yet and are not worth adding
+// blind.
 std::uint32_t platformProfileRenderPhaseBegin()
 {
 	return static_cast<std::uint32_t>(PlatformCompat::getMonotonicMicros());
 }
 
-void platformProfileRenderPhaseEnd(std::uint32_t, PlatformRenderPhase)
+namespace
 {
+// Render-phase breakdown (see Profiler.h's PlatformRenderPhase), same
+// accumulate-and-report-periodically shape as the tick-phase table below.
+// Added to chase dsi.perf's flat ~36ms "render" figure, which (unlike
+// "tick", broken down by the tickphase line below) had no further
+// attribution -- see PlatformConfig.h's PLATFORM_PROFILE_RENDER_PHASES
+// comment for why turning this on is expected to be cheap.
+//
+// PlatformRenderPhase::Frustum is used as the once-per-frame counter rather
+// than Sky: EntityRenderer.cpp only brackets Sky when renderDistance < 2,
+// which DSi's default of 3 never satisfies, while Frustum's bracket
+// (clipRenderersByFrustrum) is unconditional every frame.
+constexpr int kRenderPhaseSlots = 13; // PlatformRenderPhase's enum count
+constexpr const char* const kRenderPhaseNames[kRenderPhaseSlots] = {
+	"sky", "frustum", "build", "opaque", "ents", "transl", "hand", "hud",
+	"entDraw", "tileDraw", "hudItems", "hudText", "hudHints"
+};
+long long g_renderPhaseSumUs[kRenderPhaseSlots] = {};
+long long g_renderPhaseMaxUs[kRenderPhaseSlots] = {};
+int g_renderFrameCount = 0;
+
+void reportRenderPhasesIfDue()
+{
+	if (g_renderFrameCount < 20)
+		return;
+
+	char line[256];
+	int len = 0;
+	for (int i = 0; i < kRenderPhaseSlots && len < (int)sizeof(line) - 32; ++i)
+	{
+		if (g_renderPhaseSumUs[i] == 0 && g_renderPhaseMaxUs[i] == 0)
+			continue;
+		len += std::snprintf(line + len, sizeof(line) - len, " %s=%ld/%ldms",
+			kRenderPhaseNames[i], (long)(g_renderPhaseSumUs[i] / g_renderFrameCount / 1000LL),
+			(long)(g_renderPhaseMaxUs[i] / 1000LL));
+	}
+	MC_LOG_INFO("dsi.perf", "renderphase%s\n", line);
+
+	for (int i = 0; i < kRenderPhaseSlots; ++i)
+	{
+		g_renderPhaseSumUs[i] = 0;
+		g_renderPhaseMaxUs[i] = 0;
+	}
+	g_renderFrameCount = 0;
+}
+}
+
+void platformProfileRenderPhaseEnd(std::uint32_t start, PlatformRenderPhase phase)
+{
+	const int index = static_cast<int>(phase);
+	if (index < 0 || index >= kRenderPhaseSlots)
+		return;
+	const std::uint32_t now = static_cast<std::uint32_t>(PlatformCompat::getMonotonicMicros());
+	const long long elapsedUs = (long long)(now - start);
+	g_renderPhaseSumUs[index] += elapsedUs;
+	if (elapsedUs > g_renderPhaseMaxUs[index])
+		g_renderPhaseMaxUs[index] = elapsedUs;
+	if (phase == PlatformRenderPhase::Frustum)
+		++g_renderFrameCount;
+	reportRenderPhasesIfDue();
 }
 
 namespace

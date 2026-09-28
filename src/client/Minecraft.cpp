@@ -2544,11 +2544,21 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
     bool ownsBedSpawn = false;
     bool flag1 = true;
 
+    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
+
     if (thePlayer != nullptr && !flag)
     {
         chunkcoordinates = thePlayer->getPlayerSpawnCoordinate();
         if (chunkcoordinates != nullptr)
         {
+            // Point the (bounded) chunk cache at the bed's location BEFORE
+            // checking bed validity. Otherwise, on a bounded/memory-constrained
+            // world, the cache is still centered on wherever the player died,
+            // so chunks around a genuinely valid bed can read back as
+            // blankChunk (air), making getNearestBedSpawnLocation() reject a
+            // real bed and fall back to (possibly stale) world spawn.
+            configureChunkProviderCache(ichunkprovider, chunkcoordinates->x >> 4, chunkcoordinates->z >> 4, gameSettings->renderDistance);
+
             chunkcoordinates1 = EntityPlayer::getNearestBedSpawnLocation(theWorld, chunkcoordinates);
             ownsBedSpawn = chunkcoordinates1 != nullptr;
             if (chunkcoordinates1 == nullptr)
@@ -2563,7 +2573,6 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
         flag1 = false;
     }
 
-    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
     configureChunkProviderCache(ichunkprovider, chunkcoordinates1->x >> 4, chunkcoordinates1->z >> 4, gameSettings->renderDistance);
 
     theWorld->setSpawnLocation();

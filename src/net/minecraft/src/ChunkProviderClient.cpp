@@ -20,7 +20,10 @@ ChunkProviderClient::ChunkProviderClient(World *world)
 		chunkMapping.reserve(PLATFORM_CHUNK_MAP_RESERVE);
 		chunkList.reserve(PLATFORM_CHUNK_MAP_RESERVE);
 	}
-	blankChunk = new EmptyChunk(world, std::vector<byte_t>(32768, 0), 0, 0);
+	// The section-based Chunk constructor already represents an empty
+	// column; avoid a transient 32 KiB legacy block array that would just
+	// be parsed into storage and thrown away.
+	blankChunk = new EmptyChunk(world, 0, 0);
 }
 
 ChunkProviderClient::~ChunkProviderClient()
@@ -118,8 +121,10 @@ Chunk *ChunkProviderClient::prepareChunk(int_t i, int_t j)
 			delete old;
 	}
 
-	std::vector<byte_t> abyte0(32768, 0);
-	Chunk *chunk = new Chunk(worldObj, abyte0, i, j);
+	// Real section data is filled in immediately after this call (Packet51),
+	// so constructing through the legacy flat block array only allocated
+	// and scanned 32 KiB of zeroes before discarding it.
+	Chunk *chunk = new Chunk(worldObj, i, j);
 	chunkMapping[key] = chunk;
 	markChunkTopologyChanged();
 	chunkList.push_back(chunk);

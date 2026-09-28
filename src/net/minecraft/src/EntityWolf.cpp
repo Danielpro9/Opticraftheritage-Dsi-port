@@ -174,7 +174,9 @@ void EntityWolf::readEntityFromNBT(NBTTagCompound *nbttagcompound)
 
 bool EntityWolf::canDespawn()
 {
-	return isWolfAngry();
+	// A tamed pet that becomes angry (e.g. defending itself/its owner) was
+	// otherwise eligible for despawn like any wild angry wolf.
+	return isWolfAngry() && !isWolfTamed();
 }
 
 jstring EntityWolf::getLivingSound()

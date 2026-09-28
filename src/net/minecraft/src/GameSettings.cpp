@@ -462,25 +462,37 @@ void GameSettings::setOptionFloatValue(const EnumOptions *enumoptions, float f)
 	// --- OptiFine ---
 	if (enumoptions == EnumOptions::BRIGHTNESS)
 	{
-		ofBrightness = f;
-		updateWorldLightLevels();
+		// A held slider re-fires the same value every frame; only pay for a
+		// full world relight when it actually changed.
+		if (ofBrightness != f)
+		{
+			ofBrightness = f;
+			updateWorldLightLevels();
+		}
 	}
 	if (enumoptions == EnumOptions::CLOUD_HEIGHT)
 		ofCloudsHeight = f;
 	if (enumoptions == EnumOptions::AO_LEVEL)
 	{
-		ofAoLevel = f;
-		ambientOcclusion = (ofAoLevel > 0.0f); // 'k'
-		invalidateChunkMeshes();
+		if (ofAoLevel != f)
+		{
+			ofAoLevel = f;
+			ambientOcclusion = (ofAoLevel > 0.0f); // 'k'
+			invalidateChunkMeshes();
+		}
 	}
 	if (enumoptions == EnumOptions::RENDER_DISTANCE_FINE)
 	{
 		const int_t maxRenderDistance = Config::getMaxRenderDistanceFine();
-		ofRenderDistanceFine = 32 + (int_t)(f * (float)(maxRenderDistance - 32));
-		ofRenderDistanceFine = (ofRenderDistanceFine >> 4) << 4;
-		ofRenderDistanceFine = Config::limit(ofRenderDistanceFine, 32, maxRenderDistance);
-		platformGameSettingsUpdateRenderDistanceFromFine(ofRenderDistanceFine, renderDistance);
-		reloadChunkRenderers();
+		int_t newDistance = 32 + (int_t)(f * (float)(maxRenderDistance - 32));
+		newDistance = (newDistance >> 4) << 4;
+		newDistance = Config::limit(newDistance, 32, maxRenderDistance);
+		if (newDistance != ofRenderDistanceFine)
+		{
+			ofRenderDistanceFine = newDistance;
+			platformGameSettingsUpdateRenderDistanceFromFine(ofRenderDistanceFine, renderDistance);
+			reloadChunkRenderers();
+		}
 	}
 	saveOptions();
 }

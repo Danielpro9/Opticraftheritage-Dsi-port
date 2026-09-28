@@ -2406,6 +2406,32 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
 
         do
         {
+            // PlatformStreamingFrameBudget (StreamingFrameBudget.h) shares one
+            // wall-clock allowance across generation/populate/lighting drains
+            // per REAL rendered frame -- beginFrame() is normally called once
+            // per iteration of the outer while(running) loop, right before a
+            // frame's tick/render. This warmup loop is a nested spin inside a
+            // single one of those iterations: changeWorld() never returns to
+            // the outer loop while it runs, so beginFrame() was called exactly
+            // once for the whole 2500ms warmup, not once per iteration here.
+            //
+            // Real-hardware evidence this explains: even after this loop
+            // started calling serviceFrameGeneration() below (a separate
+            // fix -- see that call's own comment), debug.log still showed
+            // "warmup capped: built 1/50" to "8/50", far short of the ~830
+            // generation steps 2500ms/3ms-per-call * 8-steps-per-call should
+            // allow. clampUs() (StreamingFrameBudget.cpp) degrades an
+            // exhausted allowance to ~1 step per drain rather than stalling,
+            // so once the FIRST iteration's 8ms shared allowance
+            // (PLATFORM_STREAMING_FRAME_BUDGET_US) was spent, every remaining
+            // iteration of this loop -- possibly hundreds -- got clamped to
+            // one generation step apiece instead of the 8 serviceFrameGeneration()
+            // asks for, for the rest of the 2500ms. Refreshing it here gives
+            // each iteration the same full allowance a real frame would get,
+            // which is what PLATFORM_GENERATION_STEPS_PER_FRAME/_BUDGET_US
+            // were actually sized against. Not yet confirmed on real hardware.
+            PlatformStreamingFrameBudget::beginFrame();
+
             if (!meshesReady)
             {
                 renderGlobal->updateRenderers(thePlayer, false);

@@ -197,9 +197,9 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
 
             if (field_27004_a) {
                 const int color = item->getColorFromDamage(itemstack->getItemDamage(), renderPass);
-                const float red = (float)(color >> 16 & 0xff) / 255.0f;
-                const float green = (float)(color >> 8 & 0xff) / 255.0f;
-                const float blue = (float)(color & 0xff) / 255.0f;
+                const float red = (float)(color >> 16 & 0xff) * (1.0f / 255.0f);
+                const float green = (float)(color >> 8 & 0xff) * (1.0f / 255.0f);
+                const float blue = (float)(color & 0xff) * (1.0f / 255.0f);
                 renderColor4f(red, green, blue, 1.0f);
             }
 
@@ -249,9 +249,21 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         renderEnable(RenderCapability::CullFace);
         return;
     }
+    // Cached rather than looked up fresh every call -- drawItemIntoGui() runs
+    // once per inventory/container SLOT, every frame a GUI screen is open (a
+    // full inventory is 30-40+ slots), so each of these was a std::string
+    // temporary + hash-map lookup (RenderEngine::getTexture()) per slot per
+    // frame for what is almost always one of only two texture names.
+    static int cachedTerrainTextureId = -1;
+    if (cachedTerrainTextureId < 0)
+        cachedTerrainTextureId = renderengine->getTexture("/terrain.png");
+    static int cachedItemsTextureId = -1;
+    if (cachedItemsTextureId < 0)
+        cachedItemsTextureId = renderengine->getTexture("/gui/items.png");
+
     if (i >= 0 && i < 256 && Block::blocksList[i] != nullptr && RenderBlocks::renderItemIn3d(Block::blocksList[i]->getRenderType())) {
         int j1 = i;
-        renderengine->bindTexture(renderengine->getTexture("/terrain.png"));
+        renderengine->bindTexture(cachedTerrainTextureId);
         Block* block = Block::blocksList[j1];
         renderPushMatrix();
         renderTranslate(l - 2, i1 + 3, -3.0f + zLevel);
@@ -261,9 +273,9 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         renderRotate(210.0f, 1.0f, 0.0f, 0.0f);
         renderRotate(45.0f, 0.0f, 1.0f, 0.0f);
         int l1 = item->getColorFromDamage(j, 0);
-        float f2 = (float)(l1 >> 16 & 0xff) / 255.0f;
-        float f4 = (float)(l1 >> 8 & 0xff) / 255.0f;
-        float f5 = (float)(l1 & 0xff) / 255.0f;
+        float f2 = (float)(l1 >> 16 & 0xff) * (1.0f / 255.0f);
+        float f4 = (float)(l1 >> 8 & 0xff) * (1.0f / 255.0f);
+        float f5 = (float)(l1 & 0xff) * (1.0f / 255.0f);
         if (field_27004_a) {
             renderColor4f(f2, f4, f5, 1.0f);
         }
@@ -274,13 +286,13 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         renderPopMatrix();
     } else if (item->func_46058_c()) {
         renderDisable(RenderCapability::Lighting);
-        renderengine->bindTexture(renderengine->getTexture("/gui/items.png"));
+        renderengine->bindTexture(cachedItemsTextureId);
         for (int renderPass = 0; renderPass <= 1; ++renderPass) {
             const int icon = item->func_46057_a(j, renderPass);
             const int color = item->getColorFromDamage(j, renderPass);
-            const float red = (float)(color >> 16 & 0xff) / 255.0f;
-            const float green = (float)(color >> 8 & 0xff) / 255.0f;
-            const float blue = (float)(color & 0xff) / 255.0f;
+            const float red = (float)(color >> 16 & 0xff) * (1.0f / 255.0f);
+            const float green = (float)(color >> 8 & 0xff) * (1.0f / 255.0f);
+            const float blue = (float)(color & 0xff) * (1.0f / 255.0f);
             if (field_27004_a) {
                 renderColor4f(red, green, blue, 1.0f);
             }
@@ -290,14 +302,14 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
     } else if (k >= 0) {
         renderDisable(RenderCapability::Lighting);
         if (i < 256) {
-            renderengine->bindTexture(renderengine->getTexture("/terrain.png"));
+            renderengine->bindTexture(cachedTerrainTextureId);
         } else {
-            renderengine->bindTexture(renderengine->getTexture("/gui/items.png"));
+            renderengine->bindTexture(cachedItemsTextureId);
         }
         int k1 = item->getColorFromDamage(j, 0);
-        float f = (float)(k1 >> 16 & 0xff) / 255.0f;
-        float f1 = (float)(k1 >> 8 & 0xff) / 255.0f;
-        float f3 = (float)(k1 & 0xff) / 255.0f;
+        float f = (float)(k1 >> 16 & 0xff) * (1.0f / 255.0f);
+        float f1 = (float)(k1 >> 8 & 0xff) * (1.0f / 255.0f);
+        float f3 = (float)(k1 & 0xff) * (1.0f / 255.0f);
         if (field_27004_a) {
             renderColor4f(f, f1, f3, 1.0f);
         }

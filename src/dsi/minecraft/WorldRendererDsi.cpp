@@ -169,6 +169,8 @@ void WorldRenderer::dsiResetBuildState()
 		// here, exactly like Wii's terrainChunkHandlesClearStaging() leaves
 		// the live GX handles alone on a restart.
 		renderStaticMeshDestroy(dsiStagingMesh[p]);
+		dsiRepackStage[p] = 0;
+		dsiRepackCursor[p] = 0;
 	}
 }
 
@@ -484,7 +486,7 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 			// this was ported from (right after capture, before the quads are
 			// appended to the persistent build buffer). See DsiWaterMerge.h's
 			// header comment for the full design (must run before
-			// dsiRepackCapturedMeshFast() converts this data to fixed-point).
+			// dsiRepackCapturedMeshStep() converts this data to fixed-point).
 			if (dsiBuildPass == 1 && Block::waterStill != nullptr &&
 				stepMesh.primitive == RenderPrimitive::Quads &&
 				stepMesh.hasTexture && stepMesh.hasColor && stepMesh.hasBrightness)
@@ -532,18 +534,13 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 			mesh.hasBrightness = dsiBuildHasBrightness[dsiBuildPass];
 			mesh.brightnessOffset = 28;
 			renderStaticMeshCompile(dsiStagingMesh[dsiBuildPass], mesh);
-			// One-time cost here (chunk build) instead of every one of the
-			// many frames this section is drawn before its next rebuild --
-			// see dsiRepackCapturedMeshFast()'s own comment for the full why.
-			// Safe to call even though the mesh isn't published to
-			// dsiLiveMesh yet (see the comment above): it only touches
-			// dsiStagingMesh's own captured buffer, in place. Passing
-			// terrain.png's own texture id is what lets it also pre-convert
-			// texcoords, not just position -- safe specifically for this
-			// mesh because drawCapturedTerrain() never rebinds a texture
-			// itself (see renderExtraTerrainMeshes()'s own "state assumes
-			// terrain.png is still bound" comment below for why that holds).
-			dsiRepackCapturedMeshFast(dsiStagingMesh[dsiBuildPass].captured, ConnectedTextures::getTerrainTextureId());
+			// Fixed-point repack (position/texcoord -> v16/t16, plus the GX
+			// command compile) no longer happens here -- see the budgeted
+			// dsiRepackCapturedMeshStep() phase right after this while loop
+			// for why running it unconditionally at this point used to be a
+			// real-hardware "build" spike source (up to 172ms in one call,
+			// unbounded by blockBudget) and why it is now spread across
+			// several calls instead.
 		}
 		else
 		{
@@ -561,6 +558,41 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 			if (nowUs > stepStartUs && nowUs - stepStartUs >= (uint64_t)PLATFORM_CHUNK_BUILD_STEP_US)
 				return false;
 		}
+	}
+
+	// Both passes' block loops are done and both dsiStagingMesh[p] are
+	// compiled (or destroyed, if that pass drew nothing) -- but not yet
+	// converted to the DS GPU's native v16/t16 fixed-point layout or
+	// compiled into a GX FIFO command stream. That conversion used to run
+	// unconditionally, for a whole pass's mesh in one shot, the instant its
+	// block loop crossed its last block (see the comment above where that
+	// call used to sit): real-hardware evidence (the renderphase log's
+	// "build" column) showed single dsiBuildRendererStep() calls spiking as
+	// high as 172ms on a section with enough visible geometry -- several
+	// full per-vertex passes over however many thousand vertices that
+	// section's pass accumulated, each vertex paying multiple soft-float
+	// multiplies (floattov16()/floattot16(), ARM9 has no FPU at all), with
+	// nothing bounding it: PLATFORM_CHUNK_BUILD_BLOCKS_PER_STEP only ever
+	// bounded the per-block loop above, never this repack work, and
+	// PLATFORM_CHUNK_BUILD_STEP_US (the elapsed-time budget that would
+	// otherwise have caught it) is 0 for DSi, inherited from PS2 unmodified.
+	//
+	// dsiRepackCapturedMeshStep() below is the same conversion, budgeted and
+	// resumable across several calls via dsiRepackStage/dsiRepackCursor.
+	// Safe to spread across multiple frames because it only ever touches
+	// dsiStagingMesh (not yet published to dsiLiveMesh -- see the per-pass
+	// compile block above): a section simply keeps drawing its OLD published
+	// mesh, unconverted meshes are always safe to draw via the plain float
+	// path (RenderCapturedMesh::positionIsV16/texCoordIsT16 default false),
+	// for a few more frames while this finishes, exactly like the per-block
+	// loop above already lets the rest of a build take several frames.
+	for (int p = 0; p < 2; ++p)
+	{
+		if (dsiRepackStage[p] >= 2)
+			continue;
+		if (!dsiRepackCapturedMeshStep(dsiStagingMesh[p].captured, ConnectedTextures::getTerrainTextureId(),
+				DSI_MESH_REPACK_VERTICES_PER_STEP, dsiRepackStage[p], dsiRepackCursor[p]))
+			return false;
 	}
 
 	// Linear scans instead of hash sets -- see the PS2/Wii build paths in

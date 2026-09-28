@@ -201,6 +201,8 @@ WorldRenderer::WorldRenderer(World *world, std::vector<TileEntity *> *tileEntiti
 		dsiBuildHasColor[p] = false;
 		dsiBuildHasBrightness[p] = false;
 		dsiBuildDrew[p] = false;
+		dsiRepackStage[p] = 0;
+		dsiRepackCursor[p] = 0;
 	}
 	dsiBuildActive = false;
 	dsiBuildSourceAvailability = 0u;

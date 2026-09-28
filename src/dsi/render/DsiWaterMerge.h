@@ -40,7 +40,7 @@ class ChunkCache;
 // diagnostics elsewhere in this port use, since a wrong assumption here would
 // silently just find nothing to merge (see mergedQuads below) rather than
 // corrupt anything -- must run on the still-float raw buffer BEFORE
-// RenderAPI_DSI.cpp's dsiRepackCapturedMeshFast() converts position/texcoord
+// RenderAPI_DSI.cpp's dsiRepackCapturedMeshStep() converts position/texcoord
 // to the DS GPU's native fixed-point formats in place.
 //
 // originX/Y/Z: this build step's section origin in world block coordinates

@@ -374,4 +374,25 @@
 #define DSI_ENTITY_FIRE_MAX_LAYERS                3
 #define DSI_ENTITY_FIRE_LAYER_STEP                0.70f
 
+// How many vertices WorldRendererDsi.cpp's dsiRepackCapturedMeshStep() phase
+// converts/compiles per dsiBuildRendererStep() call. Real-hardware evidence
+// (renderphase log's "build" column): converting a whole finished section's
+// mesh to the DS GPU's v16/t16 fixed-point layout and compiling its GX FIFO
+// command stream in one unconditional, unbudgeted shot -- as this used to run
+// the instant a pass's block loop finished -- spiked a single call as high as
+// 172ms on a section with enough visible geometry, because
+// PLATFORM_CHUNK_BUILD_BLOCKS_PER_STEP (512) only ever bounded the per-block
+// loop before it, never this repack work, and PLATFORM_CHUNK_BUILD_STEP_US
+// (the elapsed-time budget that would otherwise have caught it) is 0 for DSi,
+// inherited from PS2 unmodified.
+//
+// 256 is a first estimate, not a measurement, same as this file's other
+// unmeasured knobs (see its own banner): each vertex here costs a handful of
+// soft-float multiplies on this FPU-less ARM9 (floattov16()/floattot16()),
+// roughly the same order of magnitude per-unit cost as a block in the
+// per-block loop above pays, so starting at half PLATFORM_CHUNK_BUILD_BLOCKS_
+// PER_STEP errs conservative until a real per-step timing measurement can
+// size it properly. Revisit together with that budget once one exists.
+#define DSI_MESH_REPACK_VERTICES_PER_STEP         256
+
 #endif // PLATFORM_DSI

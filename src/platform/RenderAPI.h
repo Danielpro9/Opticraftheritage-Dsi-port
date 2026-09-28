@@ -186,7 +186,7 @@ struct RenderCapturedMesh
     bool hasBrightness = false;
     int brightnessOffset = 0;
 
-    // DSi-only (RenderAPI_DSI.cpp's dsiRepackCapturedMeshFast()): true once
+    // DSi-only (RenderAPI_DSI.cpp's dsiRepackCapturedMeshStep()): true once
     // this mesh's position field has been converted from float3 to the DS
     // GPU's native v16 fixed-point format in place. Every other backend
     // leaves this at its default (false) and ignores it; harmless dead
@@ -199,7 +199,7 @@ struct RenderCapturedMesh
     // float2 to the DS GPU's native t16 texel-space fixed-point format
     // (glTexCoord2t16()), skipping the per-frame float multiply-by-texture-
     // size glTexCoord2f() does internally on every vertex, every frame a
-    // section replays. Only ever set for a mesh dsiRepackCapturedMeshFast()
+    // section replays. Only ever set for a mesh dsiRepackCapturedMeshStep()
     // confirmed is always drawn against a specific, already-resident texture
     // (main terrain sections against terrain.png) -- never safe to bake in
     // generally, since a captured mesh drawn against different textures on
@@ -208,7 +208,7 @@ struct RenderCapturedMesh
     // every other backend, same as positionIsV16.
     bool texCoordIsT16 = false;
 
-    // DSi-only (RenderAPI_DSI.cpp's dsiCompileCapturedMeshCommands()): a
+    // DSi-only (RenderAPI_DSI.cpp's dsiRepackCapturedMeshStep()): a
     // pre-packed GX FIFO command stream -- built once, same "pay the cost
     // at build time, not on every one of the hundreds of frames this mesh
     // replays before its next rebuild" precedent as positionIsV16/

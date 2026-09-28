@@ -1160,13 +1160,13 @@ bool renderDrawInterleaved(const RenderInterleavedMesh& mesh)
 }
 
 // Verbatim byte-copy of the source interleaved buffer -- deliberately NOT
-// pre-converting position here (see dsiRepackCapturedMeshFast() below for
+// pre-converting position here (see dsiRepackCapturedMeshStep() below for
 // where that actually happens and why not here). This function has two
 // different callers with two different expectations of its output format,
 // and only one of them wants a converted result:
 //   * platform/RenderStaticMesh.cpp's renderStaticMeshCompile(), for a
 //     FINISHED mesh a caller is about to start replaying every frame --
-//     this is the one dsiRepackCapturedMeshFast() targets, but it does so
+//     this is the one dsiRepackCapturedMeshStep() targets, but it does so
 //     as an explicit extra step the caller takes AFTER this returns (see
 //     WorldRendererDsi.cpp's dsiBuildRendererStep()), not inside here.
 //   * Tessellator::capture() (Tessellator.cpp), used by
@@ -1210,55 +1210,54 @@ bool renderCaptureInterleaved(const RenderInterleavedMesh& mesh, RenderCapturedM
 	out.hasBrightness = mesh.hasBrightness;
 	out.brightnessOffset = mesh.brightnessOffset;
 	// positionIsV16 deliberately left at its default (false): see the
-	// function banner above and dsiRepackCapturedMeshFast() below.
+	// function banner above and dsiRepackCapturedMeshStep() below.
 
 	return true;
 }
 
-// The actual optimization: converts a captured mesh's position field from
-// float3 to an already-GPU-native v16 triple, in place, ONE TIME -- called
-// only by WorldRendererDsi.cpp, only on a section's finished, about-to-be-
-// published mesh (dsiStagingMesh[pass].captured right after
-// renderStaticMeshCompile() succeeds), never on the intermediate per-step
-// buffers renderCaptureInterleaved() above also serves. Safe to call blind:
-// positionIsV16 makes it idempotent, and position is always exactly the
-// first 12 bytes of every vertex in this engine's interleaved convention
-// (there is no separate "position offset" field anywhere in RenderAPI.h --
-// drawInterleavedMesh() itself always reads it from vertex+0), so this
-// changes nothing about the mesh's stride or any other field's offset: 3
-// floats in, 3 pre-widened v16 ints out, both exactly 12 bytes.
+// Converts a captured mesh's position field from float3 to an already-GPU-
+// native v16 triple, and its texcoord field from normalized float2 to t16
+// texel-space, in place -- called only by WorldRendererDsi.cpp, only on a
+// section's finished, about-to-be-published mesh (dsiStagingMesh[pass].captured
+// right after renderStaticMeshCompile() succeeds), never on the intermediate
+// per-step buffers renderCaptureInterleaved() above also serves. Safe to call
+// blind: positionIsV16/texCoordIsT16 make each half idempotent, and position
+// is always exactly the first 12 bytes of every vertex in this engine's
+// interleaved convention (there is no separate "position offset" field
+// anywhere in RenderAPI.h -- drawInterleavedMesh() itself always reads it
+// from vertex+0), so this changes nothing about the mesh's stride or any
+// other field's offset: 3 floats in, 3 pre-widened v16 ints out, both exactly
+// 12 bytes (texcoord: 2 floats/2 t16 ints, same idea).
 //
-// Why this matters: floattov16() (nds/arm9/videoGL.h: `(v16)((n) * (1<<12))`)
-// is a genuine float multiply -- soft-float on this ARM9, which has no FPU
-// at all (arm946e-s+nofp) -- and drawInterleavedMesh()'s glVertex3f() does
-// three of them (via kInvVertexScale then floattov16 again inside libnds)
-// for EVERY vertex, EVERY frame a mesh is drawn. A captured terrain
-// section's positions never change between this call and the next rebuild
-// (a block edit, or the section streaming in/out of render distance) --
-// typically hundreds of frames later -- so paying that conversion once here
-// instead of every one of those frames is a straight win with no behaviour
-// change: glVertex3v16() (libnds's own doc comment on glVertex3f(): "Float
-// version! Please, use glVertex3v16() instead.") reproduces the identical
-// GPU-side value from the pre-converted ints that glVertex3f() would have
-// computed fresh each time.
+// Why this matters: floattov16()/floattot16() (nds/arm9/videoGL.h: `(v16)((n)
+// * (1<<12))`) are genuine float multiplies -- soft-float on this ARM9, which
+// has no FPU at all (arm946e-s+nofp) -- and drawInterleavedMesh()'s
+// glVertex3f()/glTexCoord2f() do that same work (position: 3 multiplies via
+// kInvVertexScale then floattov16 again inside libnds; texcoord: scaled by
+// the CURRENTLY BOUND texture's width/height, libnds's videoGL.c) for EVERY
+// vertex, EVERY frame a mesh is drawn. A captured terrain section's geometry
+// never changes between this call and the next rebuild (a block edit, or the
+// section streaming in/out of render distance) -- typically hundreds of
+// frames later -- so paying both conversions once here instead of every one
+// of those frames is a straight win with no behaviour change: glVertex3v16()/
+// glTexCoord2t16() (libnds's own doc comment on glVertex3f(): "Float version!
+// Please, use glVertex3v16() instead.") reproduce the identical GPU-side
+// value the float calls would have computed fresh each time. Texcoord is only
+// safe to bake in here because the caller already confirmed this mesh is
+// always drawn against terrainTextureId specifically (RenderExtraTerrainMeshes'
+// CTM overlays rebind a different texture per group and must stay on the
+// float glTexCoord2f() path instead -- see RenderCapturedMesh::texCoordIsT16's
+// own comment) -- guarded on that texture actually being resident (width/
+// height known); failing safe (leaving the float path in place) rather than
+// baking in a bogus 0x0 scale is worth the one check.
 //
-// Texture coordinates are NOT converted the same way here: glTexCoord2f()
-// scales by the CURRENTLY BOUND texture's width/height (libnds's videoGL.c),
-// which is not necessarily fixed at repack time for every captured mesh
-// this engine has (RenderExtraTerrainMeshes rebinds a different texture per
-// group) -- baking that in now without also plumbing the bound texture's
-// size through would be a real, if less frequent, correctness risk. Left as
-// the float path (drawCapturedMeshFast() below still calls glTexCoord2f()
-// per vertex) -- a real but smaller remaining cost than position (1 call vs.
-// 3 per vertex) and the next thing to revisit if a texture-size-aware
-// version of this is worth the added complexity.
-// Pre-packs a captured mesh's per-vertex GX FIFO command stream once, so
-// replaying it every frame is a single DMA transfer straight into the
-// geometry engine's command port instead of this file's own per-vertex
-// libnds call sequence below (glColor3b()/glTexCoord2t16()/glVertex3v16(),
-// each a real ARM9 function call with its own argument packing, run
-// vertexCount times EVERY frame a section is drawn). Validated two ways
-// before writing this, not guessed:
+// Once both conversions are done, also pre-packs the mesh's per-vertex GX
+// FIFO command stream, so replaying it every frame is a single DMA transfer
+// straight into the geometry engine's command port instead of this file's own
+// per-vertex libnds call sequence in drawCapturedMeshFast() below
+// (glColor3b()/glTexCoord2t16()/glVertex3v16(), each a real ARM9 function
+// call with its own argument packing, run vertexCount times EVERY frame a
+// section is drawn). Validated two ways before writing this, not guessed:
 //   (1) libnds's own headers give the exact on-the-wire format the FIFO
 //       register (GFX_FIFO, nds/arm9/video.h) expects: FIFO_COMMAND_PACK()
 //       (nds/arm9/videoGL.h) packs up to 4 command IDs into one header word
@@ -1286,45 +1285,124 @@ bool renderCaptureInterleaved(const RenderInterleavedMesh& mesh, RenderCapturedM
 //       below mirrors that exact DMA call, not glCallList().
 //
 // Fixed 5-word-per-vertex layout, one self-contained command header per
-// vertex (matching ClassiCube's DSTexturedVertex struct, NOT this file's
-// own emitColorIfChanged() run-length colour dedup below): a per-vertex
-// header must stand alone for a blind DMA replay to work, so a redundant
-// GFX_COLOR word between two same-coloured vertices costs one packed word,
-// not a function call -- cheap next to the per-vertex call overhead this
-// removes. Gated by dsiRepackCapturedMeshFast() below to only meshes it has
-// already fully converted to v16 position + t16 texcoord, with no normals
-// (this path never emits a NORMAL command) and GL_QUADS primitives (this
-// port's only captured-mesh shape).
-void dsiCompileCapturedMeshCommands(RenderCapturedMesh& mesh)
+// vertex (matching ClassiCube's DSTexturedVertex struct, NOT this file's own
+// emitColorIfChanged() run-length colour dedup in drawCapturedMeshFast()
+// below): a per-vertex header must stand alone for a blind DMA replay to
+// work, so a redundant GFX_COLOR word between two same-coloured vertices
+// costs one packed word, not a function call -- cheap next to the per-vertex
+// call overhead this removes. Only ever built for a mesh already fully
+// converted to v16 position + t16 texcoord, with no normals (this path never
+// emits a NORMAL command) and GL_QUADS primitives (this port's only
+// captured-mesh shape).
+//
+// Budgeted and resumable across several calls (see
+// DsiCapturedMeshRepack.h's own comment on this function for the full why --
+// real-hardware evidence of a single-call "build" spike as high as 172ms when
+// this used to run as one unconditional pass over a whole section's mesh --
+// and the safety argument for calling it on a staging, unpublished mesh
+// only): stage 0 does the position+texcoord conversion above, merged into one
+// per-vertex pass (a given vertex's own conversion never depends on any
+// other vertex, so nothing is lost combining them); stage 1 does the FIFO
+// command compile above. The per-vertex colour/lightmap-combine logic in
+// stage 1 below is kept in sync by hand with drawCapturedMeshFast()'s own
+// identical loop (same existing precedent this file already follows for that
+// pair) -- see that copy's own comments for why each branch exists.
+bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, int vertexBudget,
+	int& stage, int& cursor)
 {
-	mesh.compiledCommands.clear();
-
-	if (mesh.empty() || !mesh.positionIsV16 || !mesh.texCoordIsT16 || mesh.hasNormals)
-		return;
-	if (mesh.primitive != RenderPrimitive::Quads)
-		return;
-
-	const std::uint8_t* base = reinterpret_cast<const std::uint8_t*>(mesh.raw.data());
-	// Not constexpr: REG2ID() (videoGL.h) casts a register's address to an
-	// integer, which is a pointer-to-integer conversion the standard bars
-	// from constant expressions even though the address itself is a fixed
-	// compile-time literal (GFX_FIFO et al. are hardcoded MMIO addresses) --
-	// still computed once here, outside the per-vertex loop below, which is
-	// what actually matters for cost.
-	const std::uint32_t kHeader = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
-
-	mesh.compiledCommands.resize((std::size_t)mesh.vertexCount * 5);
-	std::uint32_t* out = mesh.compiledCommands.data();
-
-	for (int i = 0; i < mesh.vertexCount; ++i)
+	if (mesh.empty())
 	{
-		const std::uint8_t* vertex = base + (std::size_t)i * mesh.stride;
+		stage = 2;
+		cursor = 0;
+		return true;
+	}
+	if (stage >= 2)
+		return true;
+	if (vertexBudget <= 0)
+		vertexBudget = mesh.vertexCount;
 
-		// Identical colour/lightmap-combine logic to drawCapturedMeshFast()'s
-		// per-vertex loop below (kept in sync by hand) -- see that copy's own
-		// comments for why each branch exists. The only difference is this
-		// loop always computes and writes a colour word instead of skipping
-		// one when it matches the previous vertex's.
+	std::uint8_t* raw = reinterpret_cast<std::uint8_t*>(mesh.raw.data());
+
+	if (stage == 0)
+	{
+		// Texture residency is a per-mesh question, not a per-vertex one --
+		// resolved once here, outside the per-vertex loop below.
+		const DsiTexture* terrainTex = mesh.hasTexture ? textureSlot(terrainTextureId) : nullptr;
+		const bool texResident = terrainTex && terrainTex->allocated && terrainTex->width > 0 && terrainTex->height > 0;
+		const float texW = texResident ? static_cast<float>(terrainTex->width) : 0.0f;
+		const float texH = texResident ? static_cast<float>(terrainTex->height) : 0.0f;
+
+		const int endVertex = std::min(mesh.vertexCount, cursor + vertexBudget);
+		for (int i = cursor; i < endVertex; ++i)
+		{
+			std::uint8_t* vertex = raw + (std::size_t)i * mesh.stride;
+
+			if (!mesh.positionIsV16)
+			{
+				float position[3];
+				std::memcpy(position, vertex, sizeof(position));
+				const std::int32_t posV16[3] = {
+					floattov16(position[0] * kInvVertexScale),
+					floattov16(position[1] * kInvVertexScale),
+					floattov16(position[2] * kInvVertexScale),
+				};
+				std::memcpy(vertex, posV16, sizeof(posV16));
+			}
+
+			if (mesh.hasTexture && texResident && !mesh.texCoordIsT16)
+			{
+				float uv[2];
+				std::memcpy(uv, vertex + mesh.texCoordOffset, sizeof(uv));
+				const std::int32_t uvT16[2] = {
+					floattot16(uv[0] * texW),
+					floattot16(uv[1] * texH),
+				};
+				std::memcpy(vertex + mesh.texCoordOffset, uvT16, sizeof(uvT16));
+			}
+		}
+		cursor = endVertex;
+		if (cursor < mesh.vertexCount)
+			return false;
+
+		mesh.positionIsV16 = true;
+		if (mesh.hasTexture && texResident)
+			mesh.texCoordIsT16 = true;
+		// Texture not resident yet: fail safe -- texCoordIsT16 stays false,
+		// this build's mesh keeps the (already v16-position) float-texcoord
+		// draw path, and the next rebuild this section gets tries the
+		// conversion again from scratch.
+		stage = 1;
+		cursor = 0;
+		// Yield here rather than falling through to stage 1 in the same
+		// call: keeps this call's added cost bounded to one stage's own
+		// vertexBudget, the same shape as the per-block loop's own budget
+		// above.
+		return false;
+	}
+
+	// stage == 1: compile the GX FIFO command stream. Anything that fails
+	// this eligibility guard (normals, non-quad primitive, texture never came
+	// resident above) has nothing left to do and falls back to the ordinary
+	// per-vertex draw path forever for this build.
+	if (mesh.hasNormals || mesh.primitive != RenderPrimitive::Quads || !mesh.positionIsV16 || !mesh.texCoordIsT16)
+	{
+		mesh.compiledCommands.clear();
+		stage = 2;
+		cursor = 0;
+		return true;
+	}
+
+	if (cursor == 0)
+		mesh.compiledCommands.assign((std::size_t)mesh.vertexCount * 5, 0u);
+
+	const std::uint32_t kHeader = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
+	const int endVertex = std::min(mesh.vertexCount, cursor + vertexBudget);
+	std::uint32_t* out = mesh.compiledCommands.data() + (std::size_t)cursor * 5;
+
+	for (int i = cursor; i < endVertex; ++i)
+	{
+		const std::uint8_t* vertex = raw + (std::size_t)i * mesh.stride;
+
 		std::uint8_t r = 255, g = 255, b = 255;
 		bool haveLightmapColor = false;
 		std::uint8_t lightmapR = 255, lightmapG = 255, lightmapB = 255;
@@ -1355,10 +1433,6 @@ void dsiCompileCapturedMeshCommands(RenderCapturedMesh& mesh)
 		{
 			r = lightmapR; g = lightmapG; b = lightmapB;
 		}
-		// else: r=g=b stay 255 (opaque white) -- same "no colour, no
-		// lightmap" fallback as drawCapturedMeshFast()'s own comment below
-		// explains (avoids inheriting a stale GFX_COLOR from an unrelated
-		// earlier draw call under POLY_MODULATION).
 
 		std::int32_t uvT16[2];
 		std::memcpy(uvT16, vertex + mesh.texCoordOffset, sizeof(uvT16));
@@ -1373,71 +1447,13 @@ void dsiCompileCapturedMeshCommands(RenderCapturedMesh& mesh)
 		out[4] = static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[2]));
 		out += 5;
 	}
-}
+	cursor = endVertex;
+	if (cursor < mesh.vertexCount)
+		return false;
 
-void dsiRepackCapturedMeshFast(RenderCapturedMesh& mesh, int terrainTextureId)
-{
-	if (mesh.empty())
-		return;
-
-	std::uint8_t* raw = reinterpret_cast<std::uint8_t*>(mesh.raw.data());
-
-	if (!mesh.positionIsV16)
-	{
-		for (int i = 0; i < mesh.vertexCount; ++i)
-		{
-			std::uint8_t* vertex = raw + (std::size_t)i * mesh.stride;
-			float position[3];
-			std::memcpy(position, vertex, sizeof(position));
-			const std::int32_t posV16[3] = {
-				floattov16(position[0] * kInvVertexScale),
-				floattov16(position[1] * kInvVertexScale),
-				floattov16(position[2] * kInvVertexScale),
-			};
-			std::memcpy(vertex, posV16, sizeof(posV16));
-		}
-		mesh.positionIsV16 = true;
-	}
-
-	// See RenderCapturedMesh::texCoordIsT16's own comment: this is only safe
-	// because the caller already confirmed this mesh is always drawn against
-	// terrainTextureId specifically. Guarded on the texture actually being
-	// resident (width/height known) -- normally always true by the time a
-	// section finishes building, but failing safe (leaving the float path in
-	// place) rather than baking in a bogus 0x0 scale is worth the one check.
-	if (mesh.hasTexture && !mesh.texCoordIsT16)
-	{
-		const DsiTexture* terrainTex = textureSlot(terrainTextureId);
-		if (terrainTex && terrainTex->allocated && terrainTex->width > 0 && terrainTex->height > 0)
-		{
-			const float texW = static_cast<float>(terrainTex->width);
-			const float texH = static_cast<float>(terrainTex->height);
-			for (int i = 0; i < mesh.vertexCount; ++i)
-			{
-				std::uint8_t* vertex = raw + (std::size_t)i * mesh.stride;
-				float uv[2];
-				std::memcpy(uv, vertex + mesh.texCoordOffset, sizeof(uv));
-				const std::int32_t uvT16[2] = {
-					floattot16(uv[0] * texW),
-					floattot16(uv[1] * texH),
-				};
-				std::memcpy(vertex + mesh.texCoordOffset, uvT16, sizeof(uvT16));
-			}
-			mesh.texCoordIsT16 = true;
-		}
-	}
-
-	// Both conversions above are one-shot and idempotent (positionIsV16/
-	// texCoordIsT16 guard each), so this is safe to call unconditionally on
-	// every pass through here: it only actually (re)builds compiledCommands
-	// the first time both are true and stays a no-op after (mesh.raw itself
-	// never changes once a section finishes building -- see this function's
-	// own banner comment on why replays never re-derive it). If the texture
-	// wasn't resident yet above (texCoordIsT16 still false), this call's own
-	// guard clause skips it and leaves compiledCommands empty, falling back
-	// to the float texcoord path below on that call -- same as before this
-	// existed -- and it tries again next time this is called.
-	dsiCompileCapturedMeshCommands(mesh);
+	stage = 2;
+	cursor = 0;
+	return true;
 }
 
 namespace
@@ -1447,7 +1463,7 @@ namespace
 // identical per-vertex colour/lightmap/normal/texcoord handling (kept in
 // sync by hand -- the two diverge only in how position reaches the GPU).
 // mesh.positionIsV16 tells this which of two sources drove the capture: a
-// section dsiRepackCapturedMeshFast() already converted (take the pre-
+// section dsiRepackCapturedMeshStep() already converted (take the pre-
 // converted v16 triple straight off the buffer, glVertex3v16(), no
 // per-frame float math), or anything else that goes through the generic
 // RenderStaticMesh path without that extra step -- RenderGlobal.cpp's sky/
@@ -1503,15 +1519,14 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 
 	if (!mesh.compiledCommands.empty())
 	{
-		// Fast path: dsiCompileCapturedMeshCommands() (see its own banner
-		// comment above dsiRepackCapturedMeshFast()) already pre-packed
-		// every vertex's COLOR+TEX_COORD+VERTEX16 command record once, back
-		// when this section's mesh was repacked -- replay it as a single DMA
-		// transfer straight into the geometry engine's FIFO port instead of
-		// the per-vertex libnds call loop below (which still handles every
-		// mesh this backend draws that ISN'T eligible for pre-compilation:
-		// anything with normals, a non-quad primitive, or not yet through
-		// dsiRepackCapturedMeshFast() at all).
+		// Fast path: dsiRepackCapturedMeshStep() (see its own banner comment
+		// above) already pre-packed every vertex's COLOR+TEX_COORD+VERTEX16
+		// command record once, back when this section's mesh was repacked --
+		// replay it as a single DMA transfer straight into the geometry
+		// engine's FIFO port instead of the per-vertex libnds call loop below
+		// (which still handles every mesh this backend draws that ISN'T
+		// eligible for pre-compilation: anything with normals, a non-quad
+		// primitive, or not yet through dsiRepackCapturedMeshStep() at all).
 		//
 		// Mirrors ClassiCube's own CallDrawList() (src/nds/Graphics_NDS.c),
 		// not libnds's higher-level glCallList(): glCallList() expects a
@@ -1519,7 +1534,7 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 		// otherwise know how long a general caller-built list is. This call
 		// site already knows the exact word count -- mesh.compiledCommands
 		// is always a whole number of fixed 5-word records, one per vertex,
-		// by construction in dsiCompileCapturedMeshCommands() above -- so it
+		// by construction in dsiRepackCapturedMeshStep() above -- so it
 		// skips that prefix and DMAs the buffer directly -- the same
 		// technique, minus a redundant word, and
 		// validated against ClassiCube's real, shipped implementation of

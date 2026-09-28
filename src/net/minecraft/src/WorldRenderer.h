@@ -399,6 +399,16 @@ private:
 	bool dsiStepDidWork;
 	std::vector<TileEntity *> dsiBuildTileEntityRenderers;
 
+	// Resumable/budgeted repack state, per pass -- see dsiRepackCapturedMeshStep()'s
+	// own comment (RenderAPI_DSI.cpp) for the full why. 0 = converting position/
+	// texcoord, 1 = compiling the GX FIFO command stream, 2 = done for this
+	// build. dsiRepackCursor is the next unprocessed vertex index within the
+	// current stage. Plain int, not int_t: pure internal bookkeeping, never a
+	// Java-semantic value, and RenderAPI_DSI.cpp (a different translation unit)
+	// takes these by reference without pulling in java/Type.h.
+	int dsiRepackStage[2];
+	int dsiRepackCursor[2];
+
 	void dsiResetBuildState();
 	void dsiBeginBuildState();
 	bool dsiBuildRendererStep(int_t blockBudget);

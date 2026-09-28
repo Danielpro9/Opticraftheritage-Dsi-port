@@ -5430,9 +5430,20 @@ std::vector<Entity*> &World::getEntitiesWithinAABBExcludingEntity(Entity* entity
     return entitiesWithinAABBExcludingEntity;
 }
 
-std::vector<Entity*> World::getEntitiesWithinAABB(const std::type_info& classType, AxisAlignedBB* aabb)
+std::vector<Entity*> &World::getEntitiesWithinAABB(const std::type_info& classType, AxisAlignedBB* aabb)
 {
-    std::vector<Entity *> result;
+    // Reuses a persistent member buffer instead of heap-allocating a fresh
+    // vector every call, same pattern as getEntitiesWithinAABBExcludingEntity()
+    // right above (entitiesWithinAABB itself was already declared in World.h,
+    // just never actually wired up). Called from ~15 sites throughout AI code
+    // (EntityAI*.cpp target/mate/avoid searches, EntityAnimal.cpp breeding,
+    // Village.cpp population counts, ...), most of them once per active
+    // mob per AI-decision tick -- every call was its own allocation. Safe to
+    // share one buffer across calls: every caller either reads the result
+    // immediately within its own local scope (copies what it needs out, or
+    // just reads .size()) before this function could be called again, the
+    // same assumption the sibling function above already relies on.
+    entitiesWithinAABB.clear();
 
     int minChunkX = MathHelper::floor_double((aabb->minX - 2.0) / 16.0);
     int maxChunkX = MathHelper::floor_double((aabb->maxX + 2.0) / 16.0);
@@ -5445,11 +5456,11 @@ std::vector<Entity*> World::getEntitiesWithinAABB(const std::type_info& classTyp
         {
             Chunk *chunk = getChunkIfExists(cx, cz);
             if (chunk != nullptr)
-                chunk->getEntitiesOfTypeWithinAAAB(classType, aabb, result);
+                chunk->getEntitiesOfTypeWithinAAAB(classType, aabb, entitiesWithinAABB);
         }
     }
 
-    return result;
+    return entitiesWithinAABB;
 }
 
 Entity *World::findNearestEntityWithinAABB(const std::type_info &classType, AxisAlignedBB *aabb, Entity *excludingEntity)

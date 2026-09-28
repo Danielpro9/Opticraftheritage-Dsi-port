@@ -375,7 +375,7 @@ public:
 	void dropOldChunks();
 	void randomDisplayUpdates(int_t i, int_t j, int_t k);
 	std::vector<Entity *> &getEntitiesWithinAABBExcludingEntity(Entity *entity, AxisAlignedBB *axisalignedbb);
-	std::vector<Entity *> getEntitiesWithinAABB(const std::type_info &class1, AxisAlignedBB *axisalignedbb);
+	std::vector<Entity *> &getEntitiesWithinAABB(const std::type_info &class1, AxisAlignedBB *axisalignedbb);
 	Entity *findNearestEntityWithinAABB(const std::type_info &class1, AxisAlignedBB *axisalignedbb, Entity *excludingEntity);
 	Entity *getEntityByID(int_t entityId);
 	std::vector<Entity *> &getLoadedEntityList();

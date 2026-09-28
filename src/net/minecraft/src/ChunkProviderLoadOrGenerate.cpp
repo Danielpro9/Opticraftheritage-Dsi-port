@@ -507,14 +507,21 @@ bool ChunkProviderLoadOrGenerate::unload100OldestChunks()
     // EMERGENCY UNLOAD: if we have way more chunks than the unload radius allows,
     // ignore the time gate and drain outside chunks at a bounded accelerated rate. This prevents
     // OOM when loading a saved world with many chunks or when RTTI fails.
+    // chunksOutsideRadius only matters when chunks is already over budget (the
+    // emergency check below is short-circuited by size otherwise) -- the full
+    // scan over every resident chunk to compute it is skipped in the common
+    // case instead of running unconditionally every tick.
     size_t chunksOutsideRadius = 0;
-    for (const auto &entry : chunks)
+    if (chunks.size() > max_chunks)
     {
-        Chunk *chunk = entry.second;
-        if (chunk != nullptr && chunk != blankChunk
-            && isOutsideUnloadRadius(chunk->xPosition, chunk->zPosition))
+        for (const auto &entry : chunks)
         {
-            chunksOutsideRadius++;
+            Chunk *chunk = entry.second;
+            if (chunk != nullptr && chunk != blankChunk
+                && isOutsideUnloadRadius(chunk->xPosition, chunk->zPosition))
+            {
+                chunksOutsideRadius++;
+            }
         }
     }
     bool emergency = chunks.size() > max_chunks && chunksOutsideRadius > 0;

@@ -1479,14 +1479,21 @@ bool ChunkProvider::unload100OldestChunks()
 	// it since ChunkProvider is the one actually in the World::getChunkProvider()
 	// path.
 	const size_t maxResidentChunks = (size_t)((chunkUnloadRadius * 2 + 1) * (chunkUnloadRadius * 2 + 1));
+	// chunksOutsideRadius only matters when chunkMap is already over budget (the
+	// `emergency` check below is short-circuited by size otherwise) -- the full
+	// scan over every resident chunk to compute it is skipped in the common
+	// case instead of running unconditionally every tick.
 	size_t chunksOutsideRadius = 0;
-	for (const auto &entry : chunkMap)
+	if (chunkMap.size() > maxResidentChunks)
 	{
-		Chunk *chunk = entry.second;
-		if (chunk != nullptr && chunk != blankChunk
-			&& isOutsideUnloadRadius(chunk->xPosition, chunk->zPosition))
+		for (const auto &entry : chunkMap)
 		{
-			chunksOutsideRadius++;
+			Chunk *chunk = entry.second;
+			if (chunk != nullptr && chunk != blankChunk
+				&& isOutsideUnloadRadius(chunk->xPosition, chunk->zPosition))
+			{
+				chunksOutsideRadius++;
+			}
 		}
 	}
 	const bool emergency = chunkMap.size() > maxResidentChunks && chunksOutsideRadius > 0;

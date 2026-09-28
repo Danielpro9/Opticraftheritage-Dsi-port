@@ -29,6 +29,7 @@ GuiContainerCreative::GuiContainerCreative(EntityPlayer *player)
     , currentScroll(0.0f)
     , isScrolling(false)
     , wasClicking(false)
+    , cachedTitle(StatCollector::translateToLocal("container.creative"))
 {
     player->craftingInventory = inventorySlots;
     field_948_f = true;
@@ -339,7 +340,7 @@ void GuiContainerCreative::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 
 void GuiContainerCreative::drawGuiContainerForegroundLayer()
 {
-    fontRenderer->drawString(StatCollector::translateToLocal("container.creative"), 8, 6, 0x404040);
+    fontRenderer->drawString(cachedTitle, 8, 6, 0x404040);
 }
 
 void GuiContainerCreative::drawGuiContainerBackgroundLayer(float_t)

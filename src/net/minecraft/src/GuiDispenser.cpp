@@ -10,13 +10,15 @@
 
 GuiDispenser::GuiDispenser(InventoryPlayer *player, TileEntityDispenser *dispenser)
 	: GuiContainer(new ContainerDispenser(player, dispenser), true)
+	, cachedTitle(StatCollector::translateToLocal("container.dispenser"))
+	, cachedInventoryLabel(StatCollector::translateToLocal("container.inventory"))
 {
 }
 
 void GuiDispenser::drawGuiContainerForegroundLayer()
 {
-	fontRenderer->drawString(StatCollector::translateToLocal("container.dispenser"), 60, 6,             0x404040);
-	fontRenderer->drawString(StatCollector::translateToLocal("container.inventory"),  8, (ySize - 96) + 2, 0x404040);
+	fontRenderer->drawString(cachedTitle,           60, 6,             0x404040);
+	fontRenderer->drawString(cachedInventoryLabel,   8, (ySize - 96) + 2, 0x404040);
 }
 
 void GuiDispenser::drawGuiContainerBackgroundLayer(float_t partialTick)

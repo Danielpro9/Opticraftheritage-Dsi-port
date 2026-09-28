@@ -14,6 +14,8 @@ GuiChest::GuiChest(IInventory *upper, IInventory *lower)
 	, upperChestInventory(upper)
 	, lowerChestInventory(lower)
 	, inventoryRows(0)
+	, cachedLowerLabel(StatCollector::translateToLocal(lower->getInvName()))
+	, cachedUpperLabel(StatCollector::translateToLocal(upper->getInvName()))
 {
 	field_948_f = false;
 	inventoryRows = lower->getSizeInventory() / 9;
@@ -22,8 +24,8 @@ GuiChest::GuiChest(IInventory *upper, IInventory *lower)
 
 void GuiChest::drawGuiContainerForegroundLayer()
 {
-	fontRenderer->drawString(StatCollector::translateToLocal(lowerChestInventory->getInvName()), 8, 6, 0x404040);
-	fontRenderer->drawString(StatCollector::translateToLocal(upperChestInventory->getInvName()), 8, (ySize - 96) + 2, 0x404040);
+	fontRenderer->drawString(cachedLowerLabel, 8, 6, 0x404040);
+	fontRenderer->drawString(cachedUpperLabel, 8, (ySize - 96) + 2, 0x404040);
 }
 
 void GuiChest::drawGuiContainerBackgroundLayer(float_t partialTick)

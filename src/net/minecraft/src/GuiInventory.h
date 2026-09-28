@@ -28,4 +28,7 @@ private:
 
 	float_t xSize_lo;
 	float_t ySize_lo;
+	// Translated once at screen-open time instead of every frame this screen
+	// is open -- see GuiFurnace.h's identical fix for the full reasoning.
+	std::string cachedTitle;
 };

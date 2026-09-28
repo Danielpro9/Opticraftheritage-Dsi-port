@@ -11,6 +11,8 @@
 
 GuiCrafting::GuiCrafting(InventoryPlayer *player, World *world, int_t x, int_t y, int_t z)
 	: GuiContainer(new ContainerWorkbench(player, world, x, y, z), true)
+	, cachedTitle(StatCollector::translateToLocal("container.crafting"))
+	, cachedInventoryLabel(StatCollector::translateToLocal("container.inventory"))
 {
 }
 
@@ -21,8 +23,8 @@ void GuiCrafting::onGuiClosed()
 
 void GuiCrafting::drawGuiContainerForegroundLayer()
 {
-	fontRenderer->drawString(StatCollector::translateToLocal("container.crafting"),  28, 6,             0x404040);
-	fontRenderer->drawString(StatCollector::translateToLocal("container.inventory"),  8, (ySize - 96) + 2, 0x404040);
+	fontRenderer->drawString(cachedTitle,           28, 6,             0x404040);
+	fontRenderer->drawString(cachedInventoryLabel,   8, (ySize - 96) + 2, 0x404040);
 }
 
 void GuiCrafting::drawGuiContainerBackgroundLayer(float_t partialTick)

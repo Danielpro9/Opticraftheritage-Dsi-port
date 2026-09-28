@@ -12,13 +12,15 @@
 GuiBrewingStand::GuiBrewingStand(InventoryPlayer *inventory, TileEntityBrewingStand *brewingStandIn)
     : GuiContainer(new ContainerBrewingStand(inventory, brewingStandIn), true)
     , brewingStand(brewingStandIn)
+    , cachedTitle(StatCollector::translateToLocal("container.brewing"))
+    , cachedInventoryLabel(StatCollector::translateToLocal("container.inventory"))
 {
 }
 
 void GuiBrewingStand::drawGuiContainerForegroundLayer()
 {
-    fontRenderer->drawString(StatCollector::translateToLocal("container.brewing"), 56, 6, 0x404040);
-    fontRenderer->drawString(StatCollector::translateToLocal("container.inventory"), 8, ySize - 94, 0x404040);
+    fontRenderer->drawString(cachedTitle, 56, 6, 0x404040);
+    fontRenderer->drawString(cachedInventoryLabel, 8, ySize - 94, 0x404040);
 }
 
 void GuiBrewingStand::drawGuiContainerBackgroundLayer(float_t)

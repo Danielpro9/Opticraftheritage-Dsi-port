@@ -17,4 +17,8 @@ protected:
 
 private:
     TileEntityBrewingStand *brewingStand;
+    // Translated once at screen-open time instead of every frame this screen
+    // is open -- see GuiFurnace.h's identical fix for the full reasoning.
+    std::string cachedTitle;
+    std::string cachedInventoryLabel;
 };

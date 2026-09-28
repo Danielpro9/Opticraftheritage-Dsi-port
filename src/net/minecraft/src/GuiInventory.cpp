@@ -17,6 +17,7 @@
 #include "Minecraft.h"
 #include "platform/RenderAPI.h"
 #include <cmath>
+#include <unordered_map>
 
 namespace
 {
@@ -34,12 +35,28 @@ namespace
 		static CachedTextureId cache;
 		return cache.get(mc->renderEngine, "/gui/inventory.png");
 	}
+
+	// displayDebuffEffects() below used to call StatCollector::translateToLocal()
+	// (a std::map<std::string,std::string> lookup) for every active potion
+	// effect, every frame the inventory screen is open with any effect active --
+	// a potion's translated base name never changes for a given potion id, only
+	// the amplifier suffix appended in displayDebuffEffects() does, so just the
+	// translation-table lookup is cached here, keyed by potion id.
+	const std::string &cachedPotionBaseName(int_t potionID, const std::string &translationKey)
+	{
+		static std::unordered_map<int_t, std::string> cache;
+		auto it = cache.find(potionID);
+		if (it == cache.end())
+			it = cache.emplace(potionID, StatCollector::translateToLocal(translationKey)).first;
+		return it->second;
+	}
 }
 
 GuiInventory::GuiInventory(EntityPlayer *player)
 	: GuiContainer(player->inventorySlots)
 	, xSize_lo(0.0f)
 	, ySize_lo(0.0f)
+	, cachedTitle(StatCollector::translateToLocal("container.crafting"))
 {
 	field_948_f = true;
 	player->addStat(AchievementList::openInventory, 1);
@@ -69,7 +86,7 @@ void GuiInventory::updateScreen()
 
 void GuiInventory::drawGuiContainerForegroundLayer()
 {
-	fontRenderer->drawString(StatCollector::translateToLocal("container.crafting"), 86, 16, 0x404040);
+	fontRenderer->drawString(cachedTitle, 86, 16, 0x404040);
 }
 
 void GuiInventory::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
@@ -167,7 +184,7 @@ void GuiInventory::displayDebuffEffects()
 			drawTexturedModalRect(x + 6, y + 7, (icon % 8) * 18, ySize + 32 + (icon / 8) * 18, 18, 18);
 		}
 
-		std::string name = StatCollector::translateToLocal(potion->getName());
+		std::string name = cachedPotionBaseName(effect->getPotionID(), potion->getName());
 		if (effect->getAmplifier() == 1)
 			name += " II";
 		else if (effect->getAmplifier() == 2)

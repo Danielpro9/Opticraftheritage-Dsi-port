@@ -45,6 +45,8 @@ GuiEnchantment::GuiEnchantment(InventoryPlayer *inventory, World *world, int_t x
     , lastStackIdentity(nullptr)
     , lastMouseX(0)
     , lastMouseY(0)
+    , cachedTitle(StatCollector::translateToLocal("container.enchant"))
+    , cachedInventoryLabel(StatCollector::translateToLocal("container.inventory"))
 {
 }
 
@@ -64,8 +66,8 @@ void GuiEnchantment::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 
 void GuiEnchantment::drawGuiContainerForegroundLayer()
 {
-    fontRenderer->drawString(StatCollector::translateToLocal("container.enchant"), 12, 6, 0x404040);
-    fontRenderer->drawString(StatCollector::translateToLocal("container.inventory"), 8, ySize - 96 + 2, 0x404040);
+    fontRenderer->drawString(cachedTitle, 12, 6, 0x404040);
+    fontRenderer->drawString(cachedInventoryLabel, 8, ySize - 96 + 2, 0x404040);
 }
 
 void GuiEnchantment::updateScreen()

@@ -11,13 +11,15 @@
 GuiFurnace::GuiFurnace(InventoryPlayer *player, TileEntityFurnace *furnace)
 	: GuiContainer(new ContainerFurnace(player, furnace), true)
 	, furnaceInventory(furnace)
+	, cachedTitle(StatCollector::translateToLocal("container.furnace"))
+	, cachedInventoryLabel(StatCollector::translateToLocal("container.inventory"))
 {
 }
 
 void GuiFurnace::drawGuiContainerForegroundLayer()
 {
-	fontRenderer->drawString(StatCollector::translateToLocal("container.furnace"),   60, 6,             0x404040);
-	fontRenderer->drawString(StatCollector::translateToLocal("container.inventory"),  8, (ySize - 96) + 2, 0x404040);
+	fontRenderer->drawString(cachedTitle,           60, 6,             0x404040);
+	fontRenderer->drawString(cachedInventoryLabel,   8, (ySize - 96) + 2, 0x404040);
 }
 
 void GuiFurnace::drawGuiContainerBackgroundLayer(float_t partialTick)

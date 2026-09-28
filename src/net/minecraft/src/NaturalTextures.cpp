@@ -20,8 +20,10 @@ namespace
 	// otherwise it always passes 0 here. With natural textures on (an
 	// OptiFine feature -- grass/leaves texture variation), this runs once per
 	// block face during every chunk mesh build. Same fix/reasoning as this
-	// session's ConnectedTextures.cpp getTerrainTextureId() cache.
-	int_t cachedTerrainTextureId = -1;
+	// session's ConnectedTextures.cpp getTerrainTextureId() cache, including
+	// the CachedTextureId epoch re-resolution -- see its own comment in
+	// RenderEngine.h.
+	CachedTextureId cachedTerrainTextureId;
 }
 
 void NaturalTextures::setProperty(int_t textureId, int_t tile, const NaturalProperties &property)
@@ -57,7 +59,7 @@ void NaturalTextures::makeDefaultProperties()
 void NaturalTextures::update(RenderEngine *engine)
 {
 	renderEngine = engine;
-	cachedTerrainTextureId = -1;
+	cachedTerrainTextureId = CachedTextureId();
 	propertiesByTexture.clear();
 	propertyMaskByTexture.clear();
 	if (!Config::isNaturalTextures() || engine == nullptr)
@@ -101,11 +103,7 @@ const NaturalProperties *NaturalTextures::getNaturalProperties(int_t textureId, 
 	if (renderEngine == nullptr || tileNum < 0 || tileNum > 255)
 		return nullptr;
 	if (textureId == 0)
-	{
-		if (cachedTerrainTextureId < 0)
-			cachedTerrainTextureId = renderEngine->getTexture("/terrain.png");
-		textureId = cachedTerrainTextureId;
-	}
+		textureId = cachedTerrainTextureId.get(renderEngine, "/terrain.png");
 	auto propsIt = propertiesByTexture.find(textureId);
 	auto maskIt = propertyMaskByTexture.find(textureId);
 	if (propsIt == propertiesByTexture.end() || maskIt == propertyMaskByTexture.end())

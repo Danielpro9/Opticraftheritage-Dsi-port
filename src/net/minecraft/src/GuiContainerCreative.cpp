@@ -346,12 +346,15 @@ void GuiContainerCreative::drawGuiContainerBackgroundLayer(float_t)
 {
     // Cached rather than looked up fresh every frame -- same pattern/reasoning
     // as this session's other texture-id-caching fixes. This runs every frame
-    // the creative inventory screen is open.
-    static int_t cachedAllItemsTextureId = -1;
-    if (cachedAllItemsTextureId < 0)
-        cachedAllItemsTextureId = mc->renderEngine->getTexture("/gui/allitems.png");
+    // the creative inventory screen is open. CachedTextureId (RenderEngine.h)
+    // re-resolves itself if this id was ever invalidated by a
+    // releaseTexture() call -- onGuiClosed() right below releases
+    // "/gui/allitems.png" by this exact name every time this screen closes,
+    // so a bare cached id here would go stale the very first time this
+    // screen is closed and reopened; see CachedTextureId's own comment.
+    static CachedTextureId cachedAllItemsTextureId;
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    mc->renderEngine->bindTexture(cachedAllItemsTextureId);
+    mc->renderEngine->bindTexture(cachedAllItemsTextureId.get(mc->renderEngine, "/gui/allitems.png"));
     int_t guiLeft = (width - xSize) / 2;
     int_t guiTop = (height - ySize) / 2;
     drawTexturedModalRect(guiLeft, guiTop, 0, 0, xSize, ySize);

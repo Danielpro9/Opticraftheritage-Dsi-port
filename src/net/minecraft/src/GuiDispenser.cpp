@@ -23,10 +23,10 @@ void GuiDispenser::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
 	// Cached rather than looked up fresh every frame this screen is open --
 	// same pattern/reasoning as this session's other texture-id-caching fixes.
-	static int_t cachedTrapTextureId = -1;
-	if (cachedTrapTextureId < 0)
-		cachedTrapTextureId = mc->renderEngine->getTexture("/gui/trap.png");
-	int_t tex = cachedTrapTextureId;
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedTrapTextureId;
+	int_t tex = cachedTrapTextureId.get(mc->renderEngine, "/gui/trap.png");
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = (width  - xSize) / 2;

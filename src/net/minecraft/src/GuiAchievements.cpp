@@ -169,8 +169,16 @@ void GuiAchievements::drawAchievementsPanel(int_t i, int_t j, float_t f)
 	if (k >= maxScrollX) k = maxScrollX - 1;
 	if (l >= maxScrollY) l = maxScrollY - 1;
 
-	int_t terrainTex  = mc->renderEngine->getTexture("/terrain.png");
-	int_t achieveBgTex = mc->renderEngine->getTexture("/achievement/bg.png");
+	// Cached rather than looked up fresh every frame this screen is open --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- "/achievement/bg.png" is self-released by
+	// onGuiClosed() above on every close of this same screen, so this is not
+	// optional here. See CachedTextureId's own comment in RenderEngine.h.
+	static CachedTextureId cachedTerrainTex;
+	static CachedTextureId cachedAchieveBgTex;
+	int_t terrainTex  = cachedTerrainTex.get(mc->renderEngine, "/terrain.png");
+	int_t achieveBgTex = cachedAchieveBgTex.get(mc->renderEngine, "/achievement/bg.png");
 	int_t k1 = (width  - bgWidth)  / 2;
 	int_t l1 = (height - bgHeight) / 2;
 	int_t i2 = k1 + 16;

@@ -435,19 +435,20 @@ void ItemRenderer::renderOverlays(float f) {
     // Cached rather than looked up fresh each call -- burning and suffocating
     // can both be true the same frame, which used to mean two separate
     // getTexture("/terrain.png") hash-map lookups for the identical name in
-    // one renderOverlays() call.
-    static int cachedTerrainTextureId = -1;
-    if (cachedTerrainTextureId < 0)
-        cachedTerrainTextureId = mc->renderEngine->getTexture("/terrain.png");
+    // one renderOverlays() call. CachedTextureId (RenderEngine.h) re-resolves
+    // itself if this id was ever invalidated by a releaseTexture() call
+    // (world exit releases "/terrain.png" by name) -- see its own comment.
+    static CachedTextureId cachedTerrainTextureId;
+    const int_t terrainTextureId = cachedTerrainTextureId.get(mc->renderEngine, "/terrain.png");
     if (mc->thePlayer->isBurning()) {
-        renderBindTexture(cachedTerrainTextureId);
+        renderBindTexture(terrainTextureId);
         renderFireInFirstPerson(f);
     }
     if (mc->thePlayer->isEntityInsideOpaqueBlock()) {
         int j  = MathHelper::floor_double(mc->thePlayer->posX);
         int l  = MathHelper::floor_double(mc->thePlayer->posY);
         int i1 = MathHelper::floor_double(mc->thePlayer->posZ);
-        renderBindTexture(cachedTerrainTextureId);
+        renderBindTexture(terrainTextureId);
         int k1 = mc->theWorld->getBlockId(j, l, i1);
         if (mc->theWorld->isBlockNormalCube(j, l, i1)) {
             renderInsideOfBlock(f, Block::blocksList[k1]->getBlockTextureFromSide(2));

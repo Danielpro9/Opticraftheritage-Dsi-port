@@ -108,7 +108,12 @@ void drawCursorTexture(Minecraft *mc, float_t zLevel, int_t mouseX, int_t mouseY
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 	renderEnable(RenderCapability::Texture2D);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	mc->renderEngine->bindTexture(mc->renderEngine->getTexture("/cursor.png"));
+	// Cached rather than looked up fresh every frame -- shared by every screen
+	// using the base GuiScreen::drawScreen() cursor path. CachedTextureId
+	// re-resolves itself if this id was ever invalidated by a releaseTexture()
+	// call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedCursorTextureId;
+	mc->renderEngine->bindTexture(cachedCursorTextureId.get(mc->renderEngine, "/cursor.png"));
 
 	// Not Gui::drawTexturedModalRect: that one hardcodes a 1/256 atlas step, and
 	// cursor.png is a standalone sheet drawn whole, so the UVs are just 0..1.
@@ -679,7 +684,15 @@ void GuiScreen::drawBackground(int_t ticks)
 	renderDisable(RenderCapability::Lighting);
 	renderDisable(RenderCapability::Fog);
 	Tessellator *tess = &Tessellator::instance;
-	renderBindTexture(mc->renderEngine->getTexture("/gui/background.png"));
+	// Cached rather than looked up fresh every frame -- same pattern/reasoning
+	// as this session's other texture-id-caching fixes. This is the default
+	// dirt-gradient background every menu screen uses (achievements, stats,
+	// server list, options, language, resource packs, ...) unless it overrides
+	// drawBackground() itself, so this runs every frame for most menus.
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedBackgroundTextureId;
+	renderBindTexture(cachedBackgroundTextureId.get(mc->renderEngine, "/gui/background.png"));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	float_t f = 32.0f;
 	tess->startDrawingQuads();

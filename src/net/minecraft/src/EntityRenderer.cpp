@@ -1677,15 +1677,15 @@ void EntityRenderer::renderWorld(float partialTicks, int64_t renderTimeLimitNano
         // Cached rather than looked up fresh every frame: getTexture() hashes
         // its string argument through a std::string temporary on every call
         // (RenderEngine.cpp's textureMap.find(s)), and this runs unconditionally
-        // once per frame. Safe to cache forever once resolved -- RenderEngine::
-        // refreshTextures() (texture pack switch) reuses the SAME id for an
-        // already-known name, re-uploading new pixel data into it rather than
-        // handing out a different id, so a name's id never changes after its
-        // first lookup for the lifetime of the session.
-        static int cachedTerrainTextureId = -1;
-        if (cachedTerrainTextureId < 0)
-            cachedTerrainTextureId = mc->renderEngine->getTexture("/terrain.png");
-        const int terrainTexture = cachedTerrainTextureId;
+        // once per frame. CachedTextureId (RenderEngine.h) re-resolves itself
+        // whenever RenderEngine::textureEpoch() has moved since this cache's
+        // last resolve -- see its own comment for why a bare cached id is NOT
+        // safe to keep forever (RenderEngine::releaseTexture(), which
+        // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() calls on
+        // "/terrain.png" itself on every return to the main menu, genuinely
+        // frees this id's GPU slot for reuse by a later, unrelated texture).
+        static CachedTextureId cachedTerrainTextureId;
+        const int terrainTexture = cachedTerrainTextureId.get(mc->renderEngine, "/terrain.png");
         const bool terrainOpaquePass = renderTerrainBeginPass(terrainTexture, RenderTerrainPass::Opaque);
         
         RenderHelper::disableStandardItemLighting();
@@ -1790,9 +1790,9 @@ void EntityRenderer::renderWorld(float partialTicks, int64_t renderTimeLimitNano
         renderEnable(RenderCapability::Blend);
         renderDisable(RenderCapability::CullFace);
 #endif
-        // Reuses cachedTerrainTextureId resolved above for the opaque pass --
-        // same texture, same frame, no need to hash the name a second time.
-        mc->renderEngine->bindTexture(cachedTerrainTextureId);
+        // Reuses terrainTexture resolved above for the opaque pass -- same
+        // texture, same frame, no need to hash the name a second time.
+        mc->renderEngine->bindTexture(terrainTexture);
 #if PLATFORM_NATIVE_TERRAIN_PIPELINE
         bool nativeTransparentUsedFallback = false;
 #endif

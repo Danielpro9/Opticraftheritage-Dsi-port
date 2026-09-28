@@ -129,7 +129,12 @@ void GuiStats::drawDefaultSlotIcon(int_t x, int_t y)
 
 void GuiStats::drawSlotIconInternal(int_t x, int_t y, int_t texX, int_t texY)
 {
-	int_t i1 = mc->renderEngine->getTexture("/gui/slot.png");
+	// Cached rather than looked up fresh every call -- this runs once per
+	// drawn stat icon (many per frame) while the stats screen is open.
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedSlotTextureId;
+	int_t i1 = cachedSlotTextureId.get(mc->renderEngine, "/gui/slot.png");
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(i1);
 	Tessellator *tessellator = &Tessellator::instance;

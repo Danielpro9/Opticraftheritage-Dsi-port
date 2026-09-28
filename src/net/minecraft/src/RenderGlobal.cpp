@@ -1747,15 +1747,13 @@ void RenderGlobal::renderSky(float f)
 		// EntityRenderer.cpp's cachedTerrainTextureId. renderSky() runs every
 		// frame whenever it's called at all (gated by renderDistance < 2 in
 		// EntityRenderer.cpp, not by anything that changes frame to frame).
-		static int cachedSunTextureId = -1;
-		if (cachedSunTextureId < 0)
-			cachedSunTextureId = renderEngine->getTexture("/terrain/sun.png");
-		static int cachedMoonTextureId = -1;
-		if (cachedMoonTextureId < 0)
-			cachedMoonTextureId = renderEngine->getTexture("/terrain/moon_phases.png");
+		// CachedTextureId re-resolves itself if this id was ever invalidated by
+		// a releaseTexture() call -- see its own comment in RenderEngine.h.
+		static CachedTextureId cachedSunTextureId;
+		static CachedTextureId cachedMoonTextureId;
 
 		float f15 = 30.0f;
-		renderBindTexture(cachedSunTextureId);
+		renderBindTexture(cachedSunTextureId.get(renderEngine, "/terrain/sun.png"));
 		tessellator->startDrawingQuads();
 		tessellator->addVertexWithUV(-f15, 100.0f, -f15, 0.0f, 0.0f);
 		tessellator->addVertexWithUV(f15, 100.0f, -f15, 1.0f, 0.0f);
@@ -1764,7 +1762,7 @@ void RenderGlobal::renderSky(float f)
 		tessellator->draw();
 
 		f15 = 20.0f;
-		renderBindTexture(cachedMoonTextureId);
+		renderBindTexture(cachedMoonTextureId.get(renderEngine, "/terrain/moon_phases.png"));
 		const int_t moonPhase = worldObj->getMoonPhase(f);
 		const int_t moonPhaseColumn = moonPhase % 4;
 		const int_t moonPhaseRow = moonPhase / 4 % 2;
@@ -1892,11 +1890,11 @@ void RenderGlobal::renderClouds(float f)
 
 	// Cached rather than looked up fresh every frame -- clouds default to
 	// "Fast" (on) rather than off on DSi (GameDefaults.cpp), so this is this
-	// platform's actively used per-frame cloud path.
-	static int cachedCloudsTextureId = -1;
-	if (cachedCloudsTextureId < 0)
-		cachedCloudsTextureId = renderEngine->getTexture("/environment/clouds.png");
-	renderBindTexture(cachedCloudsTextureId);
+	// platform's actively used per-frame cloud path. CachedTextureId
+	// re-resolves itself if this id was ever invalidated by a releaseTexture()
+	// call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedCloudsTextureId;
+	renderBindTexture(cachedCloudsTextureId.get(renderEngine, "/environment/clouds.png"));
 	renderEnable(RenderCapability::Blend);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 

@@ -1935,6 +1935,21 @@ bool RenderEngine::updateStaticProceduralTextureFx(TextureFX *texturefx)
 	return true;
 }
 
+namespace
+{
+	// See RenderEngine::textureEpoch()'s own comment (RenderEngine.h) for the
+	// full why. File-local rather than a class member: there is exactly one
+	// RenderEngine for the process's lifetime, same precedent as
+	// ConnectedTextures.cpp/NaturalTextures.cpp's own file-local texture-id
+	// caches this counter exists to keep correct.
+	unsigned int g_textureEpoch = 0;
+}
+
+unsigned int RenderEngine::textureEpoch()
+{
+	return g_textureEpoch;
+}
+
 void RenderEngine::deleteTexture(int_t i)
 {
 	textureNameToImageMap.erase(i);
@@ -1942,6 +1957,7 @@ void RenderEngine::deleteTexture(int_t i)
 	textureDimensions.erase(i);
 	int texture = static_cast<int>(i);
 	renderDeleteTextures(1, &texture);
+	++g_textureEpoch;
 }
 
 void RenderEngine::releaseTexture(const std::string &s)

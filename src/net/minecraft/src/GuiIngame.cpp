@@ -951,15 +951,14 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	resetOverlayGLState();
 
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	// Cached rather than looked up fresh every frame -- see the identical
-	// pattern/reasoning in EntityRenderer.cpp's cachedTerrainTextureId.
-	// renderGameOverlay() runs every frame during gameplay, so both HUD
-	// texture ids below were each paying for a std::string temporary +
-	// hash-map lookup (RenderEngine::getTexture()) unconditionally.
-	static int cachedGuiTextureId = -1;
-	if (cachedGuiTextureId < 0)
-		cachedGuiTextureId = mc->renderEngine->getTexture("/gui/gui.png");
-	renderBindTexture(cachedGuiTextureId);
+	// Cached rather than looked up fresh every frame -- see CachedTextureId's
+	// own comment (RenderEngine.h) for why this re-resolves itself instead of
+	// keeping a bare id forever. renderGameOverlay() runs every frame during
+	// gameplay, so both HUD texture ids below were each paying for a
+	// std::string temporary + hash-map lookup (RenderEngine::getTexture())
+	// unconditionally.
+	static CachedTextureId cachedGuiTextureId;
+	renderBindTexture(cachedGuiTextureId.get(mc->renderEngine, "/gui/gui.png"));
 	InventoryPlayer *inv = mc->thePlayer->inventory;
 	const int_t hudBottomInset = mc->gameSettings->legacyUI ? legacyHudBottomInset() : 0;
 	const int_t hudHeight = sh - hudBottomInset;
@@ -975,10 +974,8 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	drawTexturedModalRect((sw / 2 - 91 - 1) + inv->currentItem * 20, hudHeight - 22 - 1, 0, 22, 24, 22);
 #endif
 
-	static int cachedIconsTextureId = -1;
-	if (cachedIconsTextureId < 0)
-		cachedIconsTextureId = mc->renderEngine->getTexture("/gui/icons.png");
-	renderBindTexture(cachedIconsTextureId);
+	static CachedTextureId cachedIconsTextureId;
+	renderBindTexture(cachedIconsTextureId.get(mc->renderEngine, "/gui/icons.png"));
 	renderEnable(RenderCapability::Blend);
 	renderBlendFunc(RenderBlendFactor::OneMinusDstColor, RenderBlendFactor::OneMinusSrcColor);
 #if PLATFORM_PC_LEGACY

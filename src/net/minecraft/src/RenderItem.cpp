@@ -254,12 +254,13 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
     // full inventory is 30-40+ slots), so each of these was a std::string
     // temporary + hash-map lookup (RenderEngine::getTexture()) per slot per
     // frame for what is almost always one of only two texture names.
-    static int cachedTerrainTextureId = -1;
-    if (cachedTerrainTextureId < 0)
-        cachedTerrainTextureId = renderengine->getTexture("/terrain.png");
-    static int cachedItemsTextureId = -1;
-    if (cachedItemsTextureId < 0)
-        cachedItemsTextureId = renderengine->getTexture("/gui/items.png");
+    // CachedTextureId (RenderEngine.h) re-resolves itself if either id was
+    // ever invalidated by a releaseTexture() call (world exit releases both
+    // "/terrain.png" and "/gui/items.png" by name) -- see its own comment.
+    static CachedTextureId cachedTerrainTextureIdHolder;
+    const int_t cachedTerrainTextureId = cachedTerrainTextureIdHolder.get(renderengine, "/terrain.png");
+    static CachedTextureId cachedItemsTextureIdHolder;
+    const int_t cachedItemsTextureId = cachedItemsTextureIdHolder.get(renderengine, "/gui/items.png");
 
     if (i >= 0 && i < 256 && Block::blocksList[i] != nullptr && RenderBlocks::renderItemIn3d(Block::blocksList[i]->getRenderType())) {
         int j1 = i;

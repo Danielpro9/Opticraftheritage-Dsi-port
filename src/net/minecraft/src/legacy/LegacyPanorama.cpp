@@ -27,8 +27,17 @@ bool legacyDrawPanorama(Minecraft *mc, int_t screenWidth, int_t screenHeight,
     if (mc == nullptr || mc->renderEngine == nullptr || screenWidth <= 0 || screenHeight <= 0)
         return false;
 
-    const char *path = legacyPanoramaResourcePath();
-    const int_t texture = mc->renderEngine->getTexture(path);
+    // Cached rather than looked up fresh every frame -- legacyPanoramaResourcePath()
+    // always returns the same constant string, and this is the actual DSi
+    // panorama path (GuiMainMenu, LoadingScreenRenderer, LegacyPlayGameScreen,
+    // LegacyCreateWorldScreen, LegacyOptionsScreen each call this once per
+    // frame while their panorama background is shown).
+    // CachedTextureId re-resolves itself if this id was ever invalidated by a
+    // releaseTexture() call ("/legacy/panorama.png" is released by name in
+    // ClientPlatformPolicy_DSI.cpp on world exit) -- see its own comment in
+    // RenderEngine.h.
+    static CachedTextureId cachedPanoramaTextureId;
+    const int_t texture = cachedPanoramaTextureId.get(mc->renderEngine, legacyPanoramaResourcePath());
     int_t textureWidth = 0;
     int_t textureHeight = 0;
     if (!mc->renderEngine->getTextureDimensions(texture, &textureWidth, &textureHeight) ||

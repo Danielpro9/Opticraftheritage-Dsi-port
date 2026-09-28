@@ -27,11 +27,13 @@ namespace
 	// et al.) -- the same "hot render call site hashing a string every frame"
 	// class of cost this session's other texture-id-caching fixes already
 	// target, just centralized here since every platform's terrain renderer
-	// funnels through this one shared accessor. -1 means "not yet resolved
-	// this engine", reset by update() below (texture ids are never negative --
-	// RenderAPI_DSI.cpp's own comment: "index 0 unused, 0 means no texture").
-	int_t cachedTerrainTextureId = -1;
-	int_t cachedCtmTextureId = -1;
+	// funnels through this one shared accessor. CachedTextureId re-resolves
+	// itself if this id was ever invalidated by a releaseTexture() call -- see
+	// its own comment in RenderEngine.h -- and update() below still resets it
+	// explicitly on top of that, for the genuine engine-pointer change only
+	// update() can observe (see its own comment).
+	CachedTextureId cachedTerrainTextureId;
+	CachedTextureId cachedCtmTextureId;
 }
 
 ConnectedProperties ConnectedTextures::makeDefault(const std::string &method, RenderEngine *engine)
@@ -81,8 +83,8 @@ void ConnectedTextures::update(RenderEngine *engine)
 	// case; it exists for the genuine engine-pointer change this function
 	// alone can make, so the cache never survives into being read against a
 	// different RenderEngine instance than it was resolved against.
-	cachedTerrainTextureId = -1;
-	cachedCtmTextureId = -1;
+	cachedTerrainTextureId = CachedTextureId();
+	cachedCtmTextureId = CachedTextureId();
 	blockProperties.clear();
 	terrainProperties.clear();
 	hasBlockProperties = false;
@@ -128,18 +130,14 @@ int_t ConnectedTextures::getTerrainTextureId()
 {
 	if (renderEngine == nullptr)
 		return 0;
-	if (cachedTerrainTextureId < 0)
-		cachedTerrainTextureId = renderEngine->getTexture("/terrain.png");
-	return cachedTerrainTextureId;
+	return cachedTerrainTextureId.get(renderEngine, "/terrain.png");
 }
 
 int_t ConnectedTextures::getCtmTextureId()
 {
 	if (renderEngine == nullptr)
 		return -1;
-	if (cachedCtmTextureId < 0)
-		cachedCtmTextureId = renderEngine->getTexture("/ctm.png");
-	return cachedCtmTextureId;
+	return cachedCtmTextureId.get(renderEngine, "/ctm.png");
 }
 
 int_t ConnectedTextures::getReverseGlassPaneTexture(int_t texture)

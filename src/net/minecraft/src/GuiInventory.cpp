@@ -25,13 +25,14 @@ namespace
 	// drawGuiContainerBackgroundLayer() and displayDebuffEffects() below,
 	// which used to each look up this same name independently: with potion
 	// effects showing, that was two redundant hash-map lookups per frame
-	// instead of one lookup ever.
+	// instead of one lookup ever. CachedTextureId (RenderEngine.h) re-resolves
+	// itself if this id was ever invalidated by a releaseTexture() call
+	// (world exit releases "/gui/inventory.png" by name) -- see its own
+	// comment.
 	int_t cachedInventoryTextureId(Minecraft *mc)
 	{
-		static int_t id = -1;
-		if (id < 0)
-			id = mc->renderEngine->getTexture("/gui/inventory.png");
-		return id;
+		static CachedTextureId cache;
+		return cache.get(mc->renderEngine, "/gui/inventory.png");
 	}
 }
 

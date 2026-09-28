@@ -77,7 +77,12 @@ void MapItemRenderer::renderMap(EntityPlayer *entityplayer, RenderEngine *render
 	tessellator->addVertexWithUV(j + 0, k + 0, 0.0, 0.0, 0.0);
 	tessellator->draw();
 
-	renderengine->bindTexture(renderengine->getTexture("/misc/mapicons.png"));
+	// Cached rather than looked up fresh every frame a map is held/viewed --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- see its own comment in RenderEngine.h.
+	static CachedTextureId cachedMapIconsTextureId;
+	renderengine->bindTexture(cachedMapIconsTextureId.get(renderengine, "/misc/mapicons.png"));
 	for (auto *mapcoord : mapdata->playersVisibleOnMap)
 	{
 		renderPushMatrix();

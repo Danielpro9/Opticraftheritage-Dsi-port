@@ -39,6 +39,20 @@ public:
 	void deleteTexture(int_t i);
 	void releaseTexture(const std::string &s);
 	void releaseTexturesWithPrefix(const std::string &prefix);
+
+	// Bumped once every time deleteTexture() actually frees a GPU texture
+	// slot (releaseTexture()/releaseTexturesWithPrefix() both funnel through
+	// it, and so would any future caller). A texture id a caller resolved
+	// before the epoch it last saw changed may have been freed and handed
+	// back out to a DIFFERENT, unrelated texture by a later getTexture()
+	// call -- see deleteTexture()'s own comment. Callers that cache a
+	// resolved id across frames (this engine's texture-id-caching call
+	// sites) must re-resolve whenever this has moved since their own last
+	// resolve, rather than treating a resolved id as permanently valid.
+	// Texture-pack switches (RenderEngine::refreshTextures()) do NOT bump
+	// this: that path re-uploads new pixel data into the SAME id for an
+	// already-known name, never freeing/reassigning the slot.
+	static unsigned int textureEpoch();
 	void clearDecodedTextureCache();
 	int_t getTextureForDownloadableImage(const std::string &s, const std::string &s1);
 	ThreadDownloadImageData *obtainImageData(const std::string &s, ImageBuffer *imagebuffer);
@@ -157,4 +171,40 @@ private:
 	std::map<std::string, bool> asyncTextureLoads;
 	TexturePackList *texturePack;
 	std::unique_ptr<BufferedImage> missingTextureImage;
+};
+
+// Reusable "cache a resolved texture id" helper, replacing the
+// `static int_t cached = -1; if (cached < 0) cached = engine->getTexture(path);`
+// pattern this engine's hot render/GUI call sites use to avoid hashing a
+// texture's name through RenderEngine::getTexture() every frame. A bare
+// cached id is only safe to reuse forever if the id can never be freed and
+// handed back out to a different, unrelated texture -- true for a texture-
+// pack switch (RenderEngine::refreshTextures() re-uploads into the SAME id
+// for an already-known name) but NOT true for RenderEngine::releaseTexture()/
+// releaseTexturesWithPrefix() (world-exit VRAM cleanup, several GUI screens'
+// own onGuiClosed() cleanup, ...), which genuinely deletes the GPU slot via
+// deleteTexture() -- a later getTexture() call for an unrelated name can then
+// receive that same numeric id for completely different pixel data. This
+// wrapper re-resolves whenever RenderEngine::textureEpoch() has moved since
+// this cache's own last resolve, so a cached id already invalidated by any
+// releaseTexture() call anywhere is never used past the point it went stale.
+class CachedTextureId
+{
+public:
+	int_t get(RenderEngine *engine, const char *path)
+	{
+		if (engine == nullptr)
+			return 0;
+		const unsigned int epoch = RenderEngine::textureEpoch();
+		if (id < 0 || epoch != resolvedEpoch)
+		{
+			id = engine->getTexture(path);
+			resolvedEpoch = epoch;
+		}
+		return id;
+	}
+
+private:
+	int_t id = -1;
+	unsigned int resolvedEpoch = 0;
 };

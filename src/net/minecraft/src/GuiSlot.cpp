@@ -8,6 +8,22 @@
 #include "java/Arithmetic.h"
 #include "java/System.h"
 
+namespace
+{
+	// Cached rather than looked up fresh every frame -- same pattern/reasoning
+	// as this session's other texture-id-caching fixes. Shared between
+	// drawScreen()'s own background draw and overlayBackground() below, both
+	// of which look up this same name independently every frame a list screen
+	// (achievements, stats, server list, options, ...) is open.
+	// CachedTextureId re-resolves itself if this id was ever invalidated by a
+	// releaseTexture() call -- see its own comment in RenderEngine.h.
+	int_t cachedSlotBackgroundTextureId(Minecraft *mc)
+	{
+		static CachedTextureId cache;
+		return cache.get(mc->renderEngine, "/gui/background.png");
+	}
+}
+
 GuiSlot::GuiSlot(Minecraft *minecraft, int_t w, int_t h, int_t t, int_t b, int_t slotH)
 	: mc(minecraft)
 	, width(w)
@@ -169,7 +185,7 @@ void GuiSlot::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 	renderDisable(RenderCapability::Lighting);
 	renderDisable(RenderCapability::Fog);
 	Tessellator *tess = &Tessellator::instance;
-	renderBindTexture(mc->renderEngine->getTexture("/gui/background.png"));
+	renderBindTexture(cachedSlotBackgroundTextureId(mc));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	float_t f = 32.0f;
 	tess->startDrawingQuads();
@@ -284,7 +300,7 @@ void GuiSlot::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 void GuiSlot::overlayBackground(int_t topY, int_t bottomY, int_t alphaTop, int_t alphaBottom)
 {
 	Tessellator *tess = &Tessellator::instance;
-	renderBindTexture(mc->renderEngine->getTexture("/gui/background.png"));
+	renderBindTexture(cachedSlotBackgroundTextureId(mc));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	float_t f = 32.0f;
 	tess->startDrawingQuads();

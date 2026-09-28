@@ -315,7 +315,13 @@ void GuiTextField::drawTextBox()
     {
         jstring before = cursorVisibleInText ? String::substringUtf16(visible, 0, cursorOffset) : visible;
         fontRenderer->drawStringWithShadow(before, drawX, drawY, color);
-        cursorX = drawX + fontRenderer->getStringWidth(before);
+        if (!cachedBeforeValid || cachedBeforeText != before)
+        {
+            cachedBeforeText = before;
+            cachedBeforeWidth = fontRenderer->getStringWidth(before);
+            cachedBeforeValid = true;
+        }
+        cursorX = drawX + cachedBeforeWidth;
     }
 
     bool cursorInsideExistingText = cursorPosition < textLength() || textLength() >= maxStringLength;
@@ -341,8 +347,14 @@ void GuiTextField::drawTextBox()
 
     if (selectionOffset != cursorOffset)
     {
-        int_t selectionX = drawX + fontRenderer->getStringWidth(
-            String::substringUtf16(visible, 0, std::max(0, selectionOffset)));
+        jstring selectionText = String::substringUtf16(visible, 0, std::max(0, selectionOffset));
+        if (!cachedSelectionValid || cachedSelectionText != selectionText)
+        {
+            cachedSelectionText = selectionText;
+            cachedSelectionWidth = fontRenderer->getStringWidth(selectionText);
+            cachedSelectionValid = true;
+        }
+        int_t selectionX = drawX + cachedSelectionWidth;
         drawSelectionBox(caretX, drawY - 1, selectionX - 1, drawY + 1 + 8);
     }
 }

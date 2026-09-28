@@ -90,4 +90,15 @@ private:
 	int_t enabledColor;
 	int_t disabledColor;
 	GuiScreen *parentGuiScreen;
+
+	// drawTextBox() runs every rendered frame this field is visible (caret
+	// blink forces continuous redraws even when idle), but getStringWidth()
+	// only needs to actually re-measure when the substring it's measuring
+	// has changed -- cache the last-measured text alongside its width.
+	jstring cachedBeforeText;
+	int_t cachedBeforeWidth = 0;
+	bool cachedBeforeValid = false;
+	jstring cachedSelectionText;
+	int_t cachedSelectionWidth = 0;
+	bool cachedSelectionValid = false;
 };

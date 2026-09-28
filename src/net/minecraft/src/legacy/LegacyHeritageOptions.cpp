@@ -18,6 +18,10 @@
 #include "platform/PlatformConfig.h"
 #include "platform/PlatformUserSettings.h"
 
+#if PLATFORM_DSI
+#include "net/minecraft/src/skin/GuiSkinSelector.h"
+#endif
+
 namespace
 {
 constexpr int_t BUTTON_ASPECT_RATIO = 603;
@@ -25,6 +29,7 @@ constexpr int_t BUTTON_LEGACY_UI = 604;
 constexpr int_t BUTTON_LEGACY_LOOK = 605;
 constexpr int_t BUTTON_ALTERNATIVE_CONTROLS = 601;
 constexpr int_t BUTTON_DEADZONE = 602;
+constexpr int_t BUTTON_CHANGE_SKIN = 606;
 constexpr int_t BUTTON_DONE = 600;
 
 }
@@ -53,6 +58,9 @@ void LegacyHeritageOptions::initGui()
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
     ++rowCount;
+#endif
+#if PLATFORM_DSI
+    ++rowCount; // Change Skin -- see GuiSkinSelector.h
 #endif
 
     configureLegacyLayout(rowCount, true, LegacyOptionsLayoutPreset::Compact);
@@ -92,6 +100,11 @@ void LegacyHeritageOptions::initGui()
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
     controlList.push_back(new LegacyGuiButton(BUTTON_DEADZONE, x, legacyLayout.rowY(row++), w, h,
         "Deadzone Settings"));
+#endif
+
+#if PLATFORM_DSI
+    controlList.push_back(new LegacyGuiButton(BUTTON_CHANGE_SKIN, x, legacyLayout.rowY(row++), w, h,
+        "Change Skin"));
 #endif
 
     controlList.push_back(new LegacyGuiButton(BUTTON_DONE, x, legacyLayout.rowY(row), w, h, "Done"));
@@ -201,6 +214,16 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         saveIdentity();
         settings->saveOptions();
         mc->displayGuiScreen(new GuiDeadzoneSettings(this, settings));
+        return;
+    }
+#endif
+
+#if PLATFORM_DSI
+    if (button->id == BUTTON_CHANGE_SKIN)
+    {
+        saveIdentity();
+        settings->saveOptions();
+        mc->displayGuiScreen(new GuiSkinSelector(this));
         return;
     }
 #endif

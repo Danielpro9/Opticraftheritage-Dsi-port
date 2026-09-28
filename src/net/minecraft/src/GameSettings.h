@@ -81,6 +81,11 @@ public:
 	bool fancyGraphics;
 	bool ambientOcclusion;
 	std::string skin;
+	// Which SkinManager entry (skin/SkinManager.h) the player model uses --
+	// distinct from the legacy `skin` field above (the vanilla http-skin-URL
+	// option, meaningless without networking). Empty means "not chosen yet",
+	// SkinManager::getActiveSkinTexture() then falls back to its own default.
+	std::string selectedSkin;
 	KeyBinding *keyBindAttack;
 	KeyBinding *keyBindUseItem;
 	KeyBinding *keyBindForward;

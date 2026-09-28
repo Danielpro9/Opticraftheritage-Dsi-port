@@ -1,6 +1,7 @@
 #include "EntityPlayerSP.h"
 
 #include "GameSettings.h"
+#include "skin/SkinManager.h"
 #include "GuiIngame.h"
 #include "Material.h"
 #include "MathHelper.h"
@@ -56,6 +57,20 @@ EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *sess
 		if (!session->username.empty())
 			skinUrl = "http://s3.amazonaws.com/MinecraftSkins/" + session->username + ".png";
 		username = session->username;
+	}
+
+	// SkinManager::init() reads GameSettings::selectedSkin (set below via
+	// setSelectedSkinId()), so this always reflects whatever the player last
+	// chose in GuiSkinSelector, overriding the network skinUrl above -- moot
+	// on platforms with NO_NETWORK anyway, but this matches upstream even
+	// where networking exists.
+	if (minecraft != nullptr && minecraft->gameSettings != nullptr && !minecraft->gameSettings->selectedSkin.empty())
+		SkinManager::setSelectedSkinId(minecraft->gameSettings->selectedSkin);
+	const std::string activeSkin = SkinManager::getActiveSkinTexture();
+	if (!activeSkin.empty())
+	{
+		texture = activeSkin;
+		skinUrl = "";
 	}
 }
 

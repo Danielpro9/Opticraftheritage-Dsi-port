@@ -43,6 +43,9 @@ protected:
 public:
 	bool canEntityBeSeen(Entity *entity);
 	const char *getEntityTexture() override;
+	// Lets skin/SkinManager.h swap the player model's texture at runtime
+	// (GuiSkinSelector.cpp) without exposing the protected `texture` field.
+	void setEntityTexture(const std::string &tex) { texture = tex; }
 	bool canBeCollidedWith() override;
 	bool canBePushed() override;
 	float getEyeHeight() override;

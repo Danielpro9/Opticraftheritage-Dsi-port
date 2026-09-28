@@ -187,12 +187,40 @@ void GuiContainer::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 	if (inv->getItemStack() == nullptr && hoveredSlot != nullptr && hoveredSlot->getHasStack())
 	{
 		ItemStack *hoveredStack = hoveredSlot->getStack();
-		std::vector<std::string> information = hoveredStack->getItemNameandInformation();
+		// getItemNameandInformation() rebuilds its string vector via
+		// StringTranslate::translateKey() (a std::map lookup) per line --
+		// plus a fresh NBT enchantment-tag scan -- and the loop below
+		// re-measures every line's width, all unconditionally every frame
+		// the tooltip is shown. None of this depends on partial-tick or
+		// anything else that changes frame to frame, only on which stack
+		// is hovered, so it's cached here and only rebuilt when the
+		// hovered stack's identity changes (pointer + id/damage/NBT tag --
+		// the same identity-tracking shape GuiEnchantment.cpp's book
+		// animation cache already uses for the same reason).
+		static ItemStack *cachedHoveredStack = nullptr;
+		static int_t cachedItemID = -1;
+		static int_t cachedItemDamage = -1;
+		static NBTTagCompound *cachedTag = nullptr;
+		static std::vector<std::string> cachedInformation;
+		static int_t cachedTooltipWidth = 0;
+
+		NBTTagCompound *hoveredTag = hoveredStack->getTagCompound();
+		if (cachedHoveredStack != hoveredStack || cachedItemID != hoveredStack->itemID ||
+			cachedItemDamage != hoveredStack->getItemDamage() || cachedTag != hoveredTag)
+		{
+			cachedHoveredStack = hoveredStack;
+			cachedItemID = hoveredStack->itemID;
+			cachedItemDamage = hoveredStack->getItemDamage();
+			cachedTag = hoveredTag;
+			cachedInformation = hoveredStack->getItemNameandInformation();
+			cachedTooltipWidth = 0;
+			for (const std::string& line : cachedInformation)
+				cachedTooltipWidth = std::max(cachedTooltipWidth, fontRenderer->getStringWidth(line));
+		}
+		const std::vector<std::string> &information = cachedInformation;
 		if (!information.empty())
 		{
-			int_t tooltipWidth = 0;
-			for (const std::string& line : information)
-				tooltipWidth = std::max(tooltipWidth, fontRenderer->getStringWidth(line));
+			const int_t tooltipWidth = cachedTooltipWidth;
 
 			int_t tooltipX = mouseX - guiX + 12;
 			int_t tooltipY = mouseY - guiY - 12;

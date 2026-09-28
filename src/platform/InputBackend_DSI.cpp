@@ -2,6 +2,7 @@
 
 #ifdef DSI_PLATFORM
 
+#include <cmath>
 #include <cstdint>
 #include <nds.h>
 
@@ -195,6 +196,36 @@ PlatformTextInputSnapshot platformTextInputSnapshot(int)
 	return out;
 }
 
+// Real-hardware feedback on the first mouse-delta build: up/down was
+// inverted, and the drag felt like it needed much more sensitivity than a
+// real mouse would to turn the same amount.
+//
+// Inversion: touch.py increases DOWN the screen (the DS panel's own raster
+// convention, top-left origin), so a finger dragging up (wanting to look
+// up) reports a NEGATIVE raw delta -- but LWJGL's mouse delta convention is
+// the opposite sign (positive deltaY = moved UP; see MouseHelper.cpp's own
+// callers and PS2_DIRECT_CAMERA_INVERT_Y's identical note for the pad
+// path). Negating dy here before it reaches pushMotion() is what makes a
+// raw touch sample match that convention -- the same fix DSI_DIRECT_CAMERA_
+// INVERT_Y made for the old stick-rate path, now needed at the source
+// instead of after the fact because that whole INVERT_Y knob no longer
+// exists on this path (PlatformInputTuning.h routes DSi through the plain
+// mouse-delta branch, which has no invert knob of its own -- it assumes
+// whatever feeds it already matches real mouse sign, same as PC's own
+// mouseHelper does).
+//
+// Sensitivity: a thumb drag across the DS's ~6.5cm touch panel physically
+// covers far fewer screen pixels per frame than the same "flick" gesture
+// with a real mouse on a desk, even at the same felt speed -- the panel is
+// tiny and DSi only samples it once a frame, unlike a mouse's much higher
+// native poll rate. Scaling the raw delta up before it enters the shared
+// mouse-sensitivity formula (EntityRenderer.cpp, unmodified, exactly PC's)
+// compensates for that physical difference at the source rather than
+// changing the shared formula itself, which PC still relies on for its own
+// feel. 2.5x is a first real-hardware-informed guess, not a measurement --
+// raise or lower it based on the next round of hands-on feedback.
+constexpr float kTouchCameraSensitivityScale = 2.5f;
+
 void dsiUpdateTouchCameraDelta(bool inMenu)
 {
 	touchPosition touch;
@@ -209,10 +240,14 @@ void dsiUpdateTouchCameraDelta(bool inMenu)
 	// on the first gameplay frame afterward.
 	if (touching && g_touchWasDown && !inMenu)
 	{
-		const int dx = static_cast<int>(touch.px) - g_touchLastX;
-		const int dy = static_cast<int>(touch.py) - g_touchLastY;
-		if (dx != 0 || dy != 0)
+		const int rawDx = static_cast<int>(touch.px) - g_touchLastX;
+		const int rawDy = static_cast<int>(touch.py) - g_touchLastY;
+		if (rawDx != 0 || rawDy != 0)
+		{
+			const int dx = static_cast<int>(std::lround(rawDx * kTouchCameraSensitivityScale));
+			const int dy = static_cast<int>(std::lround(-rawDy * kTouchCameraSensitivityScale));
 			lwjgl::Mouse::detail::pushMotion(touch.px, touch.py, dx, dy);
+		}
 	}
 
 	if (touching)

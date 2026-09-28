@@ -1542,20 +1542,30 @@ void EntityLiving::onLivingUpdate()
 
 void EntityLiving::updatePotionEffects()
 {
-	const std::vector<int_t> potionIds = activePotionOrder.valuesInIterationOrder();
-	for (int_t potionId : potionIds)
+	// activePotionsMap/activePotionOrder are always added to and erased from as
+	// a pair (see the sites above and below), so an empty map means an empty
+	// order set -- valuesInIterationOrder() would just hand back an empty
+	// vector after walking all 16 (never-shrinking) buckets and heap-allocating
+	// one anyway. Skip it outright for the common case (most mobs/players have
+	// no active potion effects most of the time) instead of paying that cost
+	// every tick for every living entity in the world.
+	if (!activePotionsMap.empty())
 	{
-		auto it = activePotionsMap.find(potionId);
-		if (it == activePotionsMap.end())
-			continue;
-		PotionEffect *effect = it->second;
-		if (effect == nullptr || (!effect->onUpdate(this) && !worldObj->multiplayerWorld))
+		const std::vector<int_t> potionIds = activePotionOrder.valuesInIterationOrder();
+		for (int_t potionId : potionIds)
 		{
-			if (effect != nullptr)
-				onFinishedPotionEffect(effect);
-			delete effect;
-			activePotionsMap.erase(it);
-			activePotionOrder.remove(potionId);
+			auto it = activePotionsMap.find(potionId);
+			if (it == activePotionsMap.end())
+				continue;
+			PotionEffect *effect = it->second;
+			if (effect == nullptr || (!effect->onUpdate(this) && !worldObj->multiplayerWorld))
+			{
+				if (effect != nullptr)
+					onFinishedPotionEffect(effect);
+				delete effect;
+				activePotionsMap.erase(it);
+				activePotionOrder.remove(potionId);
+			}
 		}
 	}
 

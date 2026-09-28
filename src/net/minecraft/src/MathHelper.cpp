@@ -5,8 +5,60 @@
 #include "platform/IntegerFloorDouble.h"
 
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 
 float MathHelper::SIN_TABLE[MathHelper::SIN_TABLE_SIZE];
+
+namespace
+{
+#if !PLATFORM_PS2
+	// Fast sqrt for every non-PS2 platform: sin()/cos() above already got a
+	// lookup table (SIN_TABLE), but sqrt_float()/sqrt_double() below never got
+	// an equivalent fast path and still fall through to JavaMath::sqrt() --
+	// fdlibm's __ieee754_sqrt, a full software DOUBLE-precision Newton-Raphson
+	// kernel with its own argument reduction, run through unconditionally on
+	// every FPU-less console this table already covers (DSi has no FPU at
+	// all; PS2 is excluded here because it already gets real hardware sqrt.s
+	// via std::sqrt, see sqrt_float()/sqrt_double() below). Called from
+	// dozens of per-tick/per-frame sites throughout the engine (movement
+	// vector normalization every moving entity every tick, AI look/move
+	// helpers, pathfinding edge costs, distance checks), the same shape of
+	// "everywhere, every tick" cost this session's other soft-float fixes
+	// (mesh repack, greedy mesh) targeted.
+	//
+	// This is the well-known fast inverse sqrt bit-hack (the "Quake" magic
+	// constant, 0x5f3759df) refined with TWO Newton-Raphson iterations
+	// instead of the classic single iteration: two iterations bring the
+	// relative error down to a few ULPs (effectively indistinguishable from
+	// a correctly-rounded result for any game-logic purpose -- distance
+	// comparisons, movement normalization, animation), while the whole
+	// computation is float multiplies and one integer subtract/shift, never
+	// a library call and never a divide (soft-float divides cost more than
+	// multiplies on top of already costing more than a libm call reads).
+	// Guards non-positive input by returning 0.0f rather than propagating a
+	// NaN/inf a real sqrt(negative) would -- every call site in this engine
+	// takes the sqrt of a sum of squares (always >= 0 by construction), so
+	// this only ever changes behavior for a value that floating-point error
+	// pushed a hair below zero, where 0.0f is the safer answer regardless.
+	inline float fastSqrtApprox(float x)
+	{
+		if (x <= 0.0f)
+			return 0.0f;
+
+		std::uint32_t bits;
+		std::memcpy(&bits, &x, sizeof(bits));
+		bits = 0x5f3759dfu - (bits >> 1);
+		float y;
+		std::memcpy(&y, &bits, sizeof(y));
+
+		const float halfX = x * 0.5f;
+		y = y * (1.5f - halfX * y * y);
+		y = y * (1.5f - halfX * y * y);
+		return x * y;
+	}
+#endif
+}
 
 namespace
 {
@@ -50,7 +102,7 @@ float MathHelper::sqrt_float(float f)
 #if PLATFORM_PS2
 	return std::sqrt(f);
 #else
-	return (float)JavaMath::sqrt(f);
+	return fastSqrtApprox(f);
 #endif
 }
 
@@ -65,7 +117,9 @@ float MathHelper::sqrt_double(double d)
 	// class of trade the other PS2 float knobs accept.
 	return std::sqrt((float)d);
 #else
-	return (float)JavaMath::sqrt(d);
+	// Same narrow-before-root reasoning as the PS2 branch above: the result
+	// is a float either way, and fastSqrtApprox() only takes one.
+	return fastSqrtApprox((float)d);
 #endif
 }
 

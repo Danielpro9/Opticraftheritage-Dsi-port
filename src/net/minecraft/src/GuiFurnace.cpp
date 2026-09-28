@@ -22,7 +22,12 @@ void GuiFurnace::drawGuiContainerForegroundLayer()
 
 void GuiFurnace::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
-	int_t tex = mc->renderEngine->getTexture("/gui/furnace.png");
+	// Cached rather than looked up fresh every frame this screen is open --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	static int_t cachedFurnaceTextureId = -1;
+	if (cachedFurnaceTextureId < 0)
+		cachedFurnaceTextureId = mc->renderEngine->getTexture("/gui/furnace.png");
+	int_t tex = cachedFurnaceTextureId;
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = (width  - xSize) / 2;

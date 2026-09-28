@@ -10,6 +10,20 @@ RenderEngine *NaturalTextures::renderEngine = nullptr;
 std::map<int_t, std::vector<NaturalProperties>> NaturalTextures::propertiesByTexture;
 std::map<int_t, std::vector<bool>> NaturalTextures::propertyMaskByTexture;
 
+namespace
+{
+	// getNaturalProperties() below re-resolved "/terrain.png" through
+	// RenderEngine::getTexture() (a std::string hash-map lookup) on every call
+	// where the caller didn't already know a specific textureId -- which is
+	// the common case: RenderBlocks.cpp's sole caller only has a non-zero
+	// textureId when Config::isConnectedTextures() is also on and matched,
+	// otherwise it always passes 0 here. With natural textures on (an
+	// OptiFine feature -- grass/leaves texture variation), this runs once per
+	// block face during every chunk mesh build. Same fix/reasoning as this
+	// session's ConnectedTextures.cpp getTerrainTextureId() cache.
+	int_t cachedTerrainTextureId = -1;
+}
+
 void NaturalTextures::setProperty(int_t textureId, int_t tile, const NaturalProperties &property)
 {
 	if (textureId < 0 || tile < 0 || tile > 255 || !property.isValid())
@@ -43,6 +57,7 @@ void NaturalTextures::makeDefaultProperties()
 void NaturalTextures::update(RenderEngine *engine)
 {
 	renderEngine = engine;
+	cachedTerrainTextureId = -1;
 	propertiesByTexture.clear();
 	propertyMaskByTexture.clear();
 	if (!Config::isNaturalTextures() || engine == nullptr)
@@ -86,7 +101,11 @@ const NaturalProperties *NaturalTextures::getNaturalProperties(int_t textureId, 
 	if (renderEngine == nullptr || tileNum < 0 || tileNum > 255)
 		return nullptr;
 	if (textureId == 0)
-		textureId = renderEngine->getTexture("/terrain.png");
+	{
+		if (cachedTerrainTextureId < 0)
+			cachedTerrainTextureId = renderEngine->getTexture("/terrain.png");
+		textureId = cachedTerrainTextureId;
+	}
 	auto propsIt = propertiesByTexture.find(textureId);
 	auto maskIt = propertyMaskByTexture.find(textureId);
 	if (propsIt == propertiesByTexture.end() || maskIt == propertyMaskByTexture.end())

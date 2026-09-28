@@ -27,7 +27,12 @@ void GuiCrafting::drawGuiContainerForegroundLayer()
 
 void GuiCrafting::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
-	int_t tex = mc->renderEngine->getTexture("/gui/crafting.png");
+	// Cached rather than looked up fresh every frame this screen is open --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	static int_t cachedCraftingTextureId = -1;
+	if (cachedCraftingTextureId < 0)
+		cachedCraftingTextureId = mc->renderEngine->getTexture("/gui/crafting.png");
+	int_t tex = cachedCraftingTextureId;
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = (width  - xSize) / 2;

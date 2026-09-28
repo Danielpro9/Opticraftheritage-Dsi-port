@@ -23,7 +23,12 @@ void GuiBrewingStand::drawGuiContainerForegroundLayer()
 
 void GuiBrewingStand::drawGuiContainerBackgroundLayer(float_t)
 {
-    int_t texture = mc->renderEngine->getTexture("/gui/alchemy.png");
+    // Cached rather than looked up fresh every frame this screen is open --
+    // same pattern/reasoning as this session's other texture-id-caching fixes.
+    static int_t cachedAlchemyTextureId = -1;
+    if (cachedAlchemyTextureId < 0)
+        cachedAlchemyTextureId = mc->renderEngine->getTexture("/gui/alchemy.png");
+    int_t texture = cachedAlchemyTextureId;
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     mc->renderEngine->bindTexture(texture);
     int_t guiX = (width - xSize) / 2;

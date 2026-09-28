@@ -21,7 +21,12 @@ void GuiDispenser::drawGuiContainerForegroundLayer()
 
 void GuiDispenser::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
-	int_t tex = mc->renderEngine->getTexture("/gui/trap.png");
+	// Cached rather than looked up fresh every frame this screen is open --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	static int_t cachedTrapTextureId = -1;
+	if (cachedTrapTextureId < 0)
+		cachedTrapTextureId = mc->renderEngine->getTexture("/gui/trap.png");
+	int_t tex = cachedTrapTextureId;
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = (width  - xSize) / 2;

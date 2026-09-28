@@ -28,7 +28,12 @@ void GuiChest::drawGuiContainerForegroundLayer()
 
 void GuiChest::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
-	int_t tex = mc->renderEngine->getTexture("/gui/container.png");
+	// Cached rather than looked up fresh every frame this screen is open --
+	// same pattern/reasoning as this session's other texture-id-caching fixes.
+	static int_t cachedContainerTextureId = -1;
+	if (cachedContainerTextureId < 0)
+		cachedContainerTextureId = mc->renderEngine->getTexture("/gui/container.png");
+	int_t tex = cachedContainerTextureId;
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = (width  - xSize) / 2;

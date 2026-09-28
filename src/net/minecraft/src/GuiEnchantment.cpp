@@ -123,7 +123,12 @@ void GuiEnchantment::drawBook(float_t partialTick)
     renderScale(5.0f, 5.0f, 5.0f);
     renderRotate(180.0f, 0.0f, 0.0f, 1.0f);
 
-    mc->renderEngine->bindTexture(mc->renderEngine->getTexture("/item/book.png"));
+    // Cached rather than looked up fresh every frame this screen is open --
+    // same pattern/reasoning as this session's other texture-id-caching fixes.
+    static int_t cachedBookTextureId = -1;
+    if (cachedBookTextureId < 0)
+        cachedBookTextureId = mc->renderEngine->getTexture("/item/book.png");
+    mc->renderEngine->bindTexture(cachedBookTextureId);
     renderRotate(20.0f, 1.0f, 0.0f, 0.0f);
 
     const float spread = bookSpreadPrev + (bookSpread - bookSpreadPrev) * partialTick;
@@ -157,7 +162,10 @@ void GuiEnchantment::drawGuiContainerBackgroundLayer(float_t partialTick)
     if (mc == nullptr || containerEnchantment == nullptr)
         return;
 
-    const int_t texture = mc->renderEngine->getTexture("/gui/enchant.png");
+    static int_t cachedEnchantTextureId = -1;
+    if (cachedEnchantTextureId < 0)
+        cachedEnchantTextureId = mc->renderEngine->getTexture("/gui/enchant.png");
+    const int_t texture = cachedEnchantTextureId;
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     mc->renderEngine->bindTexture(texture);
     const int_t guiX = (width - xSize) / 2;

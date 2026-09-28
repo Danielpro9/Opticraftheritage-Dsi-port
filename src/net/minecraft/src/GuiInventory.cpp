@@ -18,6 +18,22 @@
 #include "platform/RenderAPI.h"
 #include <cmath>
 
+namespace
+{
+	// Cached rather than looked up fresh every frame -- same pattern/reasoning
+	// as this session's other texture-id-caching fixes. Shared between
+	// drawGuiContainerBackgroundLayer() and displayDebuffEffects() below,
+	// which used to each look up this same name independently: with potion
+	// effects showing, that was two redundant hash-map lookups per frame
+	// instead of one lookup ever.
+	int_t cachedInventoryTextureId(Minecraft *mc)
+	{
+		static int_t id = -1;
+		if (id < 0)
+			id = mc->renderEngine->getTexture("/gui/inventory.png");
+		return id;
+	}
+}
 
 GuiInventory::GuiInventory(EntityPlayer *player)
 	: GuiContainer(player->inventorySlots)
@@ -64,7 +80,7 @@ void GuiInventory::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 
 void GuiInventory::drawGuiContainerBackgroundLayer(float_t partialTick)
 {
-	int_t tex = mc->renderEngine->getTexture("/gui/inventory.png");
+	int_t tex = cachedInventoryTextureId(mc);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	mc->renderEngine->bindTexture(tex);
 	int_t guiX = guiLeft;
@@ -128,7 +144,7 @@ void GuiInventory::displayDebuffEffects()
 	Potion::initPotions();
 	int_t x = guiLeft - 124;
 	int_t y = guiTop;
-	int_t texture = mc->renderEngine->getTexture("/gui/inventory.png");
+	int_t texture = cachedInventoryTextureId(mc);
 	int_t spacing = 33;
 	if (effects.size() > 5)
 		spacing = 132 / ((int_t)effects.size() - 1);

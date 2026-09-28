@@ -16,6 +16,24 @@ bool ConnectedTextures::matchingCtmPng = false;
 bool ConnectedTextures::hasBlockProperties = false;
 bool ConnectedTextures::hasTerrainProperties = false;
 
+namespace
+{
+	// getTerrainTextureId()/getCtmTextureId() below used to hash "/terrain.png"/
+	// "/ctm.png" through RenderEngine::getTexture() on every call -- and every
+	// platform's WorldRenderer*.cpp calls getTerrainTextureId() from its main
+	// terrain draw path (renderBindTexture(ConnectedTextures::getTerrainTextureId())),
+	// once per visible section with a CTM overlay, every frame those sections
+	// are drawn (RenderList.cpp/WorldRendererDsi.cpp's renderExtraTerrainMeshes()
+	// et al.) -- the same "hot render call site hashing a string every frame"
+	// class of cost this session's other texture-id-caching fixes already
+	// target, just centralized here since every platform's terrain renderer
+	// funnels through this one shared accessor. -1 means "not yet resolved
+	// this engine", reset by update() below (texture ids are never negative --
+	// RenderAPI_DSI.cpp's own comment: "index 0 unused, 0 means no texture").
+	int_t cachedTerrainTextureId = -1;
+	int_t cachedCtmTextureId = -1;
+}
+
 ConnectedProperties ConnectedTextures::makeDefault(const std::string &method, RenderEngine *engine)
 {
 	std::map<std::string, std::string> props;
@@ -56,6 +74,15 @@ void ConnectedTextures::readConnectedProperties(const std::string &prefix, std::
 void ConnectedTextures::update(RenderEngine *engine)
 {
 	renderEngine = engine;
+	// A texture pack switch keeps the same id for an already-known name
+	// (RenderEngine::refreshTextures() re-uploads into it rather than handing
+	// out a different one -- see this session's texture-id-caching commits
+	// for the confirmation), so this reset is not strictly needed for that
+	// case; it exists for the genuine engine-pointer change this function
+	// alone can make, so the cache never survives into being read against a
+	// different RenderEngine instance than it was resolved against.
+	cachedTerrainTextureId = -1;
+	cachedCtmTextureId = -1;
 	blockProperties.clear();
 	terrainProperties.clear();
 	hasBlockProperties = false;
@@ -99,12 +126,20 @@ void ConnectedTextures::update(RenderEngine *engine)
 
 int_t ConnectedTextures::getTerrainTextureId()
 {
-	return renderEngine != nullptr ? renderEngine->getTexture("/terrain.png") : 0;
+	if (renderEngine == nullptr)
+		return 0;
+	if (cachedTerrainTextureId < 0)
+		cachedTerrainTextureId = renderEngine->getTexture("/terrain.png");
+	return cachedTerrainTextureId;
 }
 
 int_t ConnectedTextures::getCtmTextureId()
 {
-	return renderEngine != nullptr ? renderEngine->getTexture("/ctm.png") : -1;
+	if (renderEngine == nullptr)
+		return -1;
+	if (cachedCtmTextureId < 0)
+		cachedCtmTextureId = renderEngine->getTexture("/ctm.png");
+	return cachedCtmTextureId;
 }
 
 int_t ConnectedTextures::getReverseGlassPaneTexture(int_t texture)

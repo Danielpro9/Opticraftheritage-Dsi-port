@@ -45,6 +45,18 @@ void GuiSlotStatsGeneral::drawSlot(int_t i, int_t x, int_t y, int_t h, Tessellat
 	StatFileWriter *sfw = GuiStats::getStatFileWriter(parentGui);
 	int_t color = (i % 2 != 0) ? 0x909090 : 0xffffff;
 	parentGui->drawString(fr, statbase->statName, x + 2, y + 1, color);
-	std::string s = statbase->format(sfw->writeStat(statbase));
-	parentGui->drawString(fr, s, (x + 2 + 213) - fr->getStringWidth(s), y + 1, color);
+
+	if (cachedRows.size() != StatList::generalStats.size())
+		cachedRows.assign(StatList::generalStats.size(), CachedRow());
+
+	CachedRow &cached = cachedRows[(std::size_t)i];
+	const int_t value = sfw->writeStat(statbase);
+	if (!cached.populated || cached.lastValue != value)
+	{
+		cached.lastValue = value;
+		cached.text = statbase->format(value);
+		cached.width = fr->getStringWidth(cached.text);
+		cached.populated = true;
+	}
+	parentGui->drawString(fr, cached.text, (x + 2 + 213) - cached.width, y + 1, color);
 }

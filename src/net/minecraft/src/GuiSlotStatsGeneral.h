@@ -1,6 +1,8 @@
 #pragma once
 
 #include "GuiSlot.h"
+#include <string>
+#include <vector>
 
 class GuiStats;
 class Tessellator;
@@ -20,4 +22,23 @@ protected:
 	void drawSlot(int_t index, int_t x, int_t y, int_t height, Tessellator *tess) override;
 
 	GuiStats *parentGui;
+
+private:
+	// drawSlot() used to call StatBase::format() (string formatting) and
+	// FontRenderer::getStringWidth() (a heap-allocating UTF-16 conversion +
+	// per-char scan) every frame for every visible row, even though a stat's
+	// formatted value only changes when the underlying counter does --
+	// StatList::generalStats itself never resizes at runtime, only the
+	// per-stat values do, so this is invalidated per row by comparing
+	// StatFileWriter::writeStat()'s returned value (a cheap map lookup) each
+	// frame instead of a list-rebuild hook like GuiWorldSlot's row cache
+	// needs.
+	struct CachedRow
+	{
+		int_t lastValue = 0;
+		std::string text;
+		int_t width = 0;
+		bool populated = false;
+	};
+	std::vector<CachedRow> cachedRows;
 };

@@ -2400,7 +2400,7 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
         const long_t warmupEnd = warmupStart + PLATFORM_LOAD_TERRAIN_WARMUP_MS;
         const int_t warmupQueuedAtStart = renderGlobal->pendingRendererUpdateCount();
         bool meshesReady = warmupQueuedAtStart == 0;
-#if PLATFORM_WII && PLATFORM_ASYNC_CHUNK_GENERATION
+#if (PLATFORM_WII && PLATFORM_ASYNC_CHUNK_GENERATION) || PLATFORM_INCREMENTAL_CHUNK_GENERATION
         ChunkProvider *warmupChunkProvider = dynamic_cast<ChunkProvider *>(world->getIChunkProvider());
 #endif
 
@@ -2420,6 +2420,31 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
                 warmupChunkProvider->serviceAsyncChunkStreaming();
             if (!meshesReady)
                 PlatformCompat::delay(1);
+#elif PLATFORM_INCREMENTAL_CHUNK_GENERATION
+            // Real-hardware evidence (debug.log's "warmup capped: built 0/50
+            // sections in 2500ms", every single time, on a brand new world):
+            // this loop's ONLY job during the loading screen is to mesh
+            // already-generated terrain via updateRenderers() above, but a
+            // section cannot mesh before its own chunk has finished
+            // generating -- and unlike the Wii branch above, nothing in this
+            // loop ever advanced PS2/DSi's own incremental generator
+            // (ChunkProvider::serviceFrameGeneration(), normally driven once
+            // a frame from EntityRenderer.cpp's updateCameraAndRender() --
+            // see its own PLATFORM_INCREMENTAL_CHUNK_GENERATION call). With
+            // no gameplay frames running yet during this loading screen, that
+            // per-frame drip never happened here at all, so a fresh world's
+            // very first chunks -- the ones this exact warmup is supposed to
+            // prepare -- never got generated within the whole 2500ms budget,
+            // meshed 0 of the sections queued, and pushed the entire
+            // generate-then-mesh cost onto the first real gameplay ticks
+            // instead (matching this same log's next few frames -- a 402/
+            // 6812ms and later a 565/8116ms 20-frame window, both almost
+            // entirely tick time, right as the first chunks actually stream
+            // in). Servicing it here too, once per warmup iteration, lets a
+            // fresh world's spawn chunks actually finish generating during
+            // the loading screen instead of stalling gameplay for it.
+            if (warmupChunkProvider != nullptr && !meshesReady)
+                warmupChunkProvider->serviceFrameGeneration();
 #endif
 
             const long_t now = System::currentTimeMillis();

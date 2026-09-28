@@ -407,12 +407,12 @@ namespace
 int g_dsiLastDecodedWidth = 0;
 int g_dsiLastDecodedHeight = 0;
 
-// DSi only, terrain.png only (for now -- see the caller): the atlas's real-
-// quality upload was confirmed failing for want of room in the console's
-// fixed 512KB texture-image VRAM budget (RenderAPI_DSI.cpp's vram=
-// diagnostic showed it landing on the heavily colour-quantized paletted
-// fallback instead -- 61 colours for the whole 256x256 atlas). Halving the
-// DECODED image here, before it ever reaches setupTexture(), is a different
+// DSi only: the atlas's real-quality upload was confirmed failing for want
+// of room in the console's fixed 512KB texture-image VRAM budget
+// (RenderAPI_DSI.cpp's vram= diagnostic showed it landing on the heavily
+// colour-quantized paletted fallback instead -- 61 colours for the whole
+// 256x256 atlas). Halving the DECODED image here, before it ever reaches
+// setupTexture(), is a different
 // lever than fighting for VRAM room: 256x256 -> 128x128 is a straight 4x
 // byte reduction at whatever format it ends up uploaded in, and this runs
 // once per load (world entry, texture pack switch), not per frame.
@@ -492,6 +492,41 @@ std::unique_ptr<BufferedImage> dsiDownscaleAtlasHalf(std::unique_ptr<BufferedIma
 
 	return std::unique_ptr<BufferedImage>(new BufferedImage(targetWidth, targetHeight, std::move(dst)));
 }
+
+// Container-screen background panels (inventory/crafting/furnace/chest/
+// dispenser/brewing-stand/enchanting-table/creative), NOT item icons --
+// deliberately excludes gui/items.png, which real players actually look at
+// closely, unlike a flat background panel mostly hidden under slots and
+// text. Real-hardware log evidence: '/gui/inventory.png' (256x256, 145
+// opaque colours after quantization) failing outright -- "GPU out of
+// texture VRAM space" on the paletted attempt, then the RGBA attempt, then
+// paletted again, then giving up to the checkerboard placeholder, with
+// ~469-535KB of the 512KB budget already spoken for by menu/HUD/terrain
+// textures at the time. 145 colours at 256x256 paletted is 64KB, more than
+// the ~43-76KB of headroom the log showed available; halved to 128x128
+// (dsiDownscaleAtlasHalf() above) the same paletted upload needs 16KB,
+// comfortably inside it. '/gui/allitems.png' (the creative screen's own
+// background) is a documented contributor to the exact same kind of
+// failure already (see GuiContainerCreative.cpp's onGuiClosed()/initGui()
+// comments on releasing it early) even without its own log line here.
+//
+// Safe for the same reason terrain.png's halving is: every GUI draw call
+// against these (Gui::drawTexturedModalRect()) computes its UV coordinates
+// as texX/texY multiplied by a hardcoded 1/256 constant, not a fraction of
+// the texture's actual resolution -- so as long as the whole image shrinks
+// uniformly (this function never crops), that fraction still lands on the
+// same relative position in the smaller texture. No drawing code changes.
+bool dsiIsDownscalableGuiBackground(const std::string &normalizedPath)
+{
+	return normalizedPath == "/gui/inventory.png" ||
+		normalizedPath == "/gui/crafting.png" ||
+		normalizedPath == "/gui/furnace.png" ||
+		normalizedPath == "/gui/container.png" ||
+		normalizedPath == "/gui/trap.png" ||
+		normalizedPath == "/gui/alchemy.png" ||
+		normalizedPath == "/gui/enchant.png" ||
+		normalizedPath == "/gui/allitems.png";
+}
 }
 #endif
 
@@ -524,11 +559,12 @@ bool RenderEngine::loadTextureStreamInto(const std::string &s, int_t texture, st
 		const std::string normalizedPath = normalizedTexturePath(s);
 		image = legacyPreparePanoramaForUpload(normalizedPath, std::move(image));
 #if PLATFORM_DSI
-		// terrain.png only for now -- see dsiDownscaleAtlasHalf()'s own
-		// comment for the full why and why this is safe. gui/items.png is
-		// the same shape of problem but not attempted yet: confirm this one
-		// first before widening scope.
-		if (normalizedPath == "/terrain.png")
+		// terrain.png (the same shape of problem, confirmed first) plus every
+		// container-screen background panel -- see dsiDownscaleAtlasHalf()'s
+		// and dsiIsDownscalableGuiBackground()'s own comments for the full why
+		// and why this is safe. gui/items.png (the item icons themselves, not
+		// a background) is deliberately excluded -- see the latter's comment.
+		if (normalizedPath == "/terrain.png" || dsiIsDownscalableGuiBackground(normalizedPath))
 			image = dsiDownscaleAtlasHalf(std::move(image));
 #endif
 #ifdef WII_PLATFORM

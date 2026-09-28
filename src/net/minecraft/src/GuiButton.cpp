@@ -49,18 +49,21 @@ void GuiButton::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
 	drawTexturedModalRect(xPosition,              yPosition, 0,               46 + k * 20, width / 2,       height);
 	drawTexturedModalRect(xPosition + width / 2,  yPosition, 200 - width / 2, 46 + k * 20, width / 2,       height);
 	mouseDragged(mc, mouseX, mouseY);
+
+	if (cachedWidthString != displayString)
+	{
+		cachedWidthString = displayString;
+		cachedWidth = fontrenderer->getStringWidth(displayString);
+	}
+	int_t color;
 	if (!enabled)
-	{
-		drawCenteredString(fontrenderer, displayString, xPosition + width / 2, yPosition + (height - 8) / 2, 0xffa0a0a0);
-	}
+		color = 0xffa0a0a0;
 	else if (hovered)
-	{
-		drawCenteredString(fontrenderer, displayString, xPosition + width / 2, yPosition + (height - 8) / 2, 0xffffa0);
-	}
+		color = 0xffffa0;
 	else
-	{
-		drawCenteredString(fontrenderer, displayString, xPosition + width / 2, yPosition + (height - 8) / 2, 0xe0e0e0);
-	}
+		color = 0xe0e0e0;
+	fontrenderer->drawStringWithShadow(displayString,
+		(xPosition + width / 2) - cachedWidth / 2, yPosition + (height - 8) / 2, color);
 }
 
 void GuiButton::mouseDragged(Minecraft *mc, int_t mouseX, int_t mouseY)

@@ -727,16 +727,20 @@ void Chunk::relightBlock(int_t i, int_t j, int_t k)
 	const int_t worldZ = JavaArithmetic::intAdd(JavaArithmetic::intMul(zPosition, 16), k);
 	if (worldObj != nullptr && worldObj->worldProvider != nullptr && !worldObj->worldProvider->hasNoSky)
 	{
+		// markBlocksDirtyVertical() above already dirtied every renderer section
+		// touching [newHeight, oldHeight] in one call (it buckets by 16-block
+		// renderer sections, so a single call there covers each touched section
+		// exactly once regardless of the height delta). The two loops below
+		// only need to write the actual skylight values -- re-marking each
+		// individual Y here was hitting the very same renderer sections again,
+		// once per Y instead of once per section.
 		if (newHeight < oldHeight)
 		{
 			for (int_t y = newHeight; y < oldHeight; ++y)
 			{
 				ExtendedBlockStorage *section = storageArrays[y >> 4];
 				if (section != nullptr)
-				{
 					section->setExtSkylightValue(i, y & 15, k, 15);
-					worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
-				}
 			}
 		}
 		else
@@ -745,10 +749,7 @@ void Chunk::relightBlock(int_t i, int_t j, int_t k)
 			{
 				ExtendedBlockStorage *section = storageArrays[y >> 4];
 				if (section != nullptr)
-				{
 					section->setExtSkylightValue(i, y & 15, k, 0);
-					worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
-				}
 			}
 		}
 

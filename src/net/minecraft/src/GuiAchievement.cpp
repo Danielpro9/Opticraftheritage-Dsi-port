@@ -39,11 +39,25 @@ void GuiAchievement::queueTakenAchievement(Achievement *achievement)
 
 void GuiAchievement::queueAchievementInformation(Achievement *achievement)
 {
-	field_25085_d = achievement->statName;
-	field_25084_e = achievement->getDescription();
+	// Called every tick from EntityPlayerSP::onLivingUpdate() for as long as
+	// the hinted achievement (openInventory) stays unearned -- possibly
+	// minutes of continuous 20/sec calls. field_25083_f MUST still be
+	// re-stamped every call: updateAchievementWindow()'s slide-in animation
+	// reads (now - field_25083_f), and while field_27103_i is true the normal
+	// duration-based expiry is bypassed entirely, so continuously refreshing
+	// this timestamp is what keeps the hint window pinned at its settled,
+	// fully-visible position instead of drifting through the slide animation
+	// and off-screen within about half a second. Only the string/pointer
+	// reassignment is genuinely redundant once this exact achievement is
+	// already the one queued -- skipped in that case.
+	if (theAchievement != achievement || !field_27103_i)
+	{
+		field_25085_d = achievement->statName;
+		field_25084_e = achievement->getDescription();
+		theAchievement = achievement;
+		field_27103_i = true;
+	}
 	field_25083_f = JavaArithmetic::longSub(System::currentTimeMillis(), 2500LL);
-	theAchievement = achievement;
-	field_27103_i = true;
 }
 
 void GuiAchievement::updateAchievementWindowScale()

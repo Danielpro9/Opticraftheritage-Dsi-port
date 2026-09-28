@@ -57,6 +57,15 @@ const PlatformGameDefaults& platformGameDefaults()
         d.sky = false;
         d.sunMoon = false;
         d.clouds = 3;
+#elif PLATFORM_DSI
+        // Off by default on real hardware -- still user-selectable in Video
+        // Settings (Fast/Fancy/Off), this just avoids paying the per-frame
+        // cloud draw (texture bind, blend state, a section of GPU FIFO
+        // traffic) unless the player opts in. renderClouds()'s static-mesh
+        // rewrite (RenderGlobal.cpp) already made the Fast path itself
+        // cheap; this is a separate, more conservative call about what
+        // should run unattended by default.
+        d.clouds = 3;
 #else
         d.clouds = 1;
 #endif

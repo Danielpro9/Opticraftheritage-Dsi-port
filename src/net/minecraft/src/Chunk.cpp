@@ -814,11 +814,21 @@ bool Chunk::setBlockIDWithMetadata(int_t i, int_t j, int_t k, int_t l, int_t i1)
 		precipitationHeightMap[columnIndex] = -999;
 
 	const int_t oldHeight = heightMap[columnIndex];
-	const int_t oldId = getBlockID(i, j, k);
-	if (oldId == l && getBlockMetadata(i, j, k) == i1)
-		return false;
-
+	// isValidLocalPosition(i, j, k) already succeeded above, so the old id/
+	// metadata can be read through one section lookup instead of going
+	// through getBlockID()/getBlockMetadata(), which would each redo that
+	// same validity check and their own separate storageArrays[j >> 4] fetch
+	// (a third one right below, at the section-creation check) for values
+	// this function needs anyway.
 	ExtendedBlockStorage *section = storageArrays[j >> 4];
+	const int_t oldId = section != nullptr ? section->getExtBlockID(i, j & 15, k) : 0;
+	if (oldId == l)
+	{
+		const int_t oldMetadata = section != nullptr ? section->getExtBlockMetadata(i, j & 15, k) : 0;
+		if (oldMetadata == i1)
+			return false;
+	}
+
 	bool createdAboveHeight = false;
 	if (section == nullptr)
 	{

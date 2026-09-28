@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "GuiSlot.h"
 
 class GuiMultiplayer;
@@ -20,4 +23,17 @@ protected:
 
 private:
     GuiMultiplayer *parentGui;
+
+    // The one real per-frame cost drawSlot() used to pay for every visible
+    // row (getStringWidth() heap-allocates a UTF-16 buffer per call) --
+    // server->playerCount only changes when a background ping thread
+    // finishes (ThreadPollServers), a rare event compared to every rendered
+    // frame this list is on screen.
+    struct CachedRow
+    {
+        bool populated = false;
+        std::string playerCount;
+        int_t playerCountWidth = 0;
+    };
+    std::vector<CachedRow> cachedRows;
 };

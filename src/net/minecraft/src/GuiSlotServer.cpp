@@ -98,7 +98,17 @@ void GuiSlotServer::drawSlot(int_t index, int_t x, int_t y, int_t, Tessellator *
     FontRenderer *font = parentGui->getFontRenderer();
     parentGui->drawString(font, name, x + 2, y + 1, 0xffffff);
     parentGui->drawString(font, motd, x + 2, y + 12, 0x808080);
-    parentGui->drawString(font, playerCount, x + 215 - font->getStringWidth(playerCount), y + 12, 0x808080);
+
+    if ((std::size_t)index >= cachedRows.size())
+        cachedRows.resize((std::size_t)getSize());
+    CachedRow &cached = cachedRows[(std::size_t)index];
+    if (!cached.populated || cached.playerCount != playerCount)
+    {
+        cached.playerCount = playerCount;
+        cached.playerCountWidth = font->getStringWidth(playerCount);
+        cached.populated = true;
+    }
+    parentGui->drawString(font, playerCount, x + 215 - cached.playerCountWidth, y + 12, 0x808080);
     parentGui->drawString(font, host, x + 2, y + 23, 0x303030);
 
     Minecraft *minecraft = parentGui->getMinecraft();

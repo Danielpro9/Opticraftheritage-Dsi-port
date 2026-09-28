@@ -1381,7 +1381,13 @@ void Minecraft::clickMouse(int_t i)
             if (itemstack1 == nullptr)
                 return;
             if (itemstack1->stackSize == 0)
+            {
+                // Nothing else along this path frees the emptied stack (no GC
+                // here) -- matches the established "husk deletion" convention
+                // used everywhere else stackSize hits 0 (see Container.cpp).
+                delete itemstack1;
                 thePlayer->inventory->mainInventory[thePlayer->inventory->currentItem] = nullptr;
+            }
             else if (itemstack1->stackSize != j1 || playerController->isInCreativeMode())
                 entityRenderer->getItemRenderer()->resetEquippedProgressAfterBlockPlace();
         }

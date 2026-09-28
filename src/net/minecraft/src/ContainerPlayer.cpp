@@ -72,6 +72,11 @@ void ContainerPlayer::onCraftGuiClosed(EntityPlayer *entityplayer)
 			entityplayer->dropPlayerItem(itemstack);
 		}
 	}
+	// Clear the crafting-result preview slot: InventoryCraftResult's own
+	// setInventorySlotContents() already deletes the previous stack, so a
+	// stale result can't be picked up again by reopening this GUI without
+	// matching materials (duplication; upstream issue #18).
+	craftResult->setInventorySlotContents(0, nullptr);
 }
 
 bool ContainerPlayer::isUsableByPlayer(EntityPlayer *entityplayer)

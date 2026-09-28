@@ -6,6 +6,8 @@
 
 #include "java/IOUtil.h"
 
+#include <utility>
+
 NBTTagByteArray::NBTTagByteArray()
 {
 }
@@ -13,6 +15,11 @@ NBTTagByteArray::NBTTagByteArray()
 NBTTagByteArray::NBTTagByteArray(const std::vector<byte_t> &abyte0)
 {
 	byteArray = abyte0;
+}
+
+NBTTagByteArray::NBTTagByteArray(std::vector<byte_t> &&abyte0)
+{
+	byteArray = std::move(abyte0);
 }
 
 void NBTTagByteArray::writeTagContents(std::ostream &dataoutput)

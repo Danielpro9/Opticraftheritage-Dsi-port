@@ -32,6 +32,8 @@ public:
 	void setDouble(const jstring &s, double d);
 	void setString(const jstring &s, const jstring &s1);
 	void setByteArray(const jstring &s, const std::vector<byte_t> &abyte0);
+	// Move overload -- see NBTTagByteArray's matching constructor for why.
+	void setByteArray(const jstring &s, std::vector<byte_t> &&abyte0);
 	void setIntArray(const jstring &s, const std::vector<int_t> &values);
 	void func_48183_a(const jstring &s, const std::vector<int_t> &values);
 	void setCompoundTag(const jstring &s, NBTTagCompound *nbttagcompound);

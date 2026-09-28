@@ -172,6 +172,11 @@ void NBTTagCompound::setByteArray(const jstring &s, const std::vector<byte_t> &a
 	setTag(s, new NBTTagByteArray(abyte0));
 }
 
+void NBTTagCompound::setByteArray(const jstring &s, std::vector<byte_t> &&abyte0)
+{
+	setTag(s, new NBTTagByteArray(std::move(abyte0)));
+}
+
 void NBTTagCompound::setIntArray(const jstring &s, const std::vector<int_t> &values)
 {
 	setTag(s, new NBTTagIntArray(values));

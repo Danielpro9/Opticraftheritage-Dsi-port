@@ -91,18 +91,24 @@ void GuiGameOver::actionPerformed(GuiButton *guibutton)
 
 void GuiGameOver::drawScreen(int_t i, int_t j, float_t f)
 {
+    if (!textCached)
+    {
+        cachedHardcore = mc->theWorld != nullptr && mc->theWorld->getWorldInfo() != nullptr &&
+                         mc->theWorld->getWorldInfo()->isHardcoreModeEnabled();
+        cachedTitle = StatCollector::translateToLocal(cachedHardcore ? "deathScreen.title.hardcore" : "deathScreen.title");
+        if (cachedHardcore)
+            cachedHardcoreInfo = StatCollector::translateToLocal("deathScreen.hardcoreInfo");
+        textCached = true;
+    }
+
     drawGradientRect(0, 0, width, height, 0x60500000, 0xa0803030);
     renderPushMatrix();
     renderScale(2.0f, 2.0f, 2.0f);
-
-    const bool hardcore = mc->theWorld != nullptr && mc->theWorld->getWorldInfo() != nullptr &&
-                          mc->theWorld->getWorldInfo()->isHardcoreModeEnabled();
-    const std::string title = StatCollector::translateToLocal(hardcore ? "deathScreen.title.hardcore" : "deathScreen.title");
-    drawCenteredString(fontRenderer, title, width / 2 / 2, 30, 0xffffff);
+    drawCenteredString(fontRenderer, cachedTitle, width / 2 / 2, 30, 0xffffff);
     renderPopMatrix();
 
-    if (hardcore)
-        drawCenteredString(fontRenderer, StatCollector::translateToLocal("deathScreen.hardcoreInfo"), width / 2, 144, 0xffffff);
+    if (cachedHardcore)
+        drawCenteredString(fontRenderer, cachedHardcoreInfo, width / 2, 144, 0xffffff);
 
     // mc->thePlayer is checked everywhere else this screen touches it
     // (actionPerformed()'s respawn/delete-world branches both guard it) --
@@ -115,10 +121,17 @@ void GuiGameOver::drawScreen(int_t i, int_t j, float_t f)
     // or right after this draw), but it is a real, unguarded null
     // dereference on exactly the code path that was running, so worth
     // closing regardless of whether it turns out to be the whole story.
-    if (mc->thePlayer != nullptr)
-        drawCenteredString(fontRenderer,
-                           StatCollector::translateToLocal("deathScreen.score") + ": §e" + std::to_string(mc->thePlayer->getScore()),
-                           width / 2, 100, 0xffffff);
+    //
+    // cachedScoreValid latches true the first frame thePlayer is non-null and
+    // is never cleared -- the score can't legitimately change afterward while
+    // this screen is showing, so once captured it just redraws from cache.
+    if (!cachedScoreValid && mc->thePlayer != nullptr)
+    {
+        cachedScoreText = StatCollector::translateToLocal("deathScreen.score") + ": §e" + std::to_string(mc->thePlayer->getScore());
+        cachedScoreValid = true;
+    }
+    if (cachedScoreValid)
+        drawCenteredString(fontRenderer, cachedScoreText, width / 2, 100, 0xffffff);
     GuiScreen::drawScreen(i, j, f);
 }
 

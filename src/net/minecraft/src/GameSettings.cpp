@@ -271,6 +271,17 @@ const PlatformGameDefaults& platformDefaults = platformGameDefaults();
 		ofRainSplash = false;
 		ofPortalParticles = false;
 		ofDrippingWaterLava = false;
+#elif PLATFORM_DSI
+		// Smooth biome blending costs 9x biome-cache lookups per grass/tall
+		// grass/leaf/vine/water block on every chunk mesh rebuild
+		// (CustomColorizer.cpp's getSmoothBlockColor()/BlockFluid's
+		// colorMultiplier()) instead of 1 -- real, non-trivial cost on every
+		// visible patch of grass, leaves or water. Off by default here for the
+		// same reason ambientOcclusion/fancyGraphics already are on this
+		// profile; stays a normal toggle in Quality Settings
+		// (EnumOptions::SMOOTH_BIOMES) for anyone who wants the blended look
+		// back at the cost of some frame time.
+		ofSmoothBiomes = false;
 #endif
 	}
 

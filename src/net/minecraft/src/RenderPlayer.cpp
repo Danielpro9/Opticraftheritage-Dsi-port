@@ -160,7 +160,7 @@ void RenderPlayer::renderName(EntityPlayer* entityPlayer, double d, double d1, d
     tessellator->draw();
     renderEnable(RenderCapability::Texture2D);
     renderDepthMask(true);
-    fontRenderer->drawString(name, -fontRenderer->getStringWidth(name) / 2, 0, 0x20ffffff);
+    fontRenderer->drawString(name, -halfWidth, 0, 0x20ffffff);
     renderEnable(RenderCapability::Lighting);
     renderDisable(RenderCapability::Blend);
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);

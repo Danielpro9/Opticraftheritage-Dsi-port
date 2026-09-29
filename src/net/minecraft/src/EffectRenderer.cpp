@@ -145,6 +145,16 @@ void EffectRenderer::addBlockDestroyEffects(int_t i, int_t j, int_t k, int_t l, 
     if (l == 0)
         return;
 
+#if PLATFORM_SKIP_WORLD_PARTICLES
+    // updateEffects() clears fxLayers every tick without processing them on
+    // this profile (see its own comment), so constructing this grid's worth
+    // of EntityDiggingFX (each paying the EntityFX base ctor's sqrt/rand/trig
+    // plus a virtual getBlockTextureFromSideAndMetadata + applyColourMultiplier
+    // call) only to discard them all unused is pure waste. void function, no
+    // caller uses a return value -- safe to skip entirely.
+    return;
+#endif
+
     Block *block = Block::blocksList[l];
     int_t j1 = PLATFORM_BLOCK_DESTROY_PARTICLE_GRID;
 
@@ -178,6 +188,14 @@ void EffectRenderer::addBlockHitEffects(int_t i, int_t j, int_t k, int_t l)
     int_t i1 = worldObj->getBlockId(i, j, k);
     if (i1 == 0)
         return;
+
+#if PLATFORM_SKIP_WORLD_PARTICLES
+    // Called continuously while a block is being mined (every few ticks per
+    // swing). Same reasoning as addBlockDestroyEffects() above: void
+    // function, only effect is an EntityDiggingFX that updateEffects()
+    // discards unused every tick on this profile -- safe to skip entirely.
+    return;
+#endif
 
     Block *block = Block::blocksList[i1];
     float_t f = 0.1f;

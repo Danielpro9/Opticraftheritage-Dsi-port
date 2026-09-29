@@ -2094,9 +2094,17 @@ void EntityRenderer::addRainParticles()
         const double particleY = static_cast<double>(static_cast<float>(precipitationY) + 0.1f) - blockBelow->minY;
         if (blockBelow->blockMaterial == Material::lava)
         {
+#if !PLATFORM_SKIP_WORLD_PARTICLES
+            // Particles are never drawn/updated on this profile (see
+            // EffectRenderer::updateEffects()'s own comment) -- constructing
+            // one only to have it discarded unused every tick is pure waste.
+            // The rain AMBIENCE SOUND below does not depend on this: it's
+            // gated only on rainParticleCount/soundX/Y/Z, both still updated
+            // in the branch below regardless of this guard.
             mc->effectRenderer->addEffect(new EntitySmokeFX(
                 world, static_cast<double>(static_cast<float>(x) + offsetX), particleY,
                 static_cast<double>(static_cast<float>(z) + offsetZ), 0.0, 0.0, 0.0));
+#endif
         }
         else
         {
@@ -2108,9 +2116,11 @@ void EntityRenderer::addRainParticles()
                 soundZ = static_cast<double>(static_cast<float>(z) + offsetZ);
             }
 
+#if !PLATFORM_SKIP_WORLD_PARTICLES
             mc->effectRenderer->addEffect(new EntityRainFX(
                 world, static_cast<double>(static_cast<float>(x) + offsetX), particleY,
                 static_cast<double>(static_cast<float>(z) + offsetZ)));
+#endif
         }
     }
 

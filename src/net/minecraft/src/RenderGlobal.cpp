@@ -3015,6 +3015,19 @@ EntityFX *RenderGlobal::spawnParticleEffect(const jstring &name, double x, doubl
 	if (mc == nullptr || mc->renderViewEntity == nullptr || mc->effectRenderer == nullptr)
 		return nullptr;
 
+#if PLATFORM_SKIP_WORLD_PARTICLES
+	// Particles are never drawn or updated on this profile (EntityRenderer.cpp
+	// gates renderLitParticles()/renderParticles() behind the same flag, and
+	// EffectRenderer::updateEffects() clears fxLayers every tick without
+	// calling onUpdate() -- see its own comment). Both callers of the
+	// pointer-returning form already null-check before touching the result
+	// (RenderGlobal.cpp's potion-swirl effect), and the void-returning
+	// spawnParticle() wrapper discards it unconditionally, so skipping the
+	// ~30-way name-comparison chain and the EntityFX subclass construction
+	// entirely is safe and transparent to every caller.
+	return nullptr;
+#endif
+
 	int_t particleSetting = mc->gameSettings != nullptr ? mc->gameSettings->particleSetting : 0;
 	if (particleSetting == 1 && worldObj != nullptr && worldObj->rand.nextInt(3) == 0)
 		particleSetting = 2;

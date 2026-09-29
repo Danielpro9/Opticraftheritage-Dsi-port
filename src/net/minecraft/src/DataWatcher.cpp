@@ -15,8 +15,8 @@ DataWatcher::DataWatcher() :
 
 DataWatcher::~DataWatcher()
 {
-    for (auto &entry : watchedObjects)
-        delete entry.second;
+    for (WatchableObject *obj : watchedObjects)
+        delete obj;
 }
 
 // Returns the type id for a given std::any value (matching Java's dataTypes map)
@@ -37,7 +37,17 @@ int_t DataWatcher::getTypeId(const std::any &obj)
 
 bool DataWatcher::hasObject(int_t id) const
 {
-    return watchedObjects.find(id) != watchedObjects.end();
+    return id >= 0 && id < static_cast<int_t>(watchedObjects.size()) && watchedObjects[id] != nullptr;
+}
+
+// Matches std::map::at()'s contract: throws std::out_of_range for an id that
+// was never addObject()'d (including one outside the valid 0-31 range,
+// which could never have been added in the first place).
+WatchableObject *DataWatcher::getSlot(int_t id) const
+{
+    if (id < 0 || id >= static_cast<int_t>(watchedObjects.size()) || watchedObjects[id] == nullptr)
+        throw std::out_of_range("No data watcher entry for id " + std::to_string(id));
+    return watchedObjects[id];
 }
 
 void DataWatcher::addObject(int_t id, std::any obj)
@@ -51,7 +61,7 @@ void DataWatcher::addObject(int_t id, std::any obj)
         throw std::invalid_argument(oss.str());
     }
 
-    if (watchedObjects.count(id))
+    if (id < 0 || watchedObjects[id] != nullptr)
     {
         std::ostringstream oss;
         oss << "Duplicate id value for " << id << "!";
@@ -64,22 +74,22 @@ void DataWatcher::addObject(int_t id, std::any obj)
 
 byte_t DataWatcher::getWatchableObjectByte(int_t id)
 {
-    return std::any_cast<byte_t>(watchedObjects.at(id)->getObject());
+    return std::any_cast<byte_t>(getSlot(id)->getObject());
 }
 
 short_t DataWatcher::getWatchableObjectShort(int_t id)
 {
-    return std::any_cast<short_t>(watchedObjects.at(id)->getObject());
+    return std::any_cast<short_t>(getSlot(id)->getObject());
 }
 
 int_t DataWatcher::getWatchableObjectInt(int_t id)
 {
-    return std::any_cast<int_t>(watchedObjects.at(id)->getObject());
+    return std::any_cast<int_t>(getSlot(id)->getObject());
 }
 
 std::string DataWatcher::getWatchableObjectString(int_t id)
 {
-    return std::any_cast<std::string>(watchedObjects.at(id)->getObject());
+    return std::any_cast<std::string>(getSlot(id)->getObject());
 }
 
 static bool anyEquals(const std::any &a, const std::any &b)
@@ -105,7 +115,7 @@ static bool anyEquals(const std::any &a, const std::any &b)
 
 void DataWatcher::updateObject(int_t id, std::any obj)
 {
-    WatchableObject *wo = watchedObjects.at(id);
+    WatchableObject *wo = getSlot(id);
     if (!anyEquals(obj, wo->getObject()))
     {
         wo->setObject(std::move(obj));
@@ -170,9 +180,8 @@ void DataWatcher::writeWatchableObjects(std::ostream &os)
     const std::vector<int_t> orderedIds = watchedObjectOrder.valuesInIterationOrder();
     for (int_t id : orderedIds)
     {
-        auto it = watchedObjects.find(id);
-        if (it != watchedObjects.end())
-            writeWatchableObject(os, it->second);
+        if (id >= 0 && id < static_cast<int_t>(watchedObjects.size()) && watchedObjects[id] != nullptr)
+            writeWatchableObject(os, watchedObjects[id]);
     }
     IOUtil::writeByte(os, 127);
 }
@@ -284,13 +293,13 @@ void DataWatcher::updateWatchedObjectsFromList(const std::vector<WatchableObject
     {
         if (incoming == nullptr)
             continue;
-        auto it = watchedObjects.find(incoming->getDataValueId());
-        if (it == watchedObjects.end() ||
-            it->second->getObjectType() != incoming->getObjectType())
+        const int_t id = incoming->getDataValueId();
+        if (id < 0 || id >= static_cast<int_t>(watchedObjects.size()) || watchedObjects[id] == nullptr ||
+            watchedObjects[id]->getObjectType() != incoming->getObjectType())
             continue;
 
         std::any value = cloneWatchableValue(incoming);
         if (value.has_value())
-            it->second->setObject(std::move(value));
+            watchedObjects[id]->setObject(std::move(value));
     }
 }

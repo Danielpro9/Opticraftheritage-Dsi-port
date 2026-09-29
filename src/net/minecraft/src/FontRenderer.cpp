@@ -774,7 +774,11 @@ std::vector<std::string> FontRenderer::split(const std::string &s, char delimite
 
 int_t FontRenderer::getCharIndex(char_t c)
 {
-	return String::indexOfUtf16Unit(ChatAllowedCharacters::allowedCharacters(), c);
+	// Called once per glyph drawn (renderStringScaled) and once per character
+	// in getStringWidth()/trimStringToWidth() -- every frame, for every piece
+	// of visible text. indexOfAllowedCharacter() caches the lookup instead of
+	// re-decoding the whole allowed-character set from UTF-8 on every call.
+	return ChatAllowedCharacters::indexOfAllowedCharacter(c);
 }
 
 void FontRenderer::setUnicodeFlag(bool unicode)

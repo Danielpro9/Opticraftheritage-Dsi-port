@@ -1,6 +1,6 @@
 #pragma once
 
-#include <map>
+#include <array>
 #include <vector>
 #include <any>
 #include <iostream>
@@ -48,7 +48,17 @@ private:
     static void writeWatchableObject(std::ostream &os, WatchableObject *obj);
     static int_t getTypeId(const std::any &obj);
 
-    std::map<int_t, WatchableObject*> watchedObjects;
+    // addObject() enforces id <= 31 (matching vanilla's "Data value id is too
+    // big" check), so the key space is a small, dense, bounded set of at most
+    // 32 slots -- a std::map (a red-black tree with per-node allocation) was
+    // pure overhead for it. This backs every entity's runtime flags (on-fire,
+    // sneaking, sprinting, health, mob-specific state) via Entity::
+    // getEntityFlag()/setEntityFlag() and dozens of mob subclasses' own
+    // fields, read and written from both per-tick AI/update logic and
+    // per-frame render code, so it is not a cold container.
+    // getSlot() centralizes the bounds/null check every accessor needs.
+    WatchableObject *getSlot(int_t id) const;
+    std::array<WatchableObject*, 32> watchedObjects{};
     JavaHashSet<int_t, DataWatcherIdHash, DataWatcherIdEqual> watchedObjectOrder;
     bool objectChanged;
 };

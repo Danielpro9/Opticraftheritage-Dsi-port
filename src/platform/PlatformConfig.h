@@ -72,6 +72,21 @@
 #  define PLATFORM_THROTTLE_ENTITY_AI (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PC_LEGACY || PLATFORM_DSI)
 #endif
 
+// How many ticks EntitySenses::clearSensingCache() keeps its canSee() results
+// before re-evaluating them, instead of wiping the cache (and forcing a fresh
+// World::rayTraceBlocks() block-march for every actively-chasing/attacking
+// mob) every single tick regardless of PLATFORM_THROTTLE_ENTITY_AI -- that
+// throttle only gates shouldExecute() (picking a NEW task), not
+// continueExecuting()/updateTask() on an already-active one, so a mob mid-
+// combat pays this raytrace every tick even at melee range. 1 leaves every
+// platform's behavior unchanged (clear every tick) unless overridden; see
+// DsiWorldTuning.h for DSi's value and the existing AI-tolerance windows
+// (EntityAITarget's 60-tick unseen grace, EntityAIArrowAttack's 20-tick
+// seeTime threshold) this is checked safe against.
+#ifndef PLATFORM_CAN_SEE_CACHE_TICKS
+#  define PLATFORM_CAN_SEE_CACHE_TICKS 1
+#endif
+
 // Entities with a chunk retention radius (the Ender Dragon) keep their
 // footprint resident and generated while they cross the sliding world window.
 // A bounded-world concern, not a CPU one: without it the Wii unloads the

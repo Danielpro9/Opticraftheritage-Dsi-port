@@ -470,4 +470,24 @@
 #undef  PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
 #define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD 1
 
+// Real-hardware evidence (this session's own investigation, see
+// PlatformConfig.h's PLATFORM_CAN_SEE_CACHE_TICKS comment for the mechanism):
+// an actively-chasing/attacking hostile mob (zombie, skeleton, creeper) pays
+// a full World::rayTraceBlocks() block-march plus two heap-allocated Vec3D
+// every single tick via EntitySenses::clearSensingCache() wiping its cache
+// before PLATFORM_THROTTLE_ENTITY_AI's shouldRunEntityDecisionAI() check ever
+// runs -- and that throttle doesn't apply to an already-active task anyway,
+// so it fires hardest exactly when several hostile mobs are near the player
+// (combat), the worst possible moment on this weak ARM9. 5 ticks (a quarter
+// of a second at the intended 20 TPS) is comfortably inside the existing
+// tolerance windows this was checked against: EntityAITarget allows up to 60
+// ticks of "not seen" before giving up a target, and EntityAIArrowAttack only
+// needs its seeTime counter to cross a threshold of 20 -- a few ticks of
+// cached sight-check staleness can only delay reacting to a sight change by
+// that same handful of ticks, well short of either. Unmeasured against a
+// real multi-mob-combat frame-time log, same as this file's other knobs (see
+// its own banner); revisit once one exists.
+#undef  PLATFORM_CAN_SEE_CACHE_TICKS
+#define PLATFORM_CAN_SEE_CACHE_TICKS 5
+
 #endif // PLATFORM_DSI

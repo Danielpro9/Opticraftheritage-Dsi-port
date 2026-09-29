@@ -439,4 +439,35 @@
 #undef  PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES
 #define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 4
 
+// CORRECTNESS FIX, not a performance tuning value: PLATFORM_SAVE_RUNTIME_
+// CHUNK_EDITS_ON_UNLOAD defaults to PLATFORM_PS2 only (PlatformConfig.h), and
+// ChunkProviderLoadOrGenerate::unloadChunk()/ChunkProvider::unloadChunk()'s
+// alternate save path is gated on `!PLATFORM_CONSOLE_LOW`, which DSi also
+// fails (PLATFORM_CONSOLE_LOW is on for DSi too -- see PlatformGameTuning.h's
+// own banner). Neither branch compiled for DSi, so unloadChunk() has never
+// saved an edited chunk before deleting it: any block break/place, container
+// content change, etc. in a chunk that streams out of this platform's tiny
+// cache (PLATFORM_CHUNK_CACHE_RADIUS=1, PLATFORM_CHUNK_UNLOAD_RADIUS=2 below
+// -- chunks stream in/out constantly just from ordinary walking) was silently
+// lost unless an explicit full-world save happened to run first. The
+// producer side of this same flag (Chunk::setBlockIDWithMetadata/
+// setBlockMetadata's markRuntimeSaveRequired() calls, Chunk.cpp) was already
+// present and correctly excludes world-gen population
+// (isPopulationFastPathChunk), just never wired up to anything that read it
+// on this platform -- turning this on requires no other change; it re-enables
+// an already-implemented, already-shipping-on-PS2 code path.
+//
+// Trade-off: DSi has no background I/O thread (PLATFORM_ASYNC_FILE_IO is off
+// for DSi), so this save runs synchronously, inline, at the moment an edited
+// chunk unloads -- a real stall on the SD card exactly during ordinary
+// exploration, not just during an explicit "Saving..." screen. That is the
+// same calling convention every other DSi save already uses (nothing here
+// introduces a new threading assumption), and losing player progress
+// silently is a worse failure mode than an occasional save-stall, so this is
+// the right trade -- but it's a real, user-visible behavior change worth
+// watching for in the next real-hardware test (a brief hitch right as you
+// walk away from an edited area).
+#undef  PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
+#define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD 1
+
 #endif // PLATFORM_DSI

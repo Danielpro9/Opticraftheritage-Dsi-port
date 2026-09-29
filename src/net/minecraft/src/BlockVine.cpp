@@ -218,28 +218,36 @@ void BlockVine::onNeighborBlockChange(World *world, int_t x, int_t y, int_t z, i
     }
 }
 
-void BlockVine::updateTick(World *world, int_t x, int_t y, int_t z, Random &random)
+namespace
 {
-    if (world->multiplayerWorld || world->rand.nextInt(4) != 0)
-        return;
-
+// 9x9x3 = 243-cell scan around a vine, only actually needed by the side==1
+// (grow up) and side 2-5 (spread sideways) branches of updateTick() below --
+// the fallback "grow downward" branch never reads it. Extracted so it's
+// computed lazily, once per branch that needs it, instead of unconditionally
+// every call regardless of which branch the roll below takes.
+bool isVineTooDense(World *world, int_t blockID, int_t x, int_t y, int_t z)
+{
     constexpr int_t radius = 4;
     int_t remaining = 5;
-    bool tooDense = false;
-    for (int_t checkX = x - radius; checkX <= x + radius && !tooDense; ++checkX)
+    for (int_t checkX = x - radius; checkX <= x + radius; ++checkX)
     {
-        for (int_t checkZ = z - radius; checkZ <= z + radius && !tooDense; ++checkZ)
+        for (int_t checkZ = z - radius; checkZ <= z + radius; ++checkZ)
         {
             for (int_t checkY = y - 1; checkY <= y + 1; ++checkY)
             {
                 if (world->getBlockId(checkX, checkY, checkZ) == blockID && --remaining <= 0)
-                {
-                    tooDense = true;
-                    break;
-                }
+                    return true;
             }
         }
     }
+    return false;
+}
+}
+
+void BlockVine::updateTick(World *world, int_t x, int_t y, int_t z, Random &random)
+{
+    if (world->multiplayerWorld || world->rand.nextInt(4) != 0)
+        return;
 
     const int_t metadata = world->getBlockMetadata(x, y, z);
     const int_t side = world->rand.nextInt(6);
@@ -247,7 +255,7 @@ void BlockVine::updateTick(World *world, int_t x, int_t y, int_t z, Random &rand
 
     if (side == 1 && y < 255 && world->isAirBlock(x, y + 1, z))
     {
-        if (tooDense)
+        if (isVineTooDense(world, blockID, x, y, z))
             return;
         int_t upperMetadata = world->rand.nextInt(16) & metadata;
         if (upperMetadata > 0)
@@ -265,7 +273,7 @@ void BlockVine::updateTick(World *world, int_t x, int_t y, int_t z, Random &rand
 
     if (side >= 2 && side <= 5 && (metadata & (1 << direction)) == 0)
     {
-        if (tooDense)
+        if (isVineTooDense(world, blockID, x, y, z))
             return;
 
         const int_t targetX = x + kOffsetX[direction];

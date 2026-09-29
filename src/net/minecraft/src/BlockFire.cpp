@@ -155,7 +155,7 @@ void BlockFire::updateTick(World *world, int_t i, int_t j, int_t k, Random &rand
 
 					if (chance > 0 && random.nextInt(chanceScale) <= chance &&
 					    (!world->isRaining() || !world->canLightningStrikeAt(x, y, z)) &&
-					    !world->canLightningStrikeAt(x - 1, y, k) &&
+					    !world->canLightningStrikeAt(x - 1, y, z) &&
 					    !world->canLightningStrikeAt(x + 1, y, z) &&
 					    !world->canLightningStrikeAt(x, y, z - 1) &&
 					    !world->canLightningStrikeAt(x, y, z + 1))

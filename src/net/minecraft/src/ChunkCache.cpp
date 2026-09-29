@@ -199,8 +199,37 @@ TileEntity *ChunkCache::getBlockTileEntity(int_t i, int_t j, int_t k)
 
 int_t ChunkCache::getLightBrightnessForSkyBlocks(int_t i, int_t j, int_t k, int_t minimumBlockLight)
 {
-	int_t skyLight = getSkyBlockTypeBrightness(EnumSkyBlock::Sky, i, j, k);
-	int_t blockLight = getSkyBlockTypeBrightness(EnumSkyBlock::Block, i, j, k);
+	// Equivalent to calling getSkyBlockTypeBrightness() once for Sky and once
+	// for Block, but those two calls always share the same (i, j, k): the
+	// j-clamp, the +/-30,000,000 bounds check, and the getBlockId()/
+	// useNeighborBrightness lookup that decides which branch to take. This is
+	// the hottest lighting accessor in the port (RenderBlocks samples it per
+	// vertex during every chunk-mesh build), so doing that shared work once
+	// instead of twice removes a real fraction of the redundant getBlockId()
+	// traffic. getSkyBlockTypeBrightnessForBlockId() holds the one copy of the
+	// actual brightness-resolution logic, shared with the public
+	// getSkyBlockTypeBrightness() below, so there is no duplicated branch to
+	// drift out of sync.
+	int_t clampedJ = j;
+	if (clampedJ < 0)
+		clampedJ = 0;
+	else if (clampedJ >= WorldHeight::HEIGHT)
+		clampedJ = WorldHeight::MAX_Y;
+
+	int_t skyLight;
+	int_t blockLight;
+	if (i < -30000000 || k < -30000000 || i >= 30000000 || k > 30000000)
+	{
+		skyLight = EnumSkyBlock::Sky->defaultLightValue;
+		blockLight = EnumSkyBlock::Block->defaultLightValue;
+	}
+	else
+	{
+		const int_t blockId = getBlockId(i, clampedJ, k);
+		skyLight = getSkyBlockTypeBrightnessForBlockId(EnumSkyBlock::Sky, blockId, i, clampedJ, k);
+		blockLight = getSkyBlockTypeBrightnessForBlockId(EnumSkyBlock::Block, blockId, i, clampedJ, k);
+	}
+
 	if (blockLight < minimumBlockLight)
 		blockLight = minimumBlockLight;
 	return (skyLight << 20) | (blockLight << 4);
@@ -218,6 +247,11 @@ int_t ChunkCache::getSkyBlockTypeBrightness(EnumSkyBlock *type, int_t i, int_t j
 		return type->defaultLightValue;
 
 	const int_t blockId = getBlockId(i, j, k);
+	return getSkyBlockTypeBrightnessForBlockId(type, blockId, i, j, k);
+}
+
+int_t ChunkCache::getSkyBlockTypeBrightnessForBlockId(EnumSkyBlock *type, int_t blockId, int_t i, int_t j, int_t k)
+{
 	if (blockId >= 0 && blockId < Block::BLOCK_REGISTRY_SIZE && Block::useNeighborBrightness[blockId])
 	{
 		int_t brightness = getSpecialBlockBrightness(type, i, j + 1, k);
@@ -354,21 +388,34 @@ int_t ChunkCache::getBlockMetadata(int_t i, int_t j, int_t k)
 {
 	if (j < 0) return 0;
 	if (j >= WorldHeight::HEIGHT) return 0;
+	if (lastMetadataValid && lastMetadataX == i && lastMetadataY == j && lastMetadataZ == k)
+		return lastMetadataValue;
+
 	int_t l  = JavaArithmetic::intSub(JavaArithmetic::intShr(i, 4), chunkX);
 	int_t i1 = JavaArithmetic::intSub(JavaArithmetic::intShr(k, 4), chunkZ);
 	if (l < 0 || l >= chunkArrayWidth || i1 < 0 || i1 >= chunkArrayDepth)
 		return 0;
 	const size_t cell = cellIndex(l, i1);
+	int_t result;
 #if PLATFORM_FAST_CHUNK_BLOCK_READS
 	if (fastBasesValid)
 	{
 		const ExtendedBlockStorage *section = sectionBase[cell * WorldHeight::SECTION_COUNT + (j >> 4)];
-		return section != nullptr ? section->getExtBlockMetadata(i & 0xf, j & 0xf, k & 0xf) : 0;
+		result = section != nullptr ? section->getExtBlockMetadata(i & 0xf, j & 0xf, k & 0xf) : 0;
 	}
+	else
 #endif
-	Chunk *chunk = chunkArray[cell];
-	if (chunk == nullptr) return 0;
-	return chunk->getBlockMetadata(i & 0xf, j, k & 0xf);
+	{
+		Chunk *chunk = chunkArray[cell];
+		result = chunk != nullptr ? chunk->getBlockMetadata(i & 0xf, j, k & 0xf) : 0;
+	}
+
+	lastMetadataValid = true;
+	lastMetadataX = i;
+	lastMetadataY = j;
+	lastMetadataZ = k;
+	lastMetadataValue = result;
+	return result;
 }
 
 Material *ChunkCache::getBlockMaterial(int_t i, int_t j, int_t k)

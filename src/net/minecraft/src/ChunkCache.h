@@ -107,4 +107,27 @@ private:
 	Chunk **chunkArray;
 	World *worldObj;
 	bool levelsEmpty;
+
+	// getBlockMetadata() is re-queried for the SAME (i, j, k) up to six times
+	// in a row by RenderBlocks -- once per visible face -- for any block whose
+	// getBlockTexture() looks at its own metadata to pick an orientation
+	// (BlockFurnace, BlockDispenser, and similar directional blocks). A
+	// ChunkCache is a short-lived, read-only snapshot for one mesh-build or
+	// pathfind pass (see the class comment above), so nothing can write
+	// through it between those calls; caching only the single most recent
+	// lookup is enough to catch that run of same-coordinate calls without the
+	// cost or risk of a real map.
+	bool lastMetadataValid = false;
+	int_t lastMetadataX = 0;
+	int_t lastMetadataY = 0;
+	int_t lastMetadataZ = 0;
+	int_t lastMetadataValue = 0;
+
+	// Shared branch logic between getSkyBlockTypeBrightness() and
+	// getLightBrightnessForSkyBlocks(): both need the useNeighborBrightness
+	// decision for the same (i, j, k), and the mesh-building caller needs it
+	// twice per vertex (once for Sky, once for Block) without paying for
+	// getBlockId() and the bounds/clamp work a second time. See
+	// getLightBrightnessForSkyBlocks()'s comment in ChunkCache.cpp.
+	int_t getSkyBlockTypeBrightnessForBlockId(EnumSkyBlock *type, int_t blockId, int_t i, int_t j, int_t k);
 };

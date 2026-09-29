@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_map>
 #include <string>
 #include <memory>
 #include "java/Type.h"
@@ -38,10 +39,21 @@ public:
 	void updateStatsSync();
 
 private:
-	void writeStatToMap(std::map<StatBase*, int_t> &map, StatBase *statbase, int_t i);
+	void writeStatToMap(std::unordered_map<StatBase*, int_t> &map, StatBase *statbase, int_t i);
 
-	std::map<StatBase*, int_t> tempStats;
-	std::map<StatBase*, int_t> writtenStats;
+	// StatBase* is a small, session-stable key space (every StatBase is
+	// heap-allocated once at StatList::initStats()/initBlockStats()/
+	// initItemStats() and never freed/moved), and readStat() -- the funnel
+	// for every movement/jump/mining/crafting stat update -- does two lookups
+	// into these every single call, including every tick the player is
+	// moving (EntityPlayer::addMovementStat()). A std::map (red-black tree,
+	// per-node allocation, pointer-key comparisons) is pure overhead for
+	// that; an unordered_map is a drop-in replacement here since nothing
+	// depends on iteration order (verified against LocalStatsFormat, the
+	// only consumer that walks these on DSi/PS2/WII). The public interface
+	// below still takes/returns std::map, so this stays purely internal.
+	std::unordered_map<StatBase*, int_t> tempStats;
+	std::unordered_map<StatBase*, int_t> writtenStats;
 	bool hasUnsentStats;
 	StatsSyncher *statsSyncher;
 

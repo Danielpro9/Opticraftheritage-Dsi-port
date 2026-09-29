@@ -3330,11 +3330,19 @@ void World::updateEntities()
                 }),
             loadedEntityList.end());
 #else
+        // DSi/Wii don't maintain loadedEntityPointerSet (see
+        // trackLoadedEntityPointer()'s no-op #else above), so build a
+        // temporary membership set scoped to just this unload batch instead
+        // of a std::find scan of unloadedEntityList per surviving entity --
+        // that scan was O(loadedEntityList.size() * unloadedEntityList.size())
+        // every tick any entity unloads (leaving loaded-chunk range, dimension
+        // change, etc. -- routine during normal play, not rare), now O(n+m).
+        const std::unordered_set<Entity*> unloadedSet(unloadedEntityList.begin(), unloadedEntityList.end());
         loadedEntityList.erase(
             std::remove_if(loadedEntityList.begin(), loadedEntityList.end(),
-                [this](Entity* entity)
+                [&unloadedSet](Entity* entity)
                 {
-                    return std::find(unloadedEntityList.begin(), unloadedEntityList.end(), entity) != unloadedEntityList.end();
+                    return unloadedSet.find(entity) != unloadedSet.end();
                 }),
             loadedEntityList.end());
 #endif

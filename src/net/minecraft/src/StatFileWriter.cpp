@@ -108,7 +108,7 @@ void StatFileWriter::readStat(StatBase *statbase, int_t i)
 	hasUnsentStats = true;
 }
 
-void StatFileWriter::writeStatToMap(std::map<StatBase*, int_t> &map, StatBase *statbase, int_t i)
+void StatFileWriter::writeStatToMap(std::unordered_map<StatBase*, int_t> &map, StatBase *statbase, int_t i)
 {
 	if (statbase == nullptr) return;
 	auto it = map.find(statbase);
@@ -118,7 +118,11 @@ void StatFileWriter::writeStatToMap(std::map<StatBase*, int_t> &map, StatBase *s
 
 std::map<StatBase*, int_t> StatFileWriter::getTempStats()
 {
-	return writtenStats;
+	// Only reached on the !PLATFORM_LOCAL_STATS (desktop) path -- see
+	// syncStats()/updateStatsSync() below -- so this conversion is not a
+	// DSi/PS2/WII hot path; it exists purely to keep the public interface's
+	// std::map contract while writtenStats itself is now an unordered_map.
+	return std::map<StatBase*, int_t>(writtenStats.begin(), writtenStats.end());
 }
 
 void StatFileWriter::setTempStats(std::map<StatBase*, int_t> &map)

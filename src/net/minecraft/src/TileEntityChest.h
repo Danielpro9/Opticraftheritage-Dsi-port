@@ -49,5 +49,12 @@ public:
 
 private:
 	int_t ticksSinceSync;
+	// Value of numUsingPlayers last sent through updateEntity()'s periodic
+	// playNoteAt() re-announce. This is a client-only build (no server code
+	// here to receive a real vanilla addBlockEvent from), so that call only
+	// ever loops back locally through Block::powerBlock -> BlockContainer::
+	// playBlock -> onTileEntityPowered(1, numUsingPlayers), which just writes
+	// numUsingPlayers back to itself -- see updateEntity()'s comment.
+	int_t lastSyncedUsingPlayers;
 	ItemStack *chestContents[36];
 };

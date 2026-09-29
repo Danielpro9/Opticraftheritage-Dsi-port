@@ -16,7 +16,8 @@ TileEntityChest::TileEntityChest()
 	  lidAngle(0.0f),
 	  prevLidAngle(0.0f),
 	  numUsingPlayers(0),
-	  ticksSinceSync(0)
+	  ticksSinceSync(0),
+	  lastSyncedUsingPlayers(0)
 {
 	for (int_t i = 0; i < 36; ++i)
 		chestContents[i] = nullptr;
@@ -195,8 +196,11 @@ void TileEntityChest::updateEntity()
 		return;
 
 	++ticksSinceSync;
-	if ((ticksSinceSync % 20) * 4 == 0)
+	if ((ticksSinceSync % 20) * 4 == 0 && numUsingPlayers != lastSyncedUsingPlayers)
+	{
 		worldObj->playNoteAt(xCoord, yCoord, zCoord, 1, numUsingPlayers);
+		lastSyncedUsingPlayers = numUsingPlayers;
+	}
 
 	prevLidAngle = lidAngle;
 	const float speed = 0.1f;
@@ -243,14 +247,20 @@ void TileEntityChest::openChest()
 {
 	++numUsingPlayers;
 	if (worldObj != nullptr)
+	{
 		worldObj->playNoteAt(xCoord, yCoord, zCoord, 1, numUsingPlayers);
+		lastSyncedUsingPlayers = numUsingPlayers;
+	}
 }
 
 void TileEntityChest::closeChest()
 {
 	--numUsingPlayers;
 	if (worldObj != nullptr)
+	{
 		worldObj->playNoteAt(xCoord, yCoord, zCoord, 1, numUsingPlayers);
+		lastSyncedUsingPlayers = numUsingPlayers;
+	}
 }
 
 void TileEntityChest::invalidate()

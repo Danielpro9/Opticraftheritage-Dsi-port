@@ -2005,6 +2005,18 @@ void RenderEngine::clearDecodedTextureCache()
 
 int_t RenderEngine::getTextureForDownloadableImage(const std::string &s, const std::string &fallback)
 {
+	// urlToImageDataMap (a std::map, i.e. a tree) is only ever populated by
+	// obtainImageData(), and every call site guards it with !skinUrl.empty()/
+	// !cloakUrl.empty() (RenderGlobal::obtainEntitySkin()) -- an empty key is
+	// never inserted. skinUrl/cloakUrl default to empty and are only ever set
+	// for player entities (EntityPlayerSP/EntityOtherPlayerMP), so this is a
+	// guaranteed-miss tree lookup on every call for every non-player
+	// EntityLiving, i.e. every zombie/skeleton/cow/etc rendered every frame
+	// (RenderLiving::renderModel() -> loadDownloadableImageTexture()). Skip
+	// straight to the fallback the lookup would have produced anyway.
+	if (s.empty())
+		return fallback.empty() ? -1 : getTexture(fallback);
+
 	ThreadDownloadImageData *threaddownloadimagedata = nullptr;
 	auto it = urlToImageDataMap.find(s);
 	if (it != urlToImageDataMap.end())

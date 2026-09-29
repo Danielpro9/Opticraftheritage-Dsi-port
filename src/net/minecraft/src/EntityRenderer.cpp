@@ -1491,7 +1491,18 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
 #endif
         renderClear(RenderClearMask::Depth);  // 256 = GL_DEPTH_BUFFER_BIT
 
+#if PLATFORM_PROFILE_RENDER_PHASES
+        // Previously unwrapped here (unlike every other render phase this
+        // file tags): any open GUI screen's whole drawScreen() cost -- pause
+        // menu, inventory, creative, options -- was invisible in the
+        // renderphase breakdown, showing up only as an unexplained gap
+        // between the outer frame= total and the sum of the named phases.
+        const std::uint32_t cycGuiScreen = platformProfileRenderPhaseBegin();
+#endif
         mc->currentScreen->drawScreen(scaledMouseX, scaledMouseY, partialTicks);
+#if PLATFORM_PROFILE_RENDER_PHASES
+        platformProfileRenderPhaseEnd(cycGuiScreen, PlatformRenderPhase::GuiScreen);
+#endif
 
 #if PLATFORM_HAS_VIRTUAL_KEYBOARD
         // On-screen keyboard overlay (drawn on top of the focused text screen).

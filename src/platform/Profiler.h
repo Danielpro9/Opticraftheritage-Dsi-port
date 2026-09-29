@@ -23,7 +23,14 @@ enum class PlatformRenderPhase
     // not siblings. Hud minus all three is the frame/crosshair/status setup.
     HudItems,
     HudText,
-    HudHints
+    HudHints,
+    // A sibling of Hud, not a sub-phase: mc->currentScreen->drawScreen() (any
+    // open GUI screen -- pause menu, inventory, creative, options, ...), which
+    // was previously invisible in the renderphase breakdown entirely on DSI
+    // (its own PLATFORM_PROFILE_RENDER_PHASES wrap was missing), leaving a real
+    // per-frame cost unaccounted for whenever a screen was open. Appended, not
+    // inserted, per this enum's own rule above.
+    GuiScreen
 };
 
 enum class PlatformPopulatePhase

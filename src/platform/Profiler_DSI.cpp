@@ -31,10 +31,10 @@ namespace
 // than Sky: EntityRenderer.cpp only brackets Sky when renderDistance < 2,
 // which DSi's default of 3 never satisfies, while Frustum's bracket
 // (clipRenderersByFrustrum) is unconditional every frame.
-constexpr int kRenderPhaseSlots = 13; // PlatformRenderPhase's enum count
+constexpr int kRenderPhaseSlots = 14; // PlatformRenderPhase's enum count
 constexpr const char* const kRenderPhaseNames[kRenderPhaseSlots] = {
 	"sky", "frustum", "build", "opaque", "ents", "transl", "hand", "hud",
-	"entDraw", "tileDraw", "hudItems", "hudText", "hudHints"
+	"entDraw", "tileDraw", "hudItems", "hudText", "hudHints", "screen"
 };
 long long g_renderPhaseSumUs[kRenderPhaseSlots] = {};
 long long g_renderPhaseMaxUs[kRenderPhaseSlots] = {};

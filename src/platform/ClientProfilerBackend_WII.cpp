@@ -273,7 +273,7 @@ void frameEnd(long long frameNs, long long, long long renderNs,
 		// order. Tenths of a millisecond: most phases sit under 1 ms.
 		static const char* const kRenderPhaseNames[kRenderPhaseSlots] = {
 			"sky", "frustum", "build", "opaque", "ents", "transl", "hand", "hud",
-			"entDraw", "tileDraw", "hudItems", "hudText", "hudHints", "?" };
+			"entDraw", "tileDraw", "hudItems", "hudText", "hudHints", "screen" };
 		char line[512];
 		int len = 0;
 		for (int i = 0; i < kRenderPhaseSlots && len < (int)sizeof(line) - 40; i++)

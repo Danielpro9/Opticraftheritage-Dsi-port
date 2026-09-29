@@ -395,4 +395,48 @@
 // size it properly. Revisit together with that budget once one exists.
 #define DSI_MESH_REPACK_VERTICES_PER_STEP         256
 
+// Real-hardware evidence (two debug.log comparisons, one from before a round
+// of GUI/render caching work and one from after -- both showing the same
+// pattern, so this isn't something that round introduced): memtrend's
+// rebuilds= counter climbs continuously through a whole play session (12->1061
+// in one log, 11->463 in another) while getLoadedChunkCount() stays flat at
+// 9-16 the entire time -- the same handful of already-built sections getting
+// fully rebuilt over and over. dsiGetTotalBuildRestarts() (an interrupted,
+// discarded-and-restarted build, DSI_GREEDY_BATCHES_PER_CALL's fix above
+// already addresses the worst of that class) only accounts for ~13-15% of
+// that total in both logs, so most of it is something else: full rebuilds
+// that DID complete, immediately followed by another one for the same
+// section.
+//
+// Root cause: World::updatingLighting() (World.cpp) runs once per rendered
+// frame and drains only PLATFORM_LIGHTING_UPDATES_PER_FRAME (128, inherited
+// from PS2) jobs from lightingToUpdate before returning -- but a chunk newly
+// streamed in at this platform's tiny PLATFORM_VISIBLE_CHUNK_RADIUS=1 edge
+// schedules thousands of lighting jobs at once (its own comment: "fed
+// heavily when chunks arrive... thousands of jobs at a time"), so draining
+// one such flood takes dozens of frames. Each frame's LightingDirtyRegions
+// batch (World.cpp) flushed at the end of that SAME frame's call -- so every
+// one of those dozens of frames re-marked whichever already-built neighbor
+// section the flood was currently touching, and since a DSi incremental
+// build (with DSI_GREEDY_BATCHES_PER_CALL=6 above) often finishes well
+// inside that many frames, the section would complete, get marked dirty
+// again by the still-draining flood, and rebuild again -- repeatedly, from
+// one streamed-in border chunk.
+//
+// This does not risk stale/incorrect lighting: World.h's markDirtyFromLighting()
+// (vs. markDirty()) already coalesces rather than restarting an in-progress
+// build for exactly this kind of mark (RenderGlobal.cpp's
+// isMarkingFromLighting() branch), and the final flush once the queue
+// actually empties is unconditional regardless of this window -- widening the
+// window only delays a mid-flood section's visual light update by up to this
+// many extra frames, it never drops one. 4 is a first estimate (unmeasured on
+// real hardware, same as this file's other knobs -- see its own banner):
+// small enough to keep that extra staleness imperceptible even at this
+// platform's low framerate, while still cutting the number of separate
+// rebuild cycles during a flood by roughly the same factor. Revisit once a
+// real-hardware log with this change confirms rebuilds= climbing much more
+// slowly relative to getLoadedChunkCount() staying flat.
+#undef  PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES
+#define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 4
+
 #endif // PLATFORM_DSI

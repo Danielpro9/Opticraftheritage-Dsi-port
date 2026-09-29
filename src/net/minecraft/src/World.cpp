@@ -4299,27 +4299,44 @@ bool World::updatingLighting()
             : 0;
         PlatformStreamingFrameBudgetScope frameBudgetScope;
 
-        // One render mark per touched section for the whole drain, issued when
-        // this scope ends on any of the exits below.
-        struct DirtyBatchScope
+        // One render mark per touched section, issued when the accumulator
+        // below is flushed. A chunk-streaming lighting flood can queue
+        // thousands of jobs at once but this call only ever drains `count`
+        // of them, so draining one flood takes many consecutive calls (one
+        // per rendered frame). Flushing every single call re-marks -- and on
+        // a platform with no partial/incremental re-tessellation, fully
+        // rebuilds -- the same already-built section once per frame for as
+        // long as the flood keeps touching it. PLATFORM_LIGHTING_DIRTY_
+        // FLUSH_INTERVAL_FRAMES batches up to that many consecutive calls
+        // into one flush instead (see its own comment, DsiWorldTuning.h, for
+        // the real-hardware evidence this was sized against), bounding the
+        // extra visual staleness to that many frames while cutting the
+        // number of separate rebuild cycles by roughly the same factor.
+        // Defaults to 1 (flush every call, unchanged behavior) anywhere this
+        // isn't explicitly overridden.
+        //
+        // Interactive edits (a placed torch, a dug block) are unaffected:
+        // PLATFORM_LIGHTING_INTERACTIVE_BURST already drains a short queue
+        // to completion within this same call, which always takes the
+        // "queue emptied" exit below and flushes immediately regardless of
+        // this window.
+        if (!lightingDirtyRegions.isActive())
         {
-            World *world;
-            explicit DirtyBatchScope(World *w) : world(w) { world->lightingDirtyRegions.begin(); }
-            ~DirtyBatchScope()
-            {
-                world->markingFromLighting = true;
-                world->lightingDirtyRegions.end(world);
-                world->markingFromLighting = false;
-            }
-            DirtyBatchScope(const DirtyBatchScope &) = delete;
-            DirtyBatchScope &operator=(const DirtyBatchScope &) = delete;
-        } dirtyBatchScope(this);
+            lightingDirtyRegions.begin();
+            lightingDirtyFlushCountdown = PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES;
+        }
 
         while (lightingToUpdate.size() > 0)
         {
             if (--count <= 0)
             {
                 lightingUpdatesCounter--;
+                if (--lightingDirtyFlushCountdown <= 0)
+                {
+                    markingFromLighting = true;
+                    lightingDirtyRegions.end(this);
+                    markingFromLighting = false;
+                }
                 return true;
             }
 
@@ -4347,17 +4364,39 @@ bool World::updatingLighting()
                     nowUs - budgetStartUs >= budgetUs)
                 {
                     lightingUpdatesCounter--;
+                    if (--lightingDirtyFlushCountdown <= 0)
+                    {
+                        markingFromLighting = true;
+                        lightingDirtyRegions.end(this);
+                        markingFromLighting = false;
+                    }
                     return true;
                 }
             }
         }
 
+        // The flood (or the whole queue) actually emptied -- always flush
+        // now regardless of the countdown, instead of leaving a completed
+        // drain's marks sitting unflushed until some later, unrelated call.
         lightingUpdatesCounter--;
+        markingFromLighting = true;
+        lightingDirtyRegions.end(this);
+        markingFromLighting = false;
         return false;
     }
     catch (...)
     {
         lightingUpdatesCounter--;
+        // Never leave the accumulator active across an abnormal exit: a
+        // later call re-entering while it thinks a drain is already in
+        // progress would silently keep batching marks that this exception
+        // already abandoned mid-drain.
+        if (lightingDirtyRegions.isActive())
+        {
+            markingFromLighting = true;
+            lightingDirtyRegions.end(this);
+            markingFromLighting = false;
+        }
         throw;
     }
 }

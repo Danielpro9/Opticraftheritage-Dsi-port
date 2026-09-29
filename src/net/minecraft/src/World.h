@@ -462,6 +462,10 @@ private:
 	LightingQueueCellSet lightingQueuedCells;
 	// Render marks accumulated while updatingLighting() drains the queue.
 	LightingDirtyRegions lightingDirtyRegions;
+	// Frames left before that accumulator must flush; see
+	// PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES and updatingLighting()'s
+	// own comment.
+	int_t lightingDirtyFlushCountdown = 0;
 
 	static bool isSingleCellLightingJob(const MetadataChunkBlock &job)
 	{

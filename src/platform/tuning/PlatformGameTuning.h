@@ -196,6 +196,10 @@
 #  define PLATFORM_LIGHTING_INTERACTIVE_QUEUE_MAX       PS2_LIGHTING_INTERACTIVE_QUEUE_MAX
 #  define PLATFORM_LIGHTING_INTERACTIVE_BURST           PS2_LIGHTING_INTERACTIVE_BURST
 #  define PLATFORM_LIGHTING_BUDGET_US                   PS2_LIGHTING_BUDGET_US
+// How many consecutive World::updatingLighting() calls (one per rendered
+// frame) share a single render-dirty flush instead of each issuing its own.
+// 1 here (PS2 unchanged); see DsiWorldTuning.h for why DSi overrides this.
+#  define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 1
 #  define PLATFORM_LIGHTING_MERGE_SCAN                   PS2_LIGHTING_MERGE_SCAN
 #  define PLATFORM_LIGHTING_QUEUE_HARD_CAP               PS2_LIGHTING_QUEUE_HARD_CAP
 #  define PLATFORM_FAST_LIGHTING_CHUNK_ACCESS              PS2_FAST_LIGHTING_CHUNK_ACCESS
@@ -459,6 +463,8 @@
 // for time here: one MetadataChunkBlock is a flood fill over a box, so its cost
 // varies by more than an order of magnitude with what just streamed in.
 #  define PLATFORM_LIGHTING_BUDGET_US                   (PLATFORM_PC_LEGACY ? PC_LEGACY_LIGHTING_BUDGET_US : 0)
+// See the PS2/DSI branch above for what this does; unchanged (1) here.
+#  define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 1
 #  define PLATFORM_LIGHTING_MERGE_SCAN                   (PLATFORM_PC_LEGACY ? PC_LEGACY_LIGHTING_MERGE_SCAN : 5)
 #  define PLATFORM_LIGHTING_QUEUE_HARD_CAP               1000000
 #  define PLATFORM_FAST_LIGHTING_CHUNK_ACCESS              (PLATFORM_PC_LEGACY ? PC_LEGACY_FAST_LIGHTING_CHUNK_ACCESS : 0)

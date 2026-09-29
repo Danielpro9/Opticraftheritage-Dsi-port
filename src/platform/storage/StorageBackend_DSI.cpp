@@ -17,7 +17,22 @@ bool mkdirs(const std::string& path) { return makeDirectories(path); }
 bool removeFile(const std::string& path) { return removePath(path); }
 bool renameFile(const std::string& from, const std::string& to) { return renamePath(from, to); }
 bool supportsAtomicRename() { return true; }
-bool supportsSessionLocks() { return true; }
+// Session locks (SaveHandler::checkSessionLock()) exist to detect a save
+// folder being opened from ANOTHER location (a second process, a PC tool, a
+// cloud-sync conflict) while this one is running -- not a scenario a single-
+// process handheld console with local SD storage only can hit. PS2 already
+// disables this outright for the same reason (StorageBackend_PS2.cpp).
+// checkSessionLock() runs on every chunk save (AnvilChunkLoader::saveChunk(),
+// ChunkLoader.cpp, McRegionChunkLoader.cpp) plus once per full World::save-
+// World() -- each call is a synchronous session.lock read from the SD card
+// (no background I/O thread on DSi, PLATFORM_ASYNC_FILE_IO is off), and that
+// per-chunk cost got materially more frequent once unloadChunk() started
+// saving edited chunks on stream-out (PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_
+// UNLOAD, DsiWorldTuning.h). Both writeSessionLock() and checkSessionLock()
+// are already gated identically on this flag (SaveHandler.cpp), so turning
+// it off cleanly disables the whole mechanism rather than leaving it
+// half-armed.
+bool supportsSessionLocks() { return false; }
 bool readFile(const std::string& path, std::vector<unsigned char>& out) { return posixReadFile(path, out); }
 std::int64_t getFileSize(const std::string& path) { return fileSize(path); }
 bool readFileRange(const std::string& path, std::size_t offset, void* out, std::size_t length)

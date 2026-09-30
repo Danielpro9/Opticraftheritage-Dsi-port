@@ -63,7 +63,8 @@ ItemStack *InventoryCrafting::decrStackSize(int_t i, int_t j)
 	{
 		ItemStack *itemstack = stackList[i];
 		stackList[i] = nullptr;
-		eventHandler->onCraftMatrixChanged(this);
+		if (!eventsSuppressed)
+			eventHandler->onCraftMatrixChanged(this);
 		return itemstack;
 	}
 	ItemStack *itemstack1 = stackList[i]->splitStack(j);
@@ -72,7 +73,8 @@ ItemStack *InventoryCrafting::decrStackSize(int_t i, int_t j)
 		delete stackList[i];
 		stackList[i] = nullptr;
 	}
-	eventHandler->onCraftMatrixChanged(this);
+	if (!eventsSuppressed)
+		eventHandler->onCraftMatrixChanged(this);
 	return itemstack1;
 }
 
@@ -86,7 +88,8 @@ void InventoryCrafting::setInventorySlotContents(int_t i, ItemStack *itemstack)
 	if (stackList[i] != itemstack)
 		delete stackList[i];
 	stackList[i] = itemstack;
-	eventHandler->onCraftMatrixChanged(this);
+	if (!eventsSuppressed)
+		eventHandler->onCraftMatrixChanged(this);
 }
 
 int_t InventoryCrafting::getInventoryStackLimit()
@@ -101,4 +104,9 @@ void InventoryCrafting::onInventoryChanged()
 bool InventoryCrafting::canInteractWith(EntityPlayer *entityplayer)
 {
 	return true;
+}
+
+void InventoryCrafting::notifyCraftMatrixChanged()
+{
+	eventHandler->onCraftMatrixChanged(this);
 }

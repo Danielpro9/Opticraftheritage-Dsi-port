@@ -4,6 +4,7 @@
 
 class EntityPlayer;
 class IInventory;
+class InventoryCrafting;
 class ItemStack;
 
 // net.minecraft.src.SlotCrafting
@@ -21,7 +22,12 @@ protected:
 	void onCrafting(ItemStack *itemstack) override;
 
 private:
-	IInventory *craftMatrix;
+	// Both real construction sites (ContainerWorkbench.cpp, ContainerPlayer.cpp)
+	// pass their own InventoryCrafting* here (declared IInventory* only because
+	// the base Slot/IInventory API predates this class); narrowed so
+	// onPickupFromSlot() can suppress/batch its recipe-rescan notifications --
+	// see InventoryCrafting::setEventsSuppressed()'s own comment.
+	InventoryCrafting *craftMatrix;
 	EntityPlayer *thePlayer;
 	int_t removeCount = 0;
 };

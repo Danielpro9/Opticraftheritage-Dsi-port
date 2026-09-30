@@ -3,6 +3,7 @@
 #include "EntityPlayer.h"
 #include "InventoryPlayer.h"
 #include "IInventory.h"
+#include "InventoryCrafting.h"
 #include "ItemStack.h"
 #include "Block.h"
 #include "Item.h"
@@ -12,8 +13,10 @@
 
 SlotCrafting::SlotCrafting(EntityPlayer *entityplayer, IInventory *iinventory, IInventory *iinventory1, int_t i, int_t j, int_t k) :
 	Slot(iinventory1, i, j, k),
+	// Both real callers pass an InventoryCrafting* here -- see the header's
+	// own comment.
 	thePlayer(entityplayer),
-	craftMatrix(iinventory)
+	craftMatrix(static_cast<InventoryCrafting *>(iinventory))
 {
 }
 
@@ -85,6 +88,13 @@ void SlotCrafting::onPickupFromSlot(ItemStack *itemstack)
 {
 	onCrafting(itemstack);
 
+	// See InventoryCrafting::setEventsSuppressed()'s comment: only the last
+	// ingredient consumed in this loop is ever actually observed (the craft
+	// result slot isn't read again until this whole function returns), so
+	// suppress the recipe-rescan notification for every intermediate
+	// decrStackSize()/setInventorySlotContents() call below and fire it once
+	// at the end instead.
+	craftMatrix->setEventsSuppressed(true);
 	for(int_t i = 0; i < craftMatrix->getSizeInventory(); ++i)
 	{
 		ItemStack *ingredient = craftMatrix->getStackInSlot(i);
@@ -117,4 +127,6 @@ void SlotCrafting::onPickupFromSlot(ItemStack *itemstack)
 
 		delete consumed;
 	}
+	craftMatrix->setEventsSuppressed(false);
+	craftMatrix->notifyCraftMatrixChanged();
 }

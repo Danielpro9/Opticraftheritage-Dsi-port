@@ -6,6 +6,7 @@
 #include "RenderEngine.h"
 #include "Minecraft.h"
 #include "StatCollector.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 GuiFurnace::GuiFurnace(InventoryPlayer *player, TileEntityFurnace *furnace)
@@ -43,4 +44,22 @@ void GuiFurnace::drawGuiContainerBackgroundLayer(float_t partialTick)
 	}
 	int_t cookW = furnaceInventory->getCookProgressScaled(24);
 	drawTexturedModalRect(guiX + 79, guiY + 34, 176, 14, cookW + 1, 16);
+}
+
+void GuiFurnace::onGuiClosed()
+{
+	GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+	// Same pattern as GuiContainerCreative::onGuiClosed(): this screen's own
+	// background ("/gui/furnace.png", already downscaled to 128x128/16KB for
+	// VRAM -- see dsiIsDownscalableGuiBackground(), RenderEngine.cpp) was
+	// never released on close, only at world exit. A furnace is commonly
+	// opened once early in a session and then never revisited for the rest
+	// of it, so that 16KB sat idle in the 512KB texture-image budget the
+	// whole time regardless. getTexture() reloads it lazily the next time
+	// this screen opens.
+	if (mc != nullptr && mc->renderEngine != nullptr)
+		mc->renderEngine->releaseTexture("/gui/furnace.png");
+#endif
 }

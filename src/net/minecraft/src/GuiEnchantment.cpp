@@ -17,6 +17,7 @@
 #include "Slot.h"
 #include "StatCollector.h"
 #include "World.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 #include <algorithm>
@@ -291,4 +292,22 @@ void GuiEnchantment::updateBookAnimation()
     delta = std::max(-0.2f, std::min(0.2f, delta));
     pageFlipVelocity += (delta - pageFlipVelocity) * 0.9f;
     pageFlip += pageFlipVelocity;
+}
+
+void GuiEnchantment::onGuiClosed()
+{
+    GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+    // Same pattern as GuiContainerCreative::onGuiClosed() -- see
+    // GuiFurnace::onGuiClosed()'s comment for the full reasoning.
+    // "/item/book.png" (the book model's own texture, used by this screen's
+    // drawBook() and by RenderEnchantmentTable) is NOT released here: it's
+    // already covered by the mid-session /item/ eviction in Minecraft.cpp,
+    // keyed off whether a TileEntityEnchantmentTable is still loaded --
+    // releasing it unconditionally on GUI close would fight that check if an
+    // enchanting table is still visible right after closing this screen.
+    if (mc != nullptr && mc->renderEngine != nullptr)
+        mc->renderEngine->releaseTexture("/gui/enchant.png");
+#endif
 }

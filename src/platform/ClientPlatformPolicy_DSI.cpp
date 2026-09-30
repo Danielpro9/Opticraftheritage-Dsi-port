@@ -159,6 +159,19 @@ void releaseWorldExitAssets(RenderEngine* renderEngine)
 	renderEngine->releaseTexture("/gui/items.png");
 	renderEngine->releaseTexture("/gui/icons.png");
 	renderEngine->releaseTexture("/gui/inventory.png");
+	// "/gui/gui.png" (HUD icons, GuiIngame.cpp, bound every HUD frame) is
+	// exactly as gameplay-only as the three above, but was missing from this
+	// list.
+	renderEngine->releaseTexture("/gui/gui.png");
+	// Sky/weather textures: clouds render whenever clouds are enabled (i.e.
+	// session-scoped, same as terrain.png), and rain/snow only bind while
+	// precipitation is actually rendering, but neither had a release path at
+	// all -- add them here rather than attempting mid-session eviction for
+	// weather, which recurs often enough during ordinary exploration that
+	// the reload churn could cost more than it saves.
+	renderEngine->releaseTexture("/environment/clouds.png");
+	renderEngine->releaseTexture("/environment/rain.png");
+	renderEngine->releaseTexture("/environment/snow.png");
 	// Was just "/mob/char.png" (the player skin) -- real-hardware evidence
 	// (a debug.log showing texture VRAM pinned at 501/512KB for the rest of
 	// a session the moment several mob types had been seen, sourcing an
@@ -168,6 +181,24 @@ void releaseWorldExitAssets(RenderEngine* renderEngine)
 	// releaseTexturesWithPrefix()'s own comment for why a prefix match
 	// replaces the old single hardcoded name instead of listing all ~40.
 	renderEngine->releaseTexturesWithPrefix("/mob/");
+	// Same gap, same fix, for the OTHER family of entity/tile-entity textures
+	// that go through the same CachedTextureId pattern: chests, signs, the
+	// enchanting table's book, minecarts, boats, arrows, XP orbs
+	// (/item/chest.png, /item/largechest.png, /item/sign.png, /item/book.png,
+	// /item/cart.png, /item/boat.png, /item/arrows.png, /item/xporb.png).
+	// These had NO release path at all -- not even this one, until now -- so
+	// the first chest/sign/cart/etc. a session ever saw permanently reserved
+	// its VRAM slot (and its RAM-side RGBA mirror, see DsiTexture) for the
+	// rest of the process's life, across world exits and new sessions alike.
+	renderEngine->releaseTexturesWithPrefix("/item/");
+	// Two more one-off entity textures with the same "never released" gap:
+	// paintings (RenderPainting.cpp, "/art/kz.png") and the charged-creeper
+	// lightning overlay (RenderCreeper.cpp, "/armor/power.png"). Both are
+	// also covered by the mid-session eviction in Minecraft.cpp now; this is
+	// the same belt-and-suspenders world-exit coverage the /mob/ and /item/
+	// prefixes already get.
+	renderEngine->releaseTexture("/art/kz.png");
+	renderEngine->releaseTexture("/armor/power.png");
 	renderEngine->clearDecodedTextureCache();
 }
 

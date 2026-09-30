@@ -7,6 +7,7 @@
 #include "RenderEngine.h"
 #include "Minecraft.h"
 #include "StatCollector.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 GuiChest::GuiChest(IInventory *upper, IInventory *lower)
@@ -42,4 +43,16 @@ void GuiChest::drawGuiContainerBackgroundLayer(float_t partialTick)
 	int_t guiY = (height - ySize) / 2;
 	drawTexturedModalRect(guiX, guiY,                             0,   0,   xSize, inventoryRows * 18 + 17);
 	drawTexturedModalRect(guiX, guiY + inventoryRows * 18 + 17,   0, 126,   xSize, 96);
+}
+
+void GuiChest::onGuiClosed()
+{
+	GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+	// Same pattern as GuiContainerCreative::onGuiClosed() -- see
+	// GuiFurnace::onGuiClosed()'s comment for the full reasoning.
+	if (mc != nullptr && mc->renderEngine != nullptr)
+		mc->renderEngine->releaseTexture("/gui/container.png");
+#endif
 }

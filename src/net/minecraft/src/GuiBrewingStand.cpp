@@ -7,6 +7,7 @@
 #include "RenderEngine.h"
 #include "StatCollector.h"
 #include "TileEntityBrewingStand.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 GuiBrewingStand::GuiBrewingStand(InventoryPlayer *inventory, TileEntityBrewingStand *brewingStandIn)
@@ -50,4 +51,16 @@ void GuiBrewingStand::drawGuiContainerBackgroundLayer(float_t)
     int_t height = bubbleHeight[bubbles];
     if (height > 0)
         drawTexturedModalRect(guiX + 65, guiY + 43 - height, 185, 29 - height, 12, height);
+}
+
+void GuiBrewingStand::onGuiClosed()
+{
+    GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+    // Same pattern as GuiContainerCreative::onGuiClosed() -- see
+    // GuiFurnace::onGuiClosed()'s comment for the full reasoning.
+    if (mc != nullptr && mc->renderEngine != nullptr)
+        mc->renderEngine->releaseTexture("/gui/alchemy.png");
+#endif
 }

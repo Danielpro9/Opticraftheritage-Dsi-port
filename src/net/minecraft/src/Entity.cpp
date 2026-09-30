@@ -7,6 +7,7 @@
 
 #include "AxisAlignedBB.h"
 #include "Block.h"
+#include "Chunk.h"
 #include "BlockFluid.h"
 #include "DataWatcher.h"
 #include "DamageSource.h"
@@ -641,6 +642,59 @@ void Entity::moveEntity(double d, double d1, double d2)
 	double d5 = d;
 	double d6 = d1;
 	double d7 = d2;
+
+	// Ported from upstream OptiCraftHeritageEdition (commit 4af9355, "physics-
+	// level void drop protection in Entity::moveEntity"): DSi's
+	// PLATFORM_VISIBLE_CHUNK_RADIUS is 1, the smallest of any platform this
+	// engine targets, so the player is routinely near the edge of the
+	// currently-generated area -- making this race (falling into the void, or
+	// taking spurious fall damage, while a neighboring chunk is still
+	// generating/streaming in) more likely here than on the platform it was
+	// first found on. If the chunk under the player is missing/blank, freeze
+	// vertical drop instead of falling through it; if the horizontal move
+	// would cross into a missing/blank chunk (including the diagonal case,
+	// where the direct target chunk exists but an axis-aligned neighbor it
+	// would clip past does not), cancel the whole move instead of entering it.
+	if (isPlayer() && worldObj != nullptr && !worldObj->findingSpawnPoint)
+	{
+		const int_t curChunkX = MathHelper::floor_double(posX) >> 4;
+		const int_t curChunkZ = MathHelper::floor_double(posZ) >> 4;
+		Chunk *curChunk = worldObj->getChunkIfExists(curChunkX, curChunkZ);
+		const bool curChunkEmpty = (curChunk == nullptr || curChunk->isEmptyChunk());
+
+		if (curChunkEmpty)
+		{
+			if (d1 < 0.0)
+			{
+				d1 = 0.0;
+				d6 = 0.0;
+				motionY = 0.0;
+			}
+		}
+		else
+		{
+			const int_t nextChunkX = MathHelper::floor_double(posX + d) >> 4;
+			const int_t nextChunkZ = MathHelper::floor_double(posZ + d2) >> 4;
+			if (nextChunkX != curChunkX || nextChunkZ != curChunkZ)
+			{
+				Chunk *targetChunk = worldObj->getChunkIfExists(nextChunkX, nextChunkZ);
+				Chunk *targetChunkX = (nextChunkX != curChunkX) ? worldObj->getChunkIfExists(nextChunkX, curChunkZ) : targetChunk;
+				Chunk *targetChunkZ = (nextChunkZ != curChunkZ) ? worldObj->getChunkIfExists(curChunkX, nextChunkZ) : targetChunk;
+				if ((targetChunk == nullptr || targetChunk->isEmptyChunk()) ||
+				    (targetChunkX == nullptr || targetChunkX->isEmptyChunk()) ||
+				    (targetChunkZ == nullptr || targetChunkZ->isEmptyChunk()))
+				{
+					d = 0.0;
+					d2 = 0.0;
+					d5 = 0.0;
+					d7 = 0.0;
+					motionX = 0.0;
+					motionZ = 0.0;
+					isCollidedHorizontally = true;
+				}
+			}
+		}
+	}
 	AxisAlignedBB *axisalignedbb = boundingBox->copy();
 	bool flag = onGround && isSneaking() && isPlayer();
 	if (flag)
@@ -864,6 +918,27 @@ void Entity::moveEntity(double d, double d1, double d2)
 	isCollidedHorizontally = d5 != d || d7 != d2;
 	isCollidedVertically = d6 != d1;
 	onGround = d6 != d1 && d6 < 0.0;
+	// Second half of the void-drop protection ported above: if the player
+	// ends this move still standing over a missing/blank chunk (e.g. it
+	// unloaded out from under them between the guard above and here), force
+	// a safe resting state instead of the fall math above concluding they're
+	// airborne over nothing.
+	if (isPlayer() && worldObj != nullptr && !worldObj->findingSpawnPoint)
+	{
+		const int_t curChunkX = MathHelper::floor_double(posX) >> 4;
+		const int_t curChunkZ = MathHelper::floor_double(posZ) >> 4;
+		Chunk *curChunk = worldObj->getChunkIfExists(curChunkX, curChunkZ);
+		if (curChunk == nullptr || curChunk->isEmptyChunk())
+		{
+			if (motionY < 0.0)
+			{
+				motionY = 0.0;
+			}
+			isCollidedVertically = true;
+			onGround = true;
+			fallDistance = 0.0f;
+		}
+	}
 	isCollided = isCollidedHorizontally || isCollidedVertically;
 	updateFallState(d1, onGround);
 	if (d5 != d)

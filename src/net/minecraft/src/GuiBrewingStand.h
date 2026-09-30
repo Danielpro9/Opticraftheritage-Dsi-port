@@ -14,6 +14,7 @@ public:
 protected:
     void drawGuiContainerForegroundLayer() override;
     void drawGuiContainerBackgroundLayer(float_t partialTick) override;
+    void onGuiClosed() override;
 
 private:
     TileEntityBrewingStand *brewingStand;

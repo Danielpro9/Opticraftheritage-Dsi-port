@@ -57,9 +57,15 @@
 #include "net/minecraft/src/ColorizerGrass.h"
 #include "net/minecraft/src/ColorizerWater.h"
 #include "net/minecraft/src/EffectRenderer.h"
+#include "net/minecraft/src/EntityArrow.h"
+#include "net/minecraft/src/EntityBoat.h"
 #include "net/minecraft/src/EntityClientPlayerMP.h"
+#include "net/minecraft/src/EntityCreeper.h"
+#include "net/minecraft/src/EntityMinecart.h"
+#include "net/minecraft/src/EntityPainting.h"
 #include "net/minecraft/src/EntityPlayer.h"
 #include "net/minecraft/src/EntityPlayerSP.h"
+#include "net/minecraft/src/EntityXPOrb.h"
 #include "net/minecraft/src/EntityRenderer.h"
 #include "net/minecraft/src/EnumMovingObjectType.h"
 #include "net/minecraft/src/EnumOptions.h"
@@ -116,6 +122,9 @@
 #include "net/minecraft/src/StatStringFormatKeyInv.h"
 #include "net/minecraft/src/Teleporter.h"
 #include "net/minecraft/src/Tessellator.h"
+#include "net/minecraft/src/TileEntityChest.h"
+#include "net/minecraft/src/TileEntityEnchantmentTable.h"
+#include "net/minecraft/src/TileEntitySign.h"
 #include "net/minecraft/src/legacy/startup/StartupPresentation.h"
 #include "net/minecraft/src/legacy/LegacyDebugOptions.h"
 
@@ -1997,6 +2006,85 @@ void Minecraft::runTick()
                 }
                 if (!dsiHasNonPlayerLiving)
                     renderEngine->releaseTexturesWithPrefix("/mob/");
+
+                // Same gap, other family: ClientPlatformPolicy_DSI.cpp's
+                // releaseWorldExitAssets() now also releases "/item/" on
+                // world exit, but that alone doesn't help a single long
+                // session -- chest/sign/cart/boat/arrow/xporb/book textures
+                // still accumulated for as long as the world stayed open.
+                // Mirror the /mob/ check above per texture, keyed off
+                // whether a tile entity/entity of the matching kind is
+                // still loaded anywhere, not just "in view" (same
+                // conservative granularity as the /mob/ check, and cheap:
+                // it's a single extra pass over lists already being walked
+                // for other purposes elsewhere).
+                bool dsiHasChest = false;
+                bool dsiHasSign = false;
+                bool dsiHasEnchantTable = false;
+                for (TileEntity *tileEntity : theWorld->loadedTileEntityList)
+                {
+                    if (dynamic_cast<TileEntityChest *>(tileEntity) != nullptr)
+                        dsiHasChest = true;
+                    else if (dynamic_cast<TileEntitySign *>(tileEntity) != nullptr)
+                        dsiHasSign = true;
+                    else if (dynamic_cast<TileEntityEnchantmentTable *>(tileEntity) != nullptr)
+                        dsiHasEnchantTable = true;
+                }
+                if (!dsiHasChest)
+                {
+                    renderEngine->releaseTexture("/item/chest.png");
+                    renderEngine->releaseTexture("/item/largechest.png");
+                }
+                if (!dsiHasSign)
+                    renderEngine->releaseTexture("/item/sign.png");
+                if (!dsiHasEnchantTable)
+                    renderEngine->releaseTexture("/item/book.png");
+
+                bool dsiHasMinecart = false;
+                bool dsiHasBoat = false;
+                bool dsiHasArrow = false;
+                bool dsiHasXpOrb = false;
+                bool dsiHasPainting = false;
+                bool dsiHasChargedCreeper = false;
+                for (Entity *entity : theWorld->loadedEntityList)
+                {
+                    if (entity == nullptr)
+                        continue;
+                    if (dynamic_cast<EntityMinecart *>(entity) != nullptr)
+                        dsiHasMinecart = true;
+                    else if (dynamic_cast<EntityBoat *>(entity) != nullptr)
+                        dsiHasBoat = true;
+                    else if (dynamic_cast<EntityArrow *>(entity) != nullptr)
+                        dsiHasArrow = true;
+                    else if (dynamic_cast<EntityXPOrb *>(entity) != nullptr)
+                        dsiHasXpOrb = true;
+                    else if (dynamic_cast<EntityPainting *>(entity) != nullptr)
+                        dsiHasPainting = true;
+                    else
+                    {
+                        EntityCreeper *creeper = dynamic_cast<EntityCreeper *>(entity);
+                        if (creeper != nullptr && creeper->getPowered())
+                            dsiHasChargedCreeper = true;
+                    }
+                }
+                if (!dsiHasMinecart)
+                    renderEngine->releaseTexture("/item/cart.png");
+                if (!dsiHasBoat)
+                    renderEngine->releaseTexture("/item/boat.png");
+                if (!dsiHasArrow)
+                    renderEngine->releaseTexture("/item/arrows.png");
+                if (!dsiHasXpOrb)
+                    renderEngine->releaseTexture("/item/xporb.png");
+                // Same gap, two more one-off texture families: paintings
+                // (RenderPainting.cpp, "/art/kz.png") and the charged-creeper
+                // lightning overlay (RenderCreeper.cpp, "/armor/power.png")
+                // neither matched the /mob/ or /item/ prefixes above, so
+                // once a session ever saw one of either, that texture was
+                // pinned in VRAM for the rest of the session.
+                if (!dsiHasPainting)
+                    renderEngine->releaseTexture("/art/kz.png");
+                if (!dsiHasChargedCreeper)
+                    renderEngine->releaseTexture("/armor/power.png");
             }
 #endif
         }

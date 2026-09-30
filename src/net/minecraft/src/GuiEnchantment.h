@@ -24,6 +24,7 @@ protected:
     void mouseClicked(int_t mouseX, int_t mouseY, int_t button) override;
     void drawGuiContainerForegroundLayer() override;
     void drawGuiContainerBackgroundLayer(float_t partialTick) override;
+    void onGuiClosed() override;
 
 private:
     void updateBookAnimation();

@@ -6,6 +6,7 @@
 #include "RenderEngine.h"
 #include "Minecraft.h"
 #include "StatCollector.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 GuiDispenser::GuiDispenser(InventoryPlayer *player, TileEntityDispenser *dispenser)
@@ -34,4 +35,16 @@ void GuiDispenser::drawGuiContainerBackgroundLayer(float_t partialTick)
 	int_t guiX = (width  - xSize) / 2;
 	int_t guiY = (height - ySize) / 2;
 	drawTexturedModalRect(guiX, guiY, 0, 0, xSize, ySize);
+}
+
+void GuiDispenser::onGuiClosed()
+{
+	GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+	// Same pattern as GuiContainerCreative::onGuiClosed() -- see
+	// GuiFurnace::onGuiClosed()'s comment for the full reasoning.
+	if (mc != nullptr && mc->renderEngine != nullptr)
+		mc->renderEngine->releaseTexture("/gui/trap.png");
+#endif
 }

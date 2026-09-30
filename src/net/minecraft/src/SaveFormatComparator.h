@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include "java/Type.h"
 
@@ -11,7 +12,7 @@ public:
                          long_t lastPlayed, long_t sizeOnDisk, bool needsConversion);
     SaveFormatComparator(const std::string &fileName, const std::string &displayName,
                          long_t lastPlayed, long_t sizeOnDisk, int_t gameType,
-                         bool needsConversion, bool hardcore);
+                         bool needsConversion, bool hardcore, int64_t seed = 0LL);
 
     const std::string& getFileName() const;
     const std::string& getDisplayName() const;
@@ -20,6 +21,11 @@ public:
     long_t getLastTimePlayed() const;
     int_t getGameType() const;
     bool isHardcoreModeEnabled() const;
+
+    // Ported from upstream OptiCraftHeritageEdition (commits 308782d/9ec548f,
+    // "add label for seed in select world"): so the Select World screen can
+    // show a world's seed without digging into its save file.
+    int64_t getSeed() const;
 
     int compareTo(const SaveFormatComparator &other) const;
     bool operator<(const SaveFormatComparator &other) const;
@@ -32,4 +38,5 @@ private:
     bool conversionRequired;
     int_t gameType_;
     bool hardcore_;
+    int64_t seed_;
 };

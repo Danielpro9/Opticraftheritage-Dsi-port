@@ -7,6 +7,7 @@
 #include "Minecraft.h"
 #include "StatCollector.h"
 #include "EntityPlayerSP.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 GuiCrafting::GuiCrafting(InventoryPlayer *player, World *world, int_t x, int_t y, int_t z)
@@ -19,6 +20,14 @@ GuiCrafting::GuiCrafting(InventoryPlayer *player, World *world, int_t x, int_t y
 void GuiCrafting::onGuiClosed()
 {
 	GuiContainer::onGuiClosed();
+
+#if PLATFORM_DSI
+	// Same pattern as GuiContainerCreative::onGuiClosed(): this screen's own
+	// background was never released on close, only at world exit -- see
+	// GuiFurnace::onGuiClosed()'s comment for the full reasoning.
+	if (mc != nullptr && mc->renderEngine != nullptr)
+		mc->renderEngine->releaseTexture("/gui/crafting.png");
+#endif
 }
 
 void GuiCrafting::drawGuiContainerForegroundLayer()

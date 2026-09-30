@@ -2179,7 +2179,6 @@ void RenderEngine::refreshTextures()
 		else
 			failedTextures[entry.first] = TEXTURE_RETRY_INTERVAL;
 	}
-	field_28151_c.clear();
 
 	// Texture-pack dependent OptiFine caches must be rebuilt after the base
 	// texture map has been refreshed so their texture IDs and color maps refer
@@ -2191,6 +2190,27 @@ void RenderEngine::refreshTextures()
 	RandomMobs::resetTextures();
 #endif
 	loadCustomAnimations();
+
+	// field_28151_c.clear() used to run right before the four calls above
+	// instead of after them -- clearing the PREVIOUS pack's decoded-pixel
+	// cache, not the one those calls were about to populate. On DSi (see
+	// shouldCacheDecodedTexturePixels()), every path decoded through
+	// readTextureImageData() is cached unconditionally, and
+	// CustomColorizer::update() alone decodes 3 (or up to 10 with Custom
+	// Colors on) 256x256 colour maps -- 256KB each as a raw std::vector<int_t>
+	// -- purely to copy them into its own static grassColors/foliageColors/
+	// waterColors/etc. members; nothing ever reads them back out of this
+	// cache afterward (getFluidColor() and friends read those static members
+	// directly). With the clear happening before this point, that
+	// 768KB-1.75MB sat as dead RAM for the rest of the session, or until the
+	// next refreshTextures()/world-exit. Clearing here instead drops it the
+	// moment it's actually unused. Verified none of the four calls above (or
+	// anything downstream of them this call) reads back from
+	// readTextureImageData()'s cache expecting a hit from earlier in this
+	// same refreshTextures() invocation -- readTextureImageData() lazily
+	// re-decodes from disk if it ever needs to, matching getTexture()'s own
+	// release/reload safety net.
+	field_28151_c.clear();
 
 	for (const auto &entry : textureMap)
 		TextureResidencyPolicy::afterNamedTextureUpload(

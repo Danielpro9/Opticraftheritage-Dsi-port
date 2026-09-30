@@ -358,13 +358,21 @@
 // already skipped (PLATFORM_SKIP_WORLD_PARTICLES only covers ambient
 // randomDisplayUpdates() particles, a separate system) -- each attempt that
 // lands can spawn an EntityRainFX with its own lifetime, alpha-tested quad,
-// and Tessellator vertex work. Reusing PS2's own measured value (4/tick,
-// ~80 new particles/second at 20 TPS -- enough for a continuous splash
-// effect) rather than guessing a DSi-specific number: DSi's ARM9 has no FPU
-// at all, strictly weaker than PS2's EE for this same per-particle float
-// work, so PS2's already-conservative number is not an over-cautious
-// starting point here.
-#define DSI_RAIN_SPLASH_PARTICLES_PER_TICK       4
+// and Tessellator vertex work. Originally reused PS2's own measured value
+// (4/tick). Upstream later found even that 4/tick could "keep effects around
+// 3-4 ms/tick" and push its GPU queue past 80% on real PS2 hardware, and
+// tightened its own PS2_RAIN_SPLASH_PARTICLES_PER_TICK to 2/tick (upstream
+// commit 6456969, "perf(ps2) tighten world particle budget" -- not ported to
+// this fork's own Ps2MeshTuning.h, since PS2 isn't this fork's target and
+// that file is otherwise untouched here; only the DSi-relevant reasoning is
+// applied below). Following the same reasoning here: DSi's ARM9 has no FPU
+// at all, strictly weaker than PS2's EE
+// for this same per-particle float work, so if 4/tick was too much on PS2 it
+// is not obviously safe on DSi either. This is an EXTRAPOLATION from PS2's
+// measurement, not a DSi-hardware confirmation of its own -- flag for
+// real-hardware re-measurement (does rain near open water still feel smooth
+// at 2/tick, and did it actually help) rather than treating 2 as settled.
+#define DSI_RAIN_SPLASH_PARTICLES_PER_TICK       2
 
 // Render::renderEntityOnFire() draws a stack of heavily overlapping fire
 // billboards -- vanilla's 0.45 step produces about five layers per burning

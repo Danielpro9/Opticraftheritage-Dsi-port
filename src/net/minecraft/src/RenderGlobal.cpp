@@ -2960,7 +2960,18 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				// mechanism itself exists to solve ("used to take about a second
 				// to show", Ps2MeshTuning.h).
 				enqueueRendererUpdatePriority(worldrenderer);
-				if (worldObj != nullptr && worldObj->isMarkingFromLighting())
+				// Ported from upstream OptiCraftHeritageEdition (commit
+				// 017255c, "fix(ps2) dynamic mesh rebuilds"): a light-only
+				// mark already coalesced instead of restarting an active
+				// build, but any OTHER non-player-edit mutation (flowing
+				// water, a scheduled tick) still forced a full restart --
+				// exactly the "sections restarting before they ever
+				// finished" problem this file's own DSI_GREEDY_BATCHES_PER_
+				// CALL comment describes fighting separately. Widen the
+				// coalescing branch to every non-player-edit mark; player
+				// edits keep the immediate restart + urgent lane below.
+				const bool playerEdit = worldObj != nullptr && worldObj->isMarkingFromPlayerEdit();
+				if (worldObj != nullptr && (worldObj->isMarkingFromLighting() || !playerEdit))
 				{
 					worldrenderer->markDirtyFromLighting();
 				}
@@ -2973,7 +2984,7 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 					// the same distance while terrain streams in.
 					if (PLATFORM_URGENT_MESH_DISTANCE_SQ > 0.0f && mc != nullptr &&
 					    mc->renderViewEntity != nullptr &&
-					    worldObj != nullptr && worldObj->isMarkingFromPlayerEdit() &&
+					    playerEdit &&
 					    worldrenderer->distanceToEntitySquared(mc->renderViewEntity) <= PLATFORM_URGENT_MESH_DISTANCE_SQ)
 					{
 #if PLATFORM_PS2 && MC_LOG_LEVEL >= 2

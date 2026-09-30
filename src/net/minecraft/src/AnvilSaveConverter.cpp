@@ -72,7 +72,8 @@ std::vector<SaveFormatComparator *> AnvilSaveConverter::getSaveList()
                                                    info->getLastTimePlayed(), 0,
                                                    info->getGameType(),
                                                    saveVersion != getCurrentSaveVersion(),
-                                                   info->isHardcoreModeEnabled()));
+                                                   info->isHardcoreModeEnabled(),
+                                                   info->getSeed()));
     }
 
     return result;

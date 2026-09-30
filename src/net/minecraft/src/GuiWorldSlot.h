@@ -40,6 +40,10 @@ private:
 		std::string name;
 		std::string line2;
 		std::string line3;
+		// Ported from upstream OptiCraftHeritageEdition (commits
+		// 308782d/9ec548f): the world's seed, shown as its own line so a
+		// player can see/record it without digging into the save file.
+		std::string line4;
 		bool populated = false;
 	};
 	std::vector<CachedRowText> cachedRows;

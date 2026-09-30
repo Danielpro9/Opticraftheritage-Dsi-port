@@ -1,6 +1,7 @@
 #include "java/BufferedImage.h"
 
 #include <cassert>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 
@@ -74,22 +75,31 @@ void BufferedImage::getRGB(int_t startX, int_t startY, int_t w, int_t h, unsigne
 	if (regionBytes != 0 && rgbArray == nullptr)
 		throw std::invalid_argument("BufferedImage::getRGB: null output buffer");
 
+	if (w == 0 || h == 0)
+		return;
+
 	const std::size_t imageWidth = static_cast<std::size_t>(width);
 	const std::size_t regionWidth = static_cast<std::size_t>(w);
+	const std::size_t rowBytes = regionWidth * 4u;
+
+	// Ported from upstream OptiCraftHeritageEdition (commit 0ccec60): the
+	// whole-image case (the common one -- every texture/skin upload reads
+	// back its full pixel buffer) is one contiguous memcpy instead of a
+	// per-pixel loop; a partial-region read still copies row by row via
+	// memcpy instead of per-byte, since each row is itself contiguous.
+	if (startX == 0 && w == width && startY == 0 && h == height)
+	{
+		std::memcpy(rgbArray, raw_pixels.get(), regionBytes);
+		return;
+	}
+
 	for (int_t y = 0; y < h; y++)
 	{
-		for (int_t x = 0; x < w; x++)
-		{
-			const std::size_t srcX = static_cast<std::size_t>(startX) + static_cast<std::size_t>(x);
-			const std::size_t srcY = static_cast<std::size_t>(startY) + static_cast<std::size_t>(y);
-			const std::size_t srcIndex = (srcY * imageWidth + srcX) * 4u;
-			const std::size_t dstIndex = (static_cast<std::size_t>(y) * regionWidth + static_cast<std::size_t>(x)) * 4u;
+		const std::size_t srcY = static_cast<std::size_t>(startY) + static_cast<std::size_t>(y);
+		const std::size_t srcIndex = (srcY * imageWidth + static_cast<std::size_t>(startX)) * 4u;
+		const std::size_t dstIndex = static_cast<std::size_t>(y) * rowBytes;
 
-			rgbArray[dstIndex + 0] = raw_pixels[srcIndex + 0];
-			rgbArray[dstIndex + 1] = raw_pixels[srcIndex + 1];
-			rgbArray[dstIndex + 2] = raw_pixels[srcIndex + 2];
-			rgbArray[dstIndex + 3] = raw_pixels[srcIndex + 3];
-		}
+		std::memcpy(&rgbArray[dstIndex], &raw_pixels[srcIndex], rowBytes);
 	}
 }
 
@@ -100,22 +110,26 @@ void BufferedImage::setRGB(int_t startX, int_t startY, int_t w, int_t h, unsigne
 	if (regionBytes != 0 && rgbArray == nullptr)
 		throw std::invalid_argument("BufferedImage::setRGB: null input buffer");
 
+	if (w == 0 || h == 0)
+		return;
+
 	const std::size_t imageWidth = static_cast<std::size_t>(width);
 	const std::size_t regionWidth = static_cast<std::size_t>(w);
+	const std::size_t rowBytes = regionWidth * 4u;
+
+	if (startX == 0 && w == width && startY == 0 && h == height)
+	{
+		std::memcpy(raw_pixels.get(), rgbArray, regionBytes);
+		return;
+	}
+
 	for (int_t y = 0; y < h; y++)
 	{
-		for (int_t x = 0; x < w; x++)
-		{
-			const std::size_t srcIndex = (static_cast<std::size_t>(y) * regionWidth + static_cast<std::size_t>(x)) * 4u;
-			const std::size_t dstX = static_cast<std::size_t>(startX) + static_cast<std::size_t>(x);
-			const std::size_t dstY = static_cast<std::size_t>(startY) + static_cast<std::size_t>(y);
-			const std::size_t dstIndex = (dstY * imageWidth + dstX) * 4u;
+		const std::size_t srcIndex = static_cast<std::size_t>(y) * rowBytes;
+		const std::size_t dstY = static_cast<std::size_t>(startY) + static_cast<std::size_t>(y);
+		const std::size_t dstIndex = (dstY * imageWidth + static_cast<std::size_t>(startX)) * 4u;
 
-			raw_pixels[dstIndex + 0] = rgbArray[srcIndex + 0];
-			raw_pixels[dstIndex + 1] = rgbArray[srcIndex + 1];
-			raw_pixels[dstIndex + 2] = rgbArray[srcIndex + 2];
-			raw_pixels[dstIndex + 3] = rgbArray[srcIndex + 3];
-		}
+		std::memcpy(&raw_pixels[dstIndex], &rgbArray[srcIndex], rowBytes);
 	}
 }
 
@@ -142,9 +156,15 @@ stbi_io_callbacks stbi_io_callbacks_istream = { istream_read, istream_skip, istr
 
 BufferedImage BufferedImage::ImageIO_read(std::istream &in)
 {
-	// Decode image
-	int w, h, comp;
-	stbi_uc *raw_data = stbi_load_from_callbacks(&stbi_io_callbacks_istream, &in, &w, &h, &comp, 0);
+	// Ported from upstream OptiCraftHeritageEdition (commit 0ccec60):
+	// request STBI_rgb_alpha directly instead of the source channel count
+	// (comp) -- stb_image already does the 1/2/3/4-channel-to-RGBA expansion
+	// natively in C, so the per-pixel C++ loops below it used to need for
+	// each case are gone; a single memcpy replaces all four. No behavior
+	// change (same output bytes for the same input image), just skips
+	// redoing in this C++ loop what stb_image already did internally.
+	int w = 0, h = 0, comp = 0;
+	stbi_uc *raw_data = stbi_load_from_callbacks(&stbi_io_callbacks_istream, &in, &w, &h, &comp, STBI_rgb_alpha);
 	// Must throw (not assert): assert is a no-op in release, so an undecodable
 	// download (e.g. an HTTP error page) would read uninitialized w/h and the
 	// null raw_data -> UB. Throwing lets the caller fall back to the default skin.
@@ -152,60 +172,12 @@ BufferedImage BufferedImage::ImageIO_read(std::istream &in)
 		throw std::runtime_error(std::string("ImageIO_read: decode failed: ") +
 		                         (stbi_failure_reason() ? stbi_failure_reason() : "unknown"));
 
-	// Convert to RGBA. Keep all size arithmetic in size_t so malformed image
-	// dimensions cannot wrap into an undersized allocation.
-	const std::size_t pixelCount = checkedPixelCount(w, h);
-	std::unique_ptr<unsigned char[]> data = Util::make_unique<unsigned char[]>(checkedRgbaByteCount(w, h));
-
-	if (comp == 1)
-	{
-		for (std::size_t i = 0; i < pixelCount; i++)
-		{
-			data[i * 4 + 0] = raw_data[i];
-			data[i * 4 + 1] = raw_data[i];
-			data[i * 4 + 2] = raw_data[i];
-			data[i * 4 + 3] = 255;
-		}
-		stbi_image_free(raw_data);
-	}
-	else if (comp == 2)
-	{
-		for (std::size_t i = 0; i < pixelCount; i++)
-		{
-			data[i * 4 + 0] = raw_data[i * 2 + 0];
-			data[i * 4 + 1] = raw_data[i * 2 + 0];
-			data[i * 4 + 2] = raw_data[i * 2 + 0];
-			data[i * 4 + 3] = raw_data[i * 2 + 1];
-		}
-		stbi_image_free(raw_data);
-	}
-	else if (comp == 3)
-	{
-		for (std::size_t i = 0; i < pixelCount; i++)
-		{
-			data[i * 4 + 0] = raw_data[i * 3 + 0];
-			data[i * 4 + 1] = raw_data[i * 3 + 1];
-			data[i * 4 + 2] = raw_data[i * 3 + 2];
-			data[i * 4 + 3] = 255;
-		}
-		stbi_image_free(raw_data);
-	}
-	else if (comp == 4)
-	{
-		for (std::size_t i = 0; i < pixelCount; i++)
-		{
-			data[i * 4 + 0] = raw_data[i * 4 + 0];
-			data[i * 4 + 1] = raw_data[i * 4 + 1];
-			data[i * 4 + 2] = raw_data[i * 4 + 2];
-			data[i * 4 + 3] = raw_data[i * 4 + 3];
-		}
-		stbi_image_free(raw_data);
-	}
-	else
-	{
-		stbi_image_free(raw_data);
-		throw std::runtime_error("ImageIO_read: unsupported channel count");
-	}
+	// Keep all size arithmetic in size_t so malformed image dimensions cannot
+	// wrap into an undersized allocation.
+	const std::size_t byteCount = checkedRgbaByteCount(w, h);
+	std::unique_ptr<unsigned char[]> data = Util::make_unique<unsigned char[]>(byteCount);
+	std::memcpy(data.get(), raw_data, byteCount);
+	stbi_image_free(raw_data);
 
 	return BufferedImage(w, h, std::move(data));
 }

@@ -1,6 +1,8 @@
 #include "TileEntityRendererPiston.h"
 
 #include "platform/RenderAPI.h"
+#include "RenderEngine.h"
+#include "TileEntityRenderer.h"
 #include "TileEntityPiston.h"
 #include "World.h"
 #include "Block.h"
@@ -35,7 +37,10 @@ void TileEntityRendererPiston::renderPistonAt(TileEntityPiston* tileentitypiston
         return;
 
     Tessellator& tessellator = Tessellator::instance;
-    bindTextureByName("/terrain.png");
+    // Only while a piston's extend/retract animation is in progress, but
+    // continuous for a redstone contraption that cycles pistons repeatedly.
+    static CachedTextureId cachedTerrainTextureId;
+    renderBindTexture(cachedTerrainTextureId.get(tileEntityRenderer->renderEngine, "/terrain.png"));
     RenderHelper::disableStandardItemLighting();
     renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
     renderEnable(RenderCapability::Blend);

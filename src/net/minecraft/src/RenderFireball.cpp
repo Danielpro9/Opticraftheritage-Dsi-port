@@ -13,7 +13,8 @@ void RenderFireball::doRenderFireball(EntityFireball* entityfireball, double d, 
     float f2 = scale;
     renderScale(f2 / 1.0f, f2 / 1.0f, f2 / 1.0f);
     int i = 46;
-    loadTexture("/gui/items.png");
+    static CachedTextureId cachedItemsTextureId;
+    renderBindTexture(cachedItemsTextureId.get(renderManager->renderEngine, "/gui/items.png"));
     Tessellator* tessellator = &Tessellator::instance;
     float f3 = (float)((i % 16) * 16 + 0) / 256.0f;
     float f4 = (float)((i % 16) * 16 + 16) / 256.0f;

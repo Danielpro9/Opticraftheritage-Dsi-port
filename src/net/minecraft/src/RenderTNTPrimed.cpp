@@ -43,7 +43,9 @@ void RenderTNTPrimed::renderTNTPrimed(EntityTNTPrimed* entityTNTPrimed, double d
 }
 
 void RenderTNTPrimed::renderBlockOnTNT(float brightness) {
-    loadTexture("/terrain.png");
+    // Called up to twice per lit TNT per frame (base render + flash overlay).
+    static CachedTextureId cachedTerrainTextureId;
+    renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
     renderBlocks->renderBlockAsItem(Block::tnt, 0, brightness);
 }
 

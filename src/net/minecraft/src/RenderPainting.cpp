@@ -13,7 +13,8 @@ void RenderPainting::renderPainting(EntityPainting* entityPainting, double d, do
     renderTranslate((float)d, (float)d1, (float)d2);
     renderRotate(f, 0.0f, 1.0f, 0.0f);
     renderEnable(RenderCapability::RescaleNormal);
-    loadTexture("/art/kz.png");
+    static CachedTextureId cachedArtTextureId;
+    renderBindTexture(cachedArtTextureId.get(renderManager->renderEngine, "/art/kz.png"));
 
     EnumArt* enumart = entityPainting->art;
     if (enumart != nullptr) {

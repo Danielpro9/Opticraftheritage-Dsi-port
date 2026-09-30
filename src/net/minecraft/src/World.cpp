@@ -2306,32 +2306,28 @@ MovingObjectPosition *rayMarchBlocksFloat(World *world, Vec3D *vec1, Vec3D *vec2
 
         // floor(base + local) == base + floor(local) for an integer base, so the
         // block the march lands on is the one the double path would have picked.
-        Vec3D *vec3d2 = Vec3D::createVector(vec1->xCoord, vec1->yCoord, vec1->zCoord);
+        // No Vec3D needed here (nor in rayTraceBlocks' double-precision path
+        // further down) -- the original decompiled Java built one purely to
+        // hold intermediate x/y/z fields that are never read back afterward.
         startX = JavaArithmetic::intAdd(baseX, MathHelper::floor_float(posX));
-        vec3d2->xCoord = (double)startX;
 
         if (byte0 == 5)
         {
             startX = JavaArithmetic::intSub(startX, 1);
-            vec3d2->xCoord++;
         }
 
         startY = JavaArithmetic::intAdd(baseY, MathHelper::floor_float(posY));
-        vec3d2->yCoord = (double)startY;
 
         if (byte0 == 1)
         {
             startY = JavaArithmetic::intSub(startY, 1);
-            vec3d2->yCoord++;
         }
 
         startZ = JavaArithmetic::intAdd(baseZ, MathHelper::floor_float(posZ));
-        vec3d2->zCoord = (double)startZ;
 
         if (byte0 == 3)
         {
             startZ = JavaArithmetic::intSub(startZ, 1);
-            vec3d2->zCoord++;
         }
 
         int_t j2 = world->getBlockId(startX, startY, startZ);
@@ -2517,29 +2513,31 @@ MovingObjectPosition* World::rayTraceBlocks(Vec3D* vec1, Vec3D* vec2, bool flag,
             vec1->zCoord = d2;
         }
         
-        Vec3D* vec3d2 = Vec3D::createVector(vec1->xCoord, vec1->yCoord, vec1->zCoord);
-        startX = (int)(vec3d2->xCoord = MathHelper::floor_double(vec1->xCoord));
-        
+        // No Vec3D needed here -- the original decompiled Java built one
+        // (Vec3D.createVector) purely to hold intermediate x/y/z fields that
+        // are never read back afterward; this march step runs up to 200
+        // times per rayTraceBlocks() call (every frame for the block-picking
+        // reticle, EntityRenderer.cpp), so that was a dead pooled allocation
+        // every iteration.
+        startX = MathHelper::floor_double(vec1->xCoord);
+
         if (byte0 == 5)
         {
             startX = JavaArithmetic::intSub(startX, 1);
-            vec3d2->xCoord++;
         }
-        
-        startY = (int)(vec3d2->yCoord = MathHelper::floor_double(vec1->yCoord));
-        
+
+        startY = MathHelper::floor_double(vec1->yCoord);
+
         if (byte0 == 1)
         {
             startY = JavaArithmetic::intSub(startY, 1);
-            vec3d2->yCoord++;
         }
-        
-        startZ = (int)(vec3d2->zCoord = MathHelper::floor_double(vec1->zCoord));
-        
+
+        startZ = MathHelper::floor_double(vec1->zCoord);
+
         if (byte0 == 3)
         {
             startZ = JavaArithmetic::intSub(startZ, 1);
-            vec3d2->zCoord++;
         }
         
         int j2 = getBlockId(startX, startY, startZ);

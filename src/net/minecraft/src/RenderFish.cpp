@@ -18,7 +18,8 @@ void RenderFish::doRenderFish(EntityFish* entityfish, double d, double d1, doubl
     renderScale(0.5f, 0.5f, 0.5f);
     int i = 1;
     int byte0 = 2;
-    loadTexture("/particles.png");
+    static CachedTextureId cachedParticlesTextureId;
+    renderBindTexture(cachedParticlesTextureId.get(renderManager->renderEngine, "/particles.png"));
     Tessellator* tessellator = &Tessellator::instance;
     float f2 = (float)(i * 8 + 0) / 128.0f;
     float f3 = (float)(i * 8 + 8) / 128.0f;

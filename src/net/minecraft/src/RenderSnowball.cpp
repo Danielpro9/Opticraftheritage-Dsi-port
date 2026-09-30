@@ -13,7 +13,9 @@ void RenderSnowball::doRender(Entity *entity, double x, double y, double z, floa
 	renderTranslate((float)x, (float)y, (float)z);
 	renderEnable(RenderCapability::RescaleNormal);
 	renderScale(0.5f, 0.5f, 0.5f);
-	loadTexture("/gui/items.png");
+	// Per snowball/egg/thrown-potion entity per frame.
+	static CachedTextureId cachedItemsTextureId;
+	renderBindTexture(cachedItemsTextureId.get(renderManager->renderEngine, "/gui/items.png"));
 
 	if (itemIconIndex == 154)
 	{

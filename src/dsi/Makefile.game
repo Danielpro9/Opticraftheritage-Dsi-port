@@ -204,7 +204,17 @@ CXXFLAGS	+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
 		   -std=gnu++17 \
 		   -specs=$(SPECS)
 
+# CFLAGS/CXXFLAGS above already compile with -ffunction-sections
+# -fdata-sections, splitting every function/global into its own linker
+# section -- but without --gc-sections telling the LINKER to actually
+# discard the sections nothing ends up referencing, that split bought
+# nothing: every section stayed in the final binary regardless. Since
+# DsiEarlyMemory.cpp's heap-ceiling accounting starts the heap right after
+# the compiled ARM9 binary in RAM, any dead code/data this strips shrinks
+# the binary and grows real available heap by the same amount -- this is
+# the missing other half of a flag pairing that's meaningless alone.
 LDFLAGS		+= $(ARCH) $(LIBDIRSFLAGS) -Wl,-Map,$(MAP) $(DEFINES) \
+		   -Wl,--gc-sections \
 		   -Wl,--start-group $(LIBS) -Wl,--end-group -specs=$(SPECS)
 
 OBJS_SOURCES	:= $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_S))) \

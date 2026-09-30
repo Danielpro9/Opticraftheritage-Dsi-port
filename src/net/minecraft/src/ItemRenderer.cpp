@@ -60,11 +60,20 @@ void ItemRenderer::renderItem(EntityLiving* entityliving, ItemStack* itemstack, 
     }
 
     renderPushMatrix();
+    // Cached the same way renderOverlays() below caches "/terrain.png" --
+    // renderItem() runs every frame for every visible biped holding an item
+    // (RenderBiped), worn helmet items, snowman pumpkins, and the player's
+    // own held item in both view modes, so this was a real, sustained
+    // per-frame getTexture() hash-map lookup rather than an occasional one.
+    static CachedTextureId cachedTerrainTextureId;
+    static CachedTextureId cachedItemsTextureId;
     if (itemstack->itemID >= 0 && itemstack->itemID < 256 && Block::blocksList[itemstack->itemID] != nullptr && RenderBlocks::renderItemIn3d(Block::blocksList[itemstack->itemID]->getRenderType())) {
-        renderBindTexture(mc->renderEngine->getTexture("/terrain.png"));
+        renderBindTexture(cachedTerrainTextureId.get(mc->renderEngine, "/terrain.png"));
         renderBlocksInstance->renderBlockAsItem(Block::blocksList[itemstack->itemID], itemstack->getItemDamage(), 1.0f);
     } else {
-        renderBindTexture(mc->renderEngine->getTexture(itemstack->itemID < 256 ? "/terrain.png" : "/gui/items.png"));
+        renderBindTexture(itemstack->itemID < 256
+            ? cachedTerrainTextureId.get(mc->renderEngine, "/terrain.png")
+            : cachedItemsTextureId.get(mc->renderEngine, "/gui/items.png"));
         Tessellator* tessellator = &Tessellator::instance;
         int icon = entityliving->getItemIcon(itemstack, renderPass);
         float minU = (static_cast<float>((icon % 16) * 16) + 0.0f) / 256.0f;

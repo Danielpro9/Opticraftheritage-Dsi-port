@@ -13,7 +13,10 @@ RenderFallingSand::RenderFallingSand() {
 void RenderFallingSand::doRenderFallingSand(EntityFallingSand* entityfallingsand, double d, double d1, double d2, float f, float f1) {
     renderPushMatrix();
     renderTranslate((float)d, (float)d1, (float)d2);
-    loadTexture("/terrain.png");
+    // Unconditional every visible falling block per frame (sand, gravel,
+    // anvils, dragon egg).
+    static CachedTextureId cachedTerrainTextureId;
+    renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
     Block* block = Block::blocksList[entityfallingsand->blockID];
     World* world = entityfallingsand->worldObj;
     const int_t blockX = MathHelper::floor_double(entityfallingsand->posX);

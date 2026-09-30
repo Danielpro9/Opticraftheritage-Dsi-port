@@ -4,6 +4,8 @@
 #include "ModelBook.h"
 #include "TileEntityEnchantmentTable.h"
 #include "platform/RenderAPI.h"
+#include "RenderEngine.h"
+#include "TileEntityRenderer.h"
 
 RenderEnchantmentTable::RenderEnchantmentTable()
 	: bookModel(new ModelBook())
@@ -34,7 +36,9 @@ void RenderEnchantmentTable::renderEnchantmentTableAt(TileEntityEnchantmentTable
 	float rotation = table->bookRotationPrev + rotationDelta * partialTick;
 	renderRotate(-rotation * 180.0f / 3.14159265358979323846f, 0.0f, 1.0f, 0.0f);
 	renderRotate(80.0f, 0.0f, 0.0f, 1.0f);
-	bindTextureByName("/item/book.png");
+	// Fires every frame an enchanting table is in view (common in bases).
+	static CachedTextureId cachedBookTextureId;
+	renderBindTexture(cachedBookTextureId.get(tileEntityRenderer->renderEngine, "/item/book.png"));
 
 	float flipRight = table->pageFlipPrev + (table->pageFlip - table->pageFlipPrev) * partialTick + 0.25f;
 	float flipLeft = table->pageFlipPrev + (table->pageFlip - table->pageFlipPrev) * partialTick + 12.0f / 16.0f;

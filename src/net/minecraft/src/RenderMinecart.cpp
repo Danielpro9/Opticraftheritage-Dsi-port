@@ -80,8 +80,10 @@ void RenderMinecart::renderMinecart(EntityMinecart* entityMinecart, double d, do
     if (f6 > 0.0f) {
         renderRotate(MathHelper::sin(f6) * f6 * f7 / 10.0f * (float)entityMinecart->getForwardDirection(), 1.0f, 0.0f, 0.0f);
     }
+    static CachedTextureId cachedTerrainTextureId;
+    static CachedTextureId cachedCartTextureId;
     if (entityMinecart->getMinecartType() != 0) {
-        loadTexture("/terrain.png");
+        renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
         const float blockScale = 12.0f / 16.0f;
         renderScale(blockScale, blockScale, blockScale);
         if (entityMinecart->getMinecartType() == 1) {
@@ -101,7 +103,8 @@ void RenderMinecart::renderMinecart(EntityMinecart* entityMinecart, double d, do
         }
         renderScale(1.0f / blockScale, 1.0f / blockScale, 1.0f / blockScale);
     }
-    loadTexture("/item/cart.png");
+    // Unconditional every visible minecart per frame.
+    renderBindTexture(cachedCartTextureId.get(renderManager->renderEngine, "/item/cart.png"));
     renderScale(-1.0f, -1.0f, 1.0f);
     modelMinecart->render(0.0f, 0.0f, -0.1f, 0.0f, 0.0f, 0.0625f);
     renderPopMatrix();

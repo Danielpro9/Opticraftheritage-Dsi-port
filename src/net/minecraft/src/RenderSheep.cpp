@@ -52,7 +52,10 @@ int RenderSheep::renderSheepFurPass(EntitySheep* entitySheep, int i, float f) {
             if (dx * dx + dy * dy + dz * dz > (double)PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ)
                 return -1;
         }
-        loadTexture("/mob/sheep_fur.png");
+        // Fires every frame for every visible unsheared sheep (the common
+        // case) that passes the LOD-distance check above.
+        static CachedTextureId cachedSheepFurTextureId;
+        renderBindTexture(cachedSheepFurTextureId.get(renderManager->renderEngine, "/mob/sheep_fur.png"));
         float f1 = 1.0f;
         int j = entitySheep->getFleeceColor();
         renderColor3f(f1 * EntitySheep::fleeceColorTable[j][0], f1 * EntitySheep::fleeceColorTable[j][1], f1 * EntitySheep::fleeceColorTable[j][2]);

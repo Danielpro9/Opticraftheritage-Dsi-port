@@ -29,7 +29,12 @@ void RenderPig::doRender(Entity* entity, double d, double d1, double d2, float f
 
 int RenderPig::renderSaddledPig(EntityPig* entityPig, int i, float)
 {
-    loadTexture("/mob/saddle.png");
+    // Cached: this ran for every visible pig every frame regardless of
+    // whether it's actually saddled (the saddled check happens only in the
+    // return value below), so the unsaddled -- overwhelmingly common -- case
+    // paid for an uncached RenderEngine::getTexture() lookup for nothing.
+    static CachedTextureId cachedSaddleTextureId;
+    renderBindTexture(cachedSaddleTextureId.get(renderManager->renderEngine, "/mob/saddle.png"));
     return i == 0 && entityPig != nullptr && entityPig->getSaddled() ? 1 : -1;
 }
 

@@ -9,7 +9,9 @@ RenderArrow::RenderArrow() {
 }
 
 void RenderArrow::renderArrow(EntityArrow* entityArrow, double d, double d1, double d2, float f, float f1) {
-    loadTexture("/item/arrows.png");
+    // Unconditional every visible arrow every frame -- common in any combat.
+    static CachedTextureId cachedArrowsTextureId;
+    renderBindTexture(cachedArrowsTextureId.get(renderManager->renderEngine, "/item/arrows.png"));
 
     renderPushMatrix();
     renderTranslate((float)d, (float)d1, (float)d2);

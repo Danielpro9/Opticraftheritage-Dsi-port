@@ -150,6 +150,13 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
     if (item == nullptr) {
         return;
     }
+    // Cached the same way drawItemIntoGui() below caches these two -- this
+    // renders every dropped EntityItem sitting in the world, every frame it's
+    // visible (mining a stack of ore/blocks or a multi-mob kill routinely
+    // puts a dozen+ of these in view at once), and loadTexture() underneath
+    // is an uncached RenderEngine::getTexture() hash-map lookup every call.
+    static CachedTextureId cachedTerrainTextureId;
+    static CachedTextureId cachedItemsTextureId;
     renderPushMatrix();
     float f2 = MathHelper::sin(((float)entityitem->age + f1) / 10.0f + entityitem->hoverStart) * 0.1f + 0.1f;
     float f3 = (((float)entityitem->age + f1) / 20.0f + entityitem->hoverStart) * 57.295776f;
@@ -167,7 +174,7 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
     renderEnable(RenderCapability::RescaleNormal);
     if (itemstack->itemID >= 0 && itemstack->itemID < 256 && Block::blocksList[itemstack->itemID] != nullptr && RenderBlocks::renderItemIn3d(Block::blocksList[itemstack->itemID]->getRenderType())) {
         renderRotate(f3, 0.0f, 1.0f, 0.0f);
-        loadTexture("/terrain.png");
+        renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
         float f4 = 0.25f;
         const int renderType = Block::blocksList[itemstack->itemID]->getRenderType();
         if (renderType == 1 || renderType == 19 || renderType == 12 || renderType == 2) {
@@ -187,14 +194,14 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
         }
     } else {
         renderScale(0.5f, 0.5f, 0.5f);
-        loadTexture("/gui/items.png");
+        renderBindTexture(cachedItemsTextureId.get(renderManager->renderEngine, "/gui/items.png"));
         const int renderPasses = item->func_46058_c() ? 2 : 1;
         for (int renderPass = 0; renderPass < renderPasses; ++renderPass) {
             const int icon = item->func_46058_c()
                 ? item->func_46057_a(itemstack->getItemDamage(), renderPass)
                 : itemstack->getIconIndex();
             if (!item->func_46058_c() && itemstack->itemID < 256) {
-                loadTexture("/terrain.png");
+                renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
             }
 
             if (field_27004_a) {

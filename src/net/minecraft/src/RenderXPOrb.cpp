@@ -20,7 +20,10 @@ void RenderXPOrb::renderXPOrb(EntityXPOrb *orb, double x, double y, double z, fl
 	renderPushMatrix();
 	renderTranslate((float)x, (float)y, (float)z);
 	int_t texture = orb->getTextureByXP();
-	loadTexture("/item/xporb.png");
+	// XP orbs commonly spawn in clusters and linger for seconds -- unconditional
+	// every visible orb every frame.
+	static CachedTextureId cachedXpOrbTextureId;
+	renderBindTexture(cachedXpOrbTextureId.get(renderManager->renderEngine, "/item/xporb.png"));
 	Tessellator &tessellator = Tessellator::instance;
 	float u0 = (float)(texture % 4 * 16) / 64.0f;
 	float u1 = (float)(texture % 4 * 16 + 16) / 64.0f;

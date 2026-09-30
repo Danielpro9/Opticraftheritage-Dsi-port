@@ -55,7 +55,11 @@ int RenderEnderman::renderEyes(EntityEnderman *, int_t pass, float)
 	if (pass != 0)
 		return -1;
 
-	loadTexture("/mob/enderman_eyes.png");
+	// pass == 0 is the normal first render pass -- fires every frame for
+	// every visible enderman -- so cache instead of hashing this name fresh
+	// every time.
+	static CachedTextureId cachedEndermanEyesTextureId;
+	renderBindTexture(cachedEndermanEyesTextureId.get(renderManager->renderEngine, "/mob/enderman_eyes.png"));
 	renderEnable(RenderCapability::Blend);
 	renderDisable(RenderCapability::AlphaTest);
 	renderBlendFunc(RenderBlendFactor::One, RenderBlendFactor::One);

@@ -2722,6 +2722,12 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 void RenderGlobal::drawBlockBreaking(EntityPlayer *entityplayer, MovingObjectPosition *movingobjectposition, int_t i, ItemStack *itemstack, float f)
 {
 	Tessellator *tessellator = &Tessellator::instance;
+	// Cached the same way the sun/moon/clouds textures above are -- this
+	// function runs every frame the player is actively breaking a block or
+	// has an item queued to throw (one of the most sustained gameplay
+	// actions: mining, chopping trees), and its two branches below are
+	// mutually exclusive but both bind "/terrain.png".
+	static CachedTextureId cachedTerrainTextureId;
 
 	renderEnable(RenderCapability::Blend);
 	renderEnable(RenderCapability::AlphaTest);
@@ -2733,7 +2739,7 @@ void RenderGlobal::drawBlockBreaking(EntityPlayer *entityplayer, MovingObjectPos
 		if (damagePartialTime > 0.0f)
 		{
 			renderBlendFunc(RenderBlendFactor::DstColor, RenderBlendFactor::SrcColor);
-			int_t j = renderEngine->getTexture("/terrain.png");
+			int_t j = cachedTerrainTextureId.get(renderEngine, "/terrain.png");
 			renderBindTexture(j);
 			renderColor4f(1.0f, 1.0f, 1.0f, 0.5f);
 			renderPushMatrix();
@@ -2774,7 +2780,7 @@ void RenderGlobal::drawBlockBreaking(EntityPlayer *entityplayer, MovingObjectPos
 		float f1 = MathHelper::sin((float)PlatformCompat::getTicks() / 100.0f) * 0.2f + 0.8f;
 		renderColor4f(f1, f1, f1, MathHelper::sin((float)PlatformCompat::getTicks() / 200.0f) * 0.2f + 0.5f);
 
-		int_t l = renderEngine->getTexture("/terrain.png");
+		int_t l = cachedTerrainTextureId.get(renderEngine, "/terrain.png");
 		renderBindTexture(l);
 
 		int_t i1 = movingobjectposition->blockX;

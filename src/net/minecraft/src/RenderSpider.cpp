@@ -58,7 +58,11 @@ int RenderSpider::setSpiderEyeBrightness(EntitySpider* entitySpider, int i, floa
 {
     if (i != 0 || entitySpider == nullptr)
         return -1;
-    loadTexture("/mob/spider_eyes.png");
+    // i == 0 is the normal first render pass, i.e. this fires every frame for
+    // every visible spider -- cache the lookup instead of hashing the same
+    // texture name every time.
+    static CachedTextureId cachedSpiderEyesTextureId;
+    renderBindTexture(cachedSpiderEyesTextureId.get(renderManager->renderEngine, "/mob/spider_eyes.png"));
     renderEnable(RenderCapability::Blend);
     renderDisable(RenderCapability::AlphaTest);
     renderBlendFunc(RenderBlendFactor::One, RenderBlendFactor::One);

@@ -8,6 +8,8 @@
 #include "ModelLargeChest.h"
 #include "TileEntityChest.h"
 #include "platform/RenderAPI.h"
+#include "RenderEngine.h"
+#include "TileEntityRenderer.h"
 
 TileEntityChestRenderer::TileEntityChestRenderer()
     : chestModel(new ModelChest()), largeChestModel(new ModelLargeChest())
@@ -45,16 +47,22 @@ bool TileEntityChestRenderer::renderTileEntityChestParts(TileEntityChest *chest,
     if (chest->adjacentChestZNeg != nullptr || chest->adjacentChestXNeg != nullptr)
         return false;
 
+    // Fires once per visible chest per frame -- dungeons, villages and
+    // player storage rooms routinely have many chests in view at once, and
+    // bindTextureByName() underneath is an uncached RenderEngine::
+    // getTexture() hash-map lookup every call.
+    static CachedTextureId cachedChestTextureId;
+    static CachedTextureId cachedLargeChestTextureId;
     ModelChest *model;
     if (chest->adjacentChestXPos == nullptr && chest->adjacentChestZPos == nullptr)
     {
         model = chestModel;
-        bindTextureByName("/item/chest.png");
+        renderBindTexture(cachedChestTextureId.get(tileEntityRenderer->renderEngine, "/item/chest.png"));
     }
     else
     {
         model = largeChestModel;
-        bindTextureByName("/item/largechest.png");
+        renderBindTexture(cachedLargeChestTextureId.get(tileEntityRenderer->renderEngine, "/item/largechest.png"));
     }
 
     renderPushMatrix();

@@ -6,6 +6,8 @@
 #include "Block.h"
 #include "FontRenderer.h"
 #include "ModelRenderer.h"
+#include "RenderEngine.h"
+#include "TileEntityRenderer.h"
 
 TileEntitySignRenderer::TileEntitySignRenderer()
     : signModel(new SignModel())
@@ -49,7 +51,9 @@ bool TileEntitySignRenderer::renderTileEntitySignParts(TileEntitySign *tileentit
 
     if (renderStaticPart)
     {
-        bindTextureByName("/item/sign.png");
+        // Fires once per visible sign per frame in the normal case.
+        static CachedTextureId cachedSignTextureId;
+        renderBindTexture(cachedSignTextureId.get(tileEntityRenderer->renderEngine, "/item/sign.png"));
         renderPushMatrix();
         renderScale(f1, -f1, -f1);
         signModel->renderStaticPart();

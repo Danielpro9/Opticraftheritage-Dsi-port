@@ -48,18 +48,28 @@
 // Deliberately NOT reproduced from PS2/Wii (documented simplifications, not
 // oversights):
 //   * Wii's WiiBlockRenderInfo / renderSimpleOpaqueCubeWii fast opaque-cube
-//     path. A throughput optimisation layered on top of the same
-//     renderBlockByRenderType() this file calls for every non-greedy block;
-//     correctness does not depend on it, and nothing about the DS 3D engine
-//     specifically needs it. PLATFORM_FAST_SIMPLE_CUBE_RENDER/PLATFORM_SKIP_
-//     ENCLOSED_OPAQUE_CUBES/PLATFORM_MESH_FACE_SORT are inherited from PS2's
-//     tuning table for DSi, but the generic RenderStaticMesh path this file
-//     uses has no per-face-direction replay to hand a face sort's output to
-//     (that is PLATFORM_NATIVE_TERRAIN_PIPELINE, Wii-only), so face sorting
-//     would only reorder vertices with no way to exploit the order at draw
-//     time. A real profile once this runs on hardware is what should decide
-//     whether the opaque fast-cube path is worth porting on top of greedy
-//     meshing.
+//     path, and PS2's matching PLATFORM_FAST_SIMPLE_CUBE_RENDER branch: both
+//     replace renderBlockByRenderType() with a direct per-face emitter driven
+//     by an exposed-face mask, which only pays off with a per-face-direction
+//     replay to hand that mask's output to at draw time (PLATFORM_NATIVE_
+//     TERRAIN_PIPELINE, Wii-only / PS2's VU1 path). This file's generic
+//     RenderStaticMesh path has no such replay, so porting the fast emitter
+//     here would only reorder which code builds the same quads, not skip any
+//     work. PLATFORM_MESH_FACE_SORT is the same story: reordering a finished
+//     mesh's vertices has nothing to exploit without a face-sorted replay
+//     either, so it stays unused here too. A real profile once this runs on
+//     hardware is what should decide whether either is worth porting on top
+//     of greedy meshing.
+//   * PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES, unlike the two above, does not
+//     need a native replay -- it is a plain "don't call
+//     renderBlockByRenderType() at all" pre-check, so dsiBuildRendererStep()
+//     below DOES use it (dsiFullyEnclosedOpaqueCube()), independent of
+//     whether the greedy pass is active: the greedy pass already skips its
+//     own eligible blocks' buried interiors via its own per-face neighbour
+//     check, but grass (excluded from greedy for its tint path) and every
+//     simpleOpaqueCube block whenever Config::isConnectedTextures()/
+//     isNaturalTextures() force dsiAllowGreedyMesh off still went through the
+//     full per-block render path with no fast reject at all before this.
 //   * Wii's alpha-test-aware early-depth batching in RenderList (submitting
 //     opaque-and-not-alpha-tested sections before the rest so GX can reject
 //     fragments before texturing). src/dsi/minecraft/RenderList.cpp submits
@@ -91,6 +101,7 @@
 #include "net/minecraft/src/Config.h"
 #include "platform/RenderTerrainAPI.h"
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"
+#include "dsi/render/DsiBlockRenderInfo.h"
 #include "dsi/render/DsiWaterMerge.h"
 #include "dsi/DsiEarlyInit.h"
 
@@ -111,6 +122,46 @@ namespace
 	// targets, and a missing chunk here does not block drawing (the section
 	// simply stays on its previous mesh and retries next step).
 	constexpr int_t kDsiRendererDependencyRequestsPerStep = 1;
+
+#if PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
+	// Mirrors WorldRendererPs2.cpp's ps2OpaqueNeighbour/ps2ExposedCubeFaceMask
+	// (and DsiGreedyMesh.cpp's own identical isOpaque/isOpaqueBlockId pair) --
+	// kept as its own local copy rather than a shared helper, matching how PS2
+	// already keeps its version file-local. A position outside a resident
+	// chunk column counts as opaque, same reasoning as both of those: a
+	// section at the edge of loaded terrain must never treat an unstreamed
+	// neighbour as "exposed" and draw a face into it.
+	static bool dsiOpaqueNeighbour(ChunkCache &cache, int_t x, int_t y, int_t z)
+	{
+		if (y >= 0 && y < Chunk::WORLD_HEIGHT && !cache.hasResidentChunkAtBlock(x, z))
+			return true;
+
+		const int_t id = cache.getBlockId(x, y, z);
+		if (id <= 0 || id >= Block::BLOCK_REGISTRY_SIZE)
+			return false;
+
+		Block *block = Block::blocksList[id];
+		if (block == nullptr)
+			return false;
+		if (Block::staticOpaqueCubeLookupSafe[id])
+			return Block::opaqueCubeLookup[id];
+		return block->isOpaqueCube();
+	}
+
+	// True only if all six neighbours are opaque, i.e. this cube can never
+	// contribute a visible face -- renderBlockByRenderType() would tessellate
+	// all six sides just to have RenderBlocks' own per-face visibility check
+	// discard every one of them. Checked only for simpleOpaqueCube blocks
+	// (plain full cubes with default face culling): the same shape of block
+	// DsiGreedyMesh.cpp's greedy pass already eligibility-gates on, so this
+	// reuses that same safe, narrow precondition rather than a new one.
+	static bool dsiFullyEnclosedOpaqueCube(ChunkCache &cache, int_t x, int_t y, int_t z)
+	{
+		return dsiOpaqueNeighbour(cache, x, y - 1, z) && dsiOpaqueNeighbour(cache, x, y + 1, z) &&
+			dsiOpaqueNeighbour(cache, x, y, z - 1) && dsiOpaqueNeighbour(cache, x, y, z + 1) &&
+			dsiOpaqueNeighbour(cache, x - 1, y, z) && dsiOpaqueNeighbour(cache, x + 1, y, z);
+	}
+#endif
 
 	// See dsiGetTotalRendererRebuilds()'s own comment (DsiEarlyInit.h).
 	unsigned int g_dsiTotalRendererRebuilds = 0u;
@@ -305,12 +356,17 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 		// per-neighbour/per-position, which the greedy pass's FaceKey (one
 		// texture id per merged run) cannot represent.
 		// DSI_GREEDY_MESH_RUNTIME_ENABLED (DsiWorldTuning.h): emergency kill
-		// switch, currently 0 -- real-hardware evidence of a catastrophic
-		// steady-state render regression (~4-5 fps) the first time this path
-		// ever actually ran, once the isConnectedTextures() default bug that
-		// had kept it permanently inert was fixed. See that macro's own
-		// comment for the full account; independent of the (correct, staying
-		// fixed) isConnectedTextures()/isNaturalTextures() checks below.
+		// switch. The first real-hardware run with the greedy path actually
+		// reachable (isConnectedTextures() used to default to true on DSi,
+		// which forced dsiAllowGreedyMesh off below -- now fixed) hit a
+		// catastrophic steady-state regression (~4-5 fps). That turned out
+		// to be a build-budget accounting bug in this file, not the greedy
+		// algorithm; see the macro's own comment in DsiWorldTuning.h for the
+		// full account. Fixed and re-enabled (currently 1) -- still worth
+		// re-reading that comment before assuming this path is at fault if
+		// a similar regression ever shows up again. Independent of the
+		// (correct, staying fixed) isConnectedTextures()/isNaturalTextures()
+		// checks below.
 		const bool dsiAllowGreedyMesh = DSI_GREEDY_MESH_RUNTIME_ENABLED &&
 			!Config::isConnectedTextures() && !Config::isNaturalTextures();
 		if (dsiAllowGreedyMesh && dsiBuildPass == 0 && dsiBuildGreedyFace < RENDER_TERRAIN_GREEDY_FACE_COUNT)
@@ -459,6 +515,20 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 					dsiBuildHasPass1 = true;
 				if (blockPass != dsiBuildPass)
 					continue;
+
+#if PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
+				// Reaches here whenever the greedy pass didn't already claim this
+				// block above -- either dsiAllowGreedyMesh is off this build
+				// (connected/natural textures, or the kill switch), or it is a
+				// simpleOpaqueCube block the greedy pass itself excludes (grass,
+				// for its side-tint path). Either way a fully buried instance is
+				// exactly the same wasted tessellate-six-invisible-faces work the
+				// greedy pass's own per-face neighbour check already avoids for
+				// its own blocks, so give this one the same cheap reject.
+				if (dsiBuildPass == 0 && dsiGetBlockRenderInfo(id).simpleOpaqueCube &&
+					dsiFullyEnclosedOpaqueCube(chunkcache, x, y, z))
+					continue;
+#endif
 
 				stepDrew |= renderblocks.renderBlockByRenderType(block, x, y, z);
 			}

@@ -525,10 +525,19 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 			while (dsiBuildCursor < totalBlocks && processed < blockBudget)
 			{
 				const int_t cursor = dsiBuildCursor++;
-				const int_t lx = cursor % sizeWidth;
-				const int_t yz = cursor / sizeWidth;
-				const int_t lz = yz % sizeDepth;
-				const int_t ly = yz / sizeDepth;
+				// sizeWidth/sizeDepth are always exactly 16: RenderGlobal.cpp's
+				// only WorldRenderer constructor call hardcodes size=16, and
+				// sizeWidth/sizeHeight/sizeDepth are all set from that single
+				// parameter (WorldRenderer.cpp). The ARM946E-S has no hardware
+				// integer divide, so cursor % sizeWidth / cursor / sizeWidth
+				// each compiled to a software-division library call here --
+				// this loop's own cursor decomposition, run up to 4096 times
+				// per pass. & 15 / >> 4 are the same result for a divisor
+				// that is always exactly 16, at a single shift/mask each.
+				const int_t lx = cursor & 15;
+				const int_t yz = cursor >> 4;
+				const int_t lz = yz & 15;
+				const int_t ly = yz >> 4;
 				const int_t x = x0 + lx;
 				const int_t y = y0 + ly;
 				const int_t z = z0 + lz;

@@ -74,6 +74,30 @@
 #undef  PLATFORM_MOB_SPAWN_CHUNK_RADIUS
 #define PLATFORM_MOB_SPAWN_CHUNK_RADIUS          PLATFORM_VISIBLE_CHUNK_RADIUS
 
+// Same shape of gap as the two radii just above, caught the same way (grep
+// every PLATFORM_* this file does not already override, then check what it
+// actually aliases to): PlatformGameTuning.h's PLATFORM_PS2||PLATFORM_DSI
+// branch sets PLATFORM_VISIBLE_CHUNK_DIAMETER = PS2_VISIBLE_CHUNK_DIAMETER,
+// a PS2-only token already baked to (PS2_VISIBLE_CHUNK_RADIUS*2+1) = 5 in
+// Ps2CoreTuning.h -- a completely different expression from the generic
+// PLATFORM_PC_LEGACY branch's own (PLATFORM_VISIBLE_CHUNK_RADIUS*2+1), so
+// DSi's radius-1 override four lines up never reaches this one either.
+// RenderGlobal.cpp's initRenderers() uses this diameter directly as
+// renderChunksWide/renderChunksDeep and `new WorldRenderer(...)`-allocates
+// one real object per grid cell (renderChunksWide*renderChunksTall*
+// renderChunksDeep): at the inherited 5, that is a 5x2x5=50-renderer grid
+// for a platform whose actual loaded chunk count this file's own radius
+// override caps at ~9 (radius 1, i.e. a 3x3 chunk footprint) -- roughly 2.8x
+// more WorldRenderer objects than DSi's world can ever populate, each one
+// still paying a frustum test, a distance calculation and an update-queue
+// check every single frame for the rest of the session, for a slot that
+// can structurally never hold a chunk. Re-deriving from
+// PLATFORM_VISIBLE_CHUNK_RADIUS (already overridden above) instead of the
+// PS2-only token gives the correct 3, matching this file's own ~9-chunk
+// footprint everywhere else already assumes.
+#undef  PLATFORM_VISIBLE_CHUNK_DIAMETER
+#define PLATFORM_VISIBLE_CHUNK_DIAMETER          (PLATFORM_VISIBLE_CHUNK_RADIUS * 2 + 1)
+
 // Streaming window equal to the visible radius (PS2 settled on the same choice
 // for the same reason -- see the "Back at radius 2 for memory" note in
 // Ps2CoreTuning.h): a bigger cache radius buys lead time for prefetching, but

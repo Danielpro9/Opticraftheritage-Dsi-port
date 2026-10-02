@@ -23,9 +23,28 @@
 // and reopened. A close commits the directory entry on the console filesystems,
 // but doing it for every line is especially expensive on the PS2 USB/FAT path.
 // Errors and warnings always commit immediately, regardless of this value.
+//
+// DSi used to fall through to the generic default (1: commit every single
+// line) despite going through the same kind of SD/FAT path PS2's comment
+// above is about. Real-hardware debug.log evidence: a world load/unload
+// burst fires ~10-20 Info lines in a row (heap checkpoints, texture IDs),
+// each then paying its own fclose()+fopen() on the SD card, and measured
+// frame/tick spikes of 3-7 SECONDS land exactly on those bursts (see the
+// RenderAPI_DSI.cpp texture-quantization log calls this same investigation
+// downgraded from Warning to Info, right next to this value, for the other
+// half of the same fix -- a Warning/Error always commits immediately
+// regardless of this constant, so batching alone would not have helped
+// those). 8 is a first estimate, not a measured optimum: it trades up to 7
+// lines of pre-crash log tail (a hang's last Info line may be up to 7 lines
+// stale) for roughly an 8x cut in forced commits during a load/unload
+// burst. Errors and warnings are unaffected either way -- they still commit
+// immediately, so the actual failure signal this project's debugging has
+// relied on all session is not weakened by this.
 #ifndef MC_LOG_COMMIT_EVERY
 #  if PLATFORM_PS2
 #    define MC_LOG_COMMIT_EVERY 16
+#  elif PLATFORM_DSI
+#    define MC_LOG_COMMIT_EVERY 8
 #  else
 #    define MC_LOG_COMMIT_EVERY 1
 #  endif

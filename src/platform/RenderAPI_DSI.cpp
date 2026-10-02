@@ -603,8 +603,20 @@ bool tryUploadPaletted(int name, DsiTexture& tex, int param, bool forceRebuild)
 		const PalettedUploadResult result = tryUploadPalettedAtDepth(name, tex, param, quantShift, colorCount, palette);
 		if (result == PalettedUploadResult::Success)
 		{
+			// Info, not Warning: this is the retry loop working as designed
+			// (see this function's header comment -- bounded, self-resolving,
+			// shift 4 always fits), not a failure. A Warning/Error always
+			// forces Log.cpp's writeFile() to fclose()+fopen() the SD-card
+			// log file immediately, regardless of MC_LOG_COMMIT_EVERY; real
+			// hardware showed a texture that needed a few retries here
+			// costing several of those forced commits back to back during
+			// world load, measured as multi-second frame/tick spikes with
+			// no named tick/render phase accounting for the time (it was
+			// spent in the SD filesystem, not in game logic). Genuine
+			// failures below (actually out of VRAM/palette space) keep
+			// Warning, since those are rare and worth the immediate commit.
 			if (quantShift > 0)
-				MC_LOG_WARN("dsi", "paletted upload used colour quantization (shift=%d, %u colours) to fit: %dx%d id=%d\n",
+				MC_LOG_INFO("dsi", "paletted upload used colour quantization (shift=%d, %u colours) to fit: %dx%d id=%d\n",
 					quantShift, (unsigned)colorCount, tex.width, tex.height, name);
 			tex.stablePalette = std::move(palette);
 			tex.stableQuantShift = quantShift;
@@ -616,7 +628,10 @@ bool tryUploadPaletted(int name, DsiTexture& tex, int param, bool forceRebuild)
 				tex.width, tex.height, (unsigned)colorCount, name);
 			return false;
 		}
-		MC_LOG_WARN("dsi", "palette overflow at shift=%d: %dx%d texture exceeds 255 distinct opaque colours id=%d%s\n",
+		// Info, not Warning -- see the Success branch's comment above: this
+		// is one expected step of a bounded, self-resolving retry, not a
+		// failure worth forcing an immediate SD-card log commit for.
+		MC_LOG_INFO("dsi", "palette overflow at shift=%d: %dx%d texture exceeds 255 distinct opaque colours id=%d%s\n",
 			quantShift, tex.width, tex.height, name, quantShift < 4 ? "; retrying with coarser colour quantization" : "");
 	}
 	return false; // Unreachable in practice: shift 4 always fits (at most 8 colours).

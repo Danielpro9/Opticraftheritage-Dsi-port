@@ -117,6 +117,26 @@
 #undef  PLATFORM_ENTITY_AI_FAR_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_AI_FAR_RADIUS_BLOCKS     20.0f
 
+// Same class of gap as the AI radii just above, found the same way (checked
+// every PLATFORM_* distance this fork inherits from PS2 unmodified against
+// DSi's own much smaller world): RenderGlobal.cpp's entity distance cull
+// (PLATFORM_LIMIT_ENTITY_RENDER_DISTANCE, already on) was still using PS2's
+// own PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS=20.0f verbatim -- LARGER than
+// DSi's own fog-matched terrain cutoff (PLATFORM_VISIBLE_CHUNK_RADIUS*16 =
+// 16 blocks, dsiSectionBeyondFog()'s own cull distance above), so a mob
+// between 16 and 20 blocks out paid full render cost (3D model, texture,
+// animation) in a band DSi's own terrain was already not drawing past.
+// EntityLiving::shouldRunEntityDecisionAI()'s PLATFORM_ENTITY_PUSH_COLLISION_
+// RADIUS_BLOCKS has the identical shape of problem: PS2's 24.0f, also
+// unmodified, also larger than DSi's loaded-chunk footprint has any business
+// reaching. Halved for both, the same ratio -- and the same "derived from
+// PS2's own ratio against its radii, not a frame-time measurement" caveat --
+// as the AI radii immediately above, not a fresh rationale per value.
+#undef  PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS
+#define PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS     10.0f
+#undef  PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS
+#define PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS 12.0f
+
 // Eviction rate: reused from PS2 as-is. These bound how many chunks unload
 // (write to SD + free) per tick, not how much RAM the cache holds, so they do
 // not scale with the smaller radius above -- they exist to keep a save-to-SD

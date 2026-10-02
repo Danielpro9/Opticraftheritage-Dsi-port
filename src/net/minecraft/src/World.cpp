@@ -4398,7 +4398,26 @@ bool World::updatingLighting()
             // protocol: the per-frame caller comes back next frame and the
             // preload drain (Minecraft::preloadWorld) simply re-enters and
             // starts a fresh budget until the queue is empty.
-            if (PLATFORM_LIGHTING_BUDGET_US > 0 && !interactiveBurst)
+            //
+            // interactiveBurst no longer exempts this check (it used to read
+            // `&& !interactiveBurst` here). That exemption let a placed torch
+            // or a dug block's lighting flood run to completion in one call
+            // with NO wall-clock bound at all -- the raised job count
+            // (PLATFORM_LIGHTING_INTERACTIVE_BURST) above is a count, not a
+            // time limit, and one MetadataChunkBlock job is a flood fill over
+            // a box whose real cost varies by more than an order of magnitude
+            // with what it actually touches. An ordinary interactive edit
+            // next to an open-area skylight column can make a "short" queue
+            // surprisingly expensive, with nothing here to stop it short of
+            // the whole queue draining -- a single-frame stall with no
+            // bound, on top of this platform's own CPU already being this
+            // engine's weakest. Reusing PLATFORM_LIGHTING_BUDGET_US (the same
+            // bound streaming lighting already respects) instead of a new
+            // distinct interactive value keeps this a pure bug fix: every
+            // platform just gets the SAME existing budget enforced on BOTH
+            // paths instead of only one, no new tuning surface, no platform-
+            // specific values to add anywhere.
+            if (PLATFORM_LIGHTING_BUDGET_US > 0)
             {
                 const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
                 if (nowUs > budgetStartUs &&

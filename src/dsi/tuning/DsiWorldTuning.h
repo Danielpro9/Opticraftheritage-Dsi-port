@@ -456,6 +456,24 @@
 #undef  PLATFORM_CHUNK_BUILD_STEP_US
 #define PLATFORM_CHUNK_BUILD_STEP_US               3000
 
+// The other half of the same real-hardware finding above: upstream also
+// tightened PS2_CHUNK_BUILD_BUDGET_MS, the shared PER-FRAME ceiling on total
+// mesh-build time across however many dsiBuildRendererStep() calls
+// RenderGlobal::updateRenderers() makes that frame (checked between calls,
+// not inside one -- PLATFORM_CHUNK_BUILD_STEP_US above is the per-call
+// bound), from 6 to 4, citing the same open-water profiling run. DSi was
+// still inheriting the pre-fix 6 wholesale (this file's own banner
+// originally left every render/mesh-timing knob on the desktop/PS2 default
+// "until real frame-time measurements exist" -- several now do, this file's
+// own growing set of real-hardware-cited fixes above among them). 3, not
+// matching PS2's new 4, for the same weaker-ARM9 reasoning as every other
+// unmeasured knob here -- but not lower: PLATFORM_CHUNK_BUILD_STEP_US above
+// already needs up to 3ms for one call's own sub-budget, and a per-frame
+// ceiling below what a single call is allowed to spend would leave calls
+// unable to use their own granted time.
+#undef  PLATFORM_CHUNK_BUILD_BUDGET_MS
+#define PLATFORM_CHUNK_BUILD_BUDGET_MS              3
+
 // Real-hardware evidence (two debug.log comparisons, one from before a round
 // of GUI/render caching work and one from after -- both showing the same
 // pattern, so this isn't something that round introduced): memtrend's

@@ -116,6 +116,34 @@ inline void applyPs2LegacyAtmosphereRgb(Minecraft *mc, float &red, float &green,
 	(void)blue;
 #endif
 }
+
+#if PLATFORM_DSI
+// Ported from upstream OptiCraft Heritage Edition's PS2 fix (its own
+// ps2SectionBeyondFog, same shape, independently reconfirmed here rather than
+// assumed): true when every point of this section's AABB is farther from the
+// eye than `distance` -- the standard "distance from a point to the nearest
+// point of a box" test (0 on each axis once the eye's coordinate falls inside
+// that axis's span, the signed gap outside it otherwise), compared against
+// the squared distance to avoid a sqrt per section per frame.
+inline bool dsiSectionBeyondFog(WorldRenderer *renderer,
+	float eyeX, float eyeY, float eyeZ, float distance)
+{
+	if (renderer == nullptr)
+		return false;
+
+	const float minX = static_cast<float>(renderer->posX);
+	const float minY = static_cast<float>(renderer->posY);
+	const float minZ = static_cast<float>(renderer->posZ);
+	const float maxX = minX + static_cast<float>(renderer->sizeWidth);
+	const float maxY = minY + static_cast<float>(renderer->sizeHeight);
+	const float maxZ = minZ + static_cast<float>(renderer->sizeDepth);
+
+	const float dx = eyeX < minX ? minX - eyeX : (eyeX > maxX ? eyeX - maxX : 0.0f);
+	const float dy = eyeY < minY ? minY - eyeY : (eyeY > maxY ? eyeY - maxY : 0.0f);
+	const float dz = eyeZ < minZ ? minZ - eyeZ : (eyeZ > maxZ ? eyeZ - maxZ : 0.0f);
+	return dx * dx + dy * dy + dz * dz > distance * distance;
+}
+#endif
 }
 
 RenderGlobal::RenderGlobal(Minecraft *minecraft, RenderEngine *renderengine)
@@ -1418,6 +1446,40 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 	const bool useOcclusion = false;
 #endif
 
+#if PLATFORM_DSI
+	// Ported from upstream's PS2 fix (see dsiSectionBeyondFog()'s own comment):
+	// EntityRenderer clamps normal linear fog to the loaded edge, so a
+	// section whose entire AABB lies beyond that edge is already fully
+	// fogged out -- submitting its geometry cannot change the final image.
+	// Scoped to the general case only (DSi has no PS2_UNDERWATER_TRANSLUCENT_
+	// CULL_DISTANCE-equivalent underwater-specific cull ported, and doesn't
+	// need one here: being underwater already implies isFogOff() is false
+	// and a short PLATFORM_VISIBLE_CHUNK_RADIUS*16 distance, so this same
+	// branch already culls aggressively there too). Checked for both passes
+	// (k==0 opaque, k==1 translucent) since an uncapped geometry cost is this
+	// platform's own established bottleneck regardless of which pass pays it.
+	bool dsiCullTerrainByFog = false;
+	float dsiTerrainCullDistance = 0.0f;
+	float dsiFogEyeX = 0.0f;
+	float dsiFogEyeY = 0.0f;
+	float dsiFogEyeZ = 0.0f;
+	if ((k == 0 || k == 1) && mc != nullptr && mc->renderViewEntity != nullptr &&
+		mc->theWorld != nullptr && mc->theWorld->worldProvider != nullptr &&
+		!mc->theWorld->worldProvider->isNether && !Config::isFogOff())
+	{
+		EntityLiving *dsiFogViewEntity = mc->renderViewEntity;
+		dsiCullTerrainByFog = true;
+		dsiTerrainCullDistance = static_cast<float>(PLATFORM_VISIBLE_CHUNK_RADIUS * 16);
+		dsiFogEyeX = static_cast<float>(dsiFogViewEntity->lastTickPosX +
+			(dsiFogViewEntity->posX - dsiFogViewEntity->lastTickPosX) * d);
+		dsiFogEyeY = static_cast<float>(dsiFogViewEntity->lastTickPosY +
+			(dsiFogViewEntity->posY - dsiFogViewEntity->lastTickPosY) * d +
+			static_cast<double>(dsiFogViewEntity->getEyeHeight()));
+		dsiFogEyeZ = static_cast<float>(dsiFogViewEntity->lastTickPosZ +
+			(dsiFogViewEntity->posZ - dsiFogViewEntity->lastTickPosZ) * d);
+	}
+#endif
+
 	int_t l = 0;
 	for (int_t i1 = i; i1 < j; i1++)
 	{
@@ -1453,6 +1515,12 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 		if (sortedRenderer->skipRenderPass(k) || !sortedRenderer->isInFrustum || cpuOccluded ||
 			(useOcclusion && !sortedRenderer->isVisible))
 			continue;
+
+#if PLATFORM_DSI
+		if (dsiCullTerrainByFog &&
+			dsiSectionBeyondFog(sortedRenderer, dsiFogEyeX, dsiFogEyeY, dsiFogEyeZ, dsiTerrainCullDistance))
+			continue;
+#endif
 
 #if PLATFORM_PS2 || defined(WII_PLATFORM) || defined(DSI_PLATFORM)
 		// Native console terrain uses the renderer itself as the draw contract.

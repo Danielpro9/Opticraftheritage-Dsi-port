@@ -522,17 +522,53 @@ bool Config::isCustomColors()
 
 bool Config::isConnectedTextures()
 {
+#if PLATFORM_DSI
+	// Hard off regardless of gameSettings->ofConnectedTextures: WorldRendererDsi.cpp's
+	// dsiAllowGreedyMesh gates the whole greedy-mesh pass on
+	// !isConnectedTextures() (connected textures vary a block's texture per
+	// neighbour, which the greedy pass's one-texture-per-merged-run FaceKey
+	// cannot represent), and ofConnectedTextures is a value GameSettingsPersistence.cpp
+	// loads straight from options.txt on the SD card -- real-hardware evidence
+	// (a debug.log with greedyQuads=/greedyFaces= stuck at 0 across 400+
+	// section rebuilds) confirmed a leftover options.txt from before this
+	// platform's connected-textures default was fixed (platformGameSettings
+	// DefaultConnectedTextures(), GameSettingsBackend_DSI.cpp) had silently
+	// disabled greedy meshing for an entire session with no way for the
+	// player to know why performance looked worse than expected. The default
+	// fix alone does not protect against this: a save made during the buggy
+	// window, or any future manual toggle, persists it indefinitely. Forcing
+	// this false here instead of just at the default makes that silent loss
+	// of this platform's single largest terrain optimisation impossible,
+	// independent of options.txt's contents. The in-game Connected Textures
+	// toggle still exists and still saves whatever the player sets it to
+	// (GameSettings.cpp/GameSettingsPersistence.cpp are untouched) -- it is
+	// a visible no-op on DSi rather than hidden, same tradeoff this file
+	// already accepts elsewhere for platform-specific feature gates.
+	return false;
+#else
 	return gameSettings != nullptr && gameSettings->ofConnectedTextures != 3;
+#endif
 }
 
 bool Config::isConnectedTexturesFancy()
 {
+#if PLATFORM_DSI
+	return false;
+#else
 	return gameSettings != nullptr && gameSettings->ofConnectedTextures == 2;
+#endif
 }
 
 bool Config::isNaturalTextures()
 {
+#if PLATFORM_DSI
+	// Same reasoning as isConnectedTextures() above -- also gates
+	// dsiAllowGreedyMesh, also loaded straight from a possibly-stale
+	// options.txt, forced off here for the same reason.
+	return false;
+#else
 	return gameSettings != nullptr && gameSettings->ofNaturalTextures;
+#endif
 }
 
 bool Config::isTimeDayOnly()

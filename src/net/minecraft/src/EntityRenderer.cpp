@@ -421,10 +421,10 @@ void EntityRenderer::updateLightmap()
     const float daylight = world->func_35464_b(1.0f);
     for (int_t i = 0; i < 256; ++i)
     {
-        float sky = world->worldProvider->lightBrightnessTable[i / 16] * (daylight * 0.95f + 0.05f);
-        float block = world->worldProvider->lightBrightnessTable[i % 16] * (torchFlickerX * 0.1f + 1.5f);
+        float sky = world->worldProvider->lightBrightnessTable[i >> 4] * (daylight * 0.95f + 0.05f);
+        float block = world->worldProvider->lightBrightnessTable[i & 15] * (torchFlickerX * 0.1f + 1.5f);
         if (world->field_27172_i > 0)
-            sky = world->worldProvider->lightBrightnessTable[i / 16];
+            sky = world->worldProvider->lightBrightnessTable[i >> 4];
 
         float redSky = sky * (daylight * 0.65f + 0.35f);
         float greenSky = redSky;

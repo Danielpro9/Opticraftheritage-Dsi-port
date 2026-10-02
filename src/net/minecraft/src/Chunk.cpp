@@ -1830,9 +1830,9 @@ void Chunk::enqueueRelightChecks()
 	{
 		if (queuedLightChecks >= 4096)
 			return;
-		const int_t section = queuedLightChecks % 16;
-		const int_t localX = queuedLightChecks / 16 % 16;
-		const int_t localZ = queuedLightChecks / 256;
+		const int_t section = queuedLightChecks & 15;
+		const int_t localX = (queuedLightChecks >> 4) & 15;
+		const int_t localZ = queuedLightChecks >> 8;
 		++queuedLightChecks;
 		const int_t worldX = JavaArithmetic::intAdd(JavaArithmetic::intShl(xPosition, 4), localX);
 		const int_t worldZ = JavaArithmetic::intAdd(JavaArithmetic::intShl(zPosition, 4), localZ);

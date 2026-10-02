@@ -924,6 +924,41 @@ int World::getBlockId(int x, int y, int z)
     return getChunkFromChunkCoords(JavaArithmetic::intShr(x, 4), JavaArithmetic::intShr(z, 4))->getBlockID(x & 0xf, y, z & 0xf);
 }
 
+int_t World::getBlockIdFast(ChunkLookupCache &cache, int_t x, int_t y, int_t z)
+{
+    if (x < -30000000 || z < -30000000 || x >= 30000000 || z >= 30000000)
+        return 0;
+    if (y < 0 || y >= WorldHeight::HEIGHT)
+        return 0;
+
+    // Both redirects mirror getBlockId() exactly, including re-checking them
+    // on every call -- see this function's own header comment on why neither
+    // is safe to fold into the cache below.
+    if (chunkLocalDecoration.isActive())
+        return chunkLocalDecoration.getBlockId(x, y, z);
+#if PLATFORM_POPULATION_BLOCK_WRITER
+    int_t populationBlockId = 0;
+    if (populationRegionAccessor.tryGetBlockId(x, y, z, populationBlockId))
+    {
+        platformProfilePopulationAccess(PlatformPopulationAccessKind::BlockRead, true);
+        return populationBlockId;
+    }
+#endif
+    if (populationFastPathActive)
+        platformProfilePopulationAccess(PlatformPopulationAccessKind::BlockRead, false);
+
+    const int_t wantedChunkX = JavaArithmetic::intShr(x, 4);
+    const int_t wantedChunkZ = JavaArithmetic::intShr(z, 4);
+    if (!cache.has || cache.chunkX != wantedChunkX || cache.chunkZ != wantedChunkZ)
+    {
+        cache.chunkX = wantedChunkX;
+        cache.chunkZ = wantedChunkZ;
+        cache.chunk = getChunkFromChunkCoords(wantedChunkX, wantedChunkZ);
+        cache.has = true;
+    }
+    return cache.chunk != nullptr ? cache.chunk->getBlockID(x & 0xf, y, z & 0xf) : 0;
+}
+
 int_t World::getBlockLightOpacity(int_t x, int_t y, int_t z)
 {
     if (x < -30000000 || z < -30000000 || x >= 30000000 || z >= 30000000 ||

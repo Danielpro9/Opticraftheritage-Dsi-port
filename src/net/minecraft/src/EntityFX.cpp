@@ -124,12 +124,19 @@ namespace
 // True when the point lies inside the collision box of the block at that
 // position. Particles are 0.2 wide, so one point per axis stands in for the
 // AABB sweep Entity::moveEntity performs.
-bool particleBlockedAt(World *world, double x, double y, double z)
+//
+// `cache` is one call's worth of World::ChunkLookupCache: moveEntity()'s own
+// up-to-three probes below almost always land in the same chunk, so sharing
+// it across them (via getBlockIdFast() instead of plain getBlockId()) skips
+// re-resolving that chunk from its coordinates on the second and third probe
+// -- same idea as RenderEngine.h's CachedTextureId, applied to a chunk lookup
+// instead of a texture id.
+bool particleBlockedAt(World *world, World::ChunkLookupCache &cache, double x, double y, double z)
 {
 	const int_t blockX = MathHelper::floor_double(x);
 	const int_t blockY = MathHelper::floor_double(y);
 	const int_t blockZ = MathHelper::floor_double(z);
-	const int_t blockId = world->getBlockId(blockX, blockY, blockZ);
+	const int_t blockId = world->getBlockIdFast(cache, blockX, blockY, blockZ);
 	if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
 		return false;
 	Block *block = Block::blocksList[blockId];
@@ -159,11 +166,13 @@ void EntityFX::moveEntity(double d, double d1, double d2)
 	const double top = boundingBox->maxY;
 	const double midY = (bottom + top) * 0.5;
 
+	World::ChunkLookupCache chunkCache;
+
 	bool blockedY = false;
 	if (d1 != 0.0)
 	{
 		const double probeY = d1 < 0.0 ? bottom + d1 : top + d1;
-		blockedY = particleBlockedAt(worldObj, posX, probeY, posZ);
+		blockedY = particleBlockedAt(worldObj, chunkCache, posX, probeY, posZ);
 	}
 	onGround = blockedY && d1 < 0.0;
 	if (blockedY)
@@ -173,7 +182,7 @@ void EntityFX::moveEntity(double d, double d1, double d2)
 	if (d != 0.0)
 	{
 		const double probeX = posX + d + (d < 0.0 ? -halfWidth : halfWidth);
-		blockedX = particleBlockedAt(worldObj, probeX, midY + d1, posZ);
+		blockedX = particleBlockedAt(worldObj, chunkCache, probeX, midY + d1, posZ);
 		if (blockedX)
 			d = 0.0;
 	}
@@ -182,7 +191,7 @@ void EntityFX::moveEntity(double d, double d1, double d2)
 	if (d2 != 0.0)
 	{
 		const double probeZ = posZ + d2 + (d2 < 0.0 ? -halfWidth : halfWidth);
-		blockedZ = particleBlockedAt(worldObj, posX + d, midY + d1, probeZ);
+		blockedZ = particleBlockedAt(worldObj, chunkCache, posX + d, midY + d1, probeZ);
 		if (blockedZ)
 			d2 = 0.0;
 	}

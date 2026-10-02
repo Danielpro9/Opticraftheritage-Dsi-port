@@ -176,6 +176,27 @@ public:
 	{
 		chunkLocalDecoration.setStructureAvoidanceEnabled(enabled);
 	}
+	// Caller-held chunk memo for getBlockIdFast() below -- a handful of nearby
+	// lookups (the same shape EntityFX.cpp's particle collision probes have)
+	// almost always land in one chunk, so repeated calls through one of these
+	// skip re-resolving it from chunk coordinates every time. Zero-initialised
+	// state (has=false) always takes the first lookup's slow path correctly.
+	struct ChunkLookupCache
+	{
+		Chunk *chunk = nullptr;
+		int_t chunkX = 0;
+		int_t chunkZ = 0;
+		bool has = false;
+	};
+	// Same block id getBlockId(x,y,z) returns -- same bounds check, same
+	// chunkLocalDecoration/populationRegionAccessor redirects, same vanilla
+	// semantics -- but the final getChunkFromChunkCoords()->getBlockID() step
+	// (the only part safe to cache: the two redirects above are keyed on
+	// generation-time state the chunk coordinate alone cannot predict, so
+	// they are re-checked on every call, never skipped) reuses `cache`'s
+	// chunk pointer across calls that land in the same chunk instead of
+	// resolving it fresh every time.
+	int_t getBlockIdFast(ChunkLookupCache &cache, int_t x, int_t y, int_t z);
 	// True while a render-dirty mark is being issued because a light value
 	// changed, as opposed to a block change. Renderers can then coalesce the
 	// mark into an active build instead of restarting it; see

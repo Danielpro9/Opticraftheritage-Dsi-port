@@ -374,6 +374,26 @@
 // at 2/tick, and did it actually help) rather than treating 2 as settled.
 #define DSI_RAIN_SPLASH_PARTICLES_PER_TICK       2
 
+// The other half of that same upstream commit (6456969, "perf(ps2) tighten
+// world particle budget") that the comment above never ported: besides the
+// rain-splash rate it also cut PS2_MAX_PARTICLES_PER_LAYER from 256 to 128
+// (EffectRenderer.cpp's hard cap on how many particles -- block-break smoke,
+// splashes, bubbles, everything in EffectRenderer's own layers -- can exist
+// at once before new ones stop spawning), citing real PS2 hardware evidence
+// of a saturated particle workload costing 3-4 ms/tick and pushing its GS
+// queue past 80% even once chunk rebuilding had stopped. Unlike the
+// rain-splash constant, PLATFORM_MAX_PARTICLES_PER_LAYER already is read
+// through the generic PLATFORM_ table (EffectRenderer.cpp), and DSi was
+// still inheriting PS2's PRE-fix 256 wholesale (PlatformGameTuning.h's
+// PLATFORM_PS2||PLATFORM_DSI alias block, unconditionally) -- this was
+// simply missed when the rain-splash half was ported, not a deliberate
+// choice to keep the looser cap. Matching PS2's own now-tightened value
+// here, same "DSi's ARM9 has no FPU at all, extrapolating from PS2's own
+// measurement on stronger hardware" reasoning as DSI_RAIN_SPLASH_PARTICLES_
+// PER_TICK above -- flag for the same real-hardware re-confirmation.
+#undef  PLATFORM_MAX_PARTICLES_PER_LAYER
+#define PLATFORM_MAX_PARTICLES_PER_LAYER         128
+
 // Render::renderEntityOnFire() draws a stack of heavily overlapping fire
 // billboards -- vanilla's 0.45 step produces about five layers per burning
 // mob. Same reasoning and same values as PS2's fix: three broader-spaced
@@ -402,6 +422,39 @@
 // PER_STEP errs conservative until a real per-step timing measurement can
 // size it properly. Revisit together with that budget once one exists.
 #define DSI_MESH_REPACK_VERTICES_PER_STEP         256
+
+// The repack spike above and the greedy-mesh regression DSI_GREEDY_MESH_
+// RUNTIME_ENABLED's own comment describes both trace back to the same root
+// cause: PLATFORM_CHUNK_BUILD_STEP_US, the ONE generic elapsed-time check
+// dsiBuildRendererStep() already has wired in (its per-block loop's own
+// `if ((processed & 15) == 0 && PLATFORM_CHUNK_BUILD_STEP_US > 0) { ... break
+// ...}`, WorldRendererDsi.cpp), is 0 here -- inherited from PS2 unmodified --
+// which makes that check a permanent no-op. Both regressions needed their own
+// specific, narrowly-targeted budget (DSI_MESH_REPACK_VERTICES_PER_STEP
+// above, DSI_GREEDY_BATCHES_PER_CALL) because the one mechanism meant to
+// catch an overlong call generically was never actually doing anything.
+//
+// Upstream has since enabled this same budget for PS2 itself (PS2_CHUNK_
+// BUILD_STEP_US, 0 -> 4000, PS2_CHUNK_BUILD_TIME_CHECK_BLOCKS 32): a
+// real-hardware log walking around open water showed the build phase
+// averaging 6-10 ms/frame but individual chunk-build samples still reaching
+// 22-27 ms, coinciding with a 20-25 FPS oscillation -- on the EE, which
+// unlike DSi's ARM9 has a real FPU. Not ported to this fork's own
+// Ps2MeshTuning.h (PS2 isn't this fork's target, same reasoning as every
+// other upstream PS2 commit this file cites); only the DSi-relevant value
+// below.
+//
+// This is a GENERIC safety net, not a replacement for the two specific
+// fixes above: unlike those, it catches any call that overruns for ANY
+// reason, including ones not yet profiled. 3000us (3ms, tighter than PS2's
+// 4ms for the same weaker-CPU reasoning as every other unmeasured knob in
+// this file) with DSi's own existing 16-block check granularity (finer than
+// PS2's new 32-block one, so no PLATFORM_CHUNK_BUILD_TIME_CHECK_BLOCKS
+// override is needed here) -- a first estimate, flagged like every other
+// knob in this file for real-hardware re-measurement once a frame-time log
+// exists to size it against directly.
+#undef  PLATFORM_CHUNK_BUILD_STEP_US
+#define PLATFORM_CHUNK_BUILD_STEP_US               3000
 
 // Real-hardware evidence (two debug.log comparisons, one from before a round
 // of GUI/render caching work and one from after -- both showing the same

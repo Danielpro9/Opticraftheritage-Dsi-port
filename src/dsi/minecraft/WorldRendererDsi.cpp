@@ -96,6 +96,7 @@
 #include "net/minecraft/src/Tessellator.h"
 #include "net/minecraft/src/Chunk.h"
 #include "net/minecraft/src/ChunkCache.h"
+#include "net/minecraft/src/ExtendedBlockStorage.h"
 #include "net/minecraft/src/TileEntity.h"
 #include "net/minecraft/src/TileEntityRenderer.h"
 #include "net/minecraft/src/Config.h"
@@ -477,67 +478,112 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 		}
 		else
 #endif
-		while (dsiBuildCursor < totalBlocks && processed < blockBudget)
 		{
-			const int_t cursor = dsiBuildCursor++;
-			const int_t lx = cursor % sizeWidth;
-			const int_t yz = cursor / sizeWidth;
-			const int_t lz = yz % sizeDepth;
-			const int_t ly = yz / sizeDepth;
-			const int_t x = x0 + lx;
-			const int_t y = y0 + ly;
-			const int_t z = z0 + lz;
-			++processed;
-
-			const int_t id = chunkcache.getBlockId(x, y, z);
-			if (id > 0)
+			// Fast reject for a section with no blocks at all. Every position
+			// the loop below would visit calls chunkcache.getBlockId() and,
+			// for a fully-air section, always finds id<=0 -- a no-op per the
+			// `if (id > 0)` guard a few lines down -- so the outcome is
+			// already identical to running the loop; this only reaches that
+			// same outcome without paying for 4096 chunk-cache lookups per
+			// pass. blockRefCount (ExtendedBlockStorage::getIsEmpty(), also
+			// how Chunk's own random-tick scan already skips empty sections,
+			// see World.cpp) is already maintained on every block set/clear,
+			// so this is a cheap existing counter, not new bookkeeping.
+			//
+			// Pass 1 is not checked here: it only ever starts at all when
+			// some pass-0 block already set dsiBuildHasPass1 above (see the
+			// bail a few lines up this same while(dsiBuildPass<2) loop), which
+			// by construction means this section is not empty by the time
+			// pass 1 runs -- so the check would never fire there anyway.
+			//
+			// processed must still advance by the full skipped span, not just
+			// a token amount: dsiStepDidWork (lastTerrainBuildStepDidWork(),
+			// `processed > 0`) only needs it to be positive, but MeshBudget's
+			// caller-side accounting treats a call that reports no processed
+			// work as regression bait -- see 588e5b6's history on exactly
+			// that class of bug (the greedy branch above was once fixed for
+			// the identical mistake). An empty section still has to report
+			// a full pass worth of "work" this call so the scheduler does not
+			// misread it as spinning without progress.
+			bool sectionConfirmedEmpty = false;
+			if (dsiBuildPass == 0)
 			{
-				Block *block = Block::blocksList[id];
-				if (block == nullptr)
-					continue;
-
-#if PLATFORM_ENABLE_GREEDY_MESH
-				// Already emitted by the greedy pass above for the opaque pass.
-				if (dsiAllowGreedyMesh && dsiBuildPass == 0 && renderTerrainIsGreedyCube(block))
-					continue;
-#endif
-
-				if (dsiBuildPass == 0 && Block::isBlockContainer[id])
-				{
-					TileEntity *te = chunkcache.getBlockTileEntity(x, y, z);
-					if (te != nullptr && TileEntityRenderer::instance.hasSpecialRenderer(te) &&
-						std::find(dsiBuildTileEntityRenderers.begin(), dsiBuildTileEntityRenderers.end(), te) == dsiBuildTileEntityRenderers.end())
-						dsiBuildTileEntityRenderers.push_back(te);
-				}
-
-				const int_t blockPass = block->getRenderBlockPass();
-				if (dsiBuildPass == 0 && blockPass != 0)
-					dsiBuildHasPass1 = true;
-				if (blockPass != dsiBuildPass)
-					continue;
-
-#if PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
-				// Reaches here whenever the greedy pass didn't already claim this
-				// block above -- either dsiAllowGreedyMesh is off this build
-				// (connected/natural textures, or the kill switch), or it is a
-				// simpleOpaqueCube block the greedy pass itself excludes (grass,
-				// for its side-tint path). Either way a fully buried instance is
-				// exactly the same wasted tessellate-six-invisible-faces work the
-				// greedy pass's own per-face neighbour check already avoids for
-				// its own blocks, so give this one the same cheap reject.
-				if (dsiBuildPass == 0 && dsiGetBlockRenderInfo(id).simpleOpaqueCube &&
-					dsiFullyEnclosedOpaqueCube(chunkcache, x, y, z))
-					continue;
-#endif
-
-				stepDrew |= renderblocks.renderBlockByRenderType(block, x, y, z);
+				Chunk *selfChunk = worldObj->getChunkFromChunkCoords(
+					JavaArithmetic::intShr(x0, 4), JavaArithmetic::intShr(z0, 4));
+				const ExtendedBlockStorage *selfSection = selfChunk != nullptr
+					? selfChunk->getBlockStorage(JavaArithmetic::intShr(y0, 4))
+					: nullptr;
+				sectionConfirmedEmpty = selfSection == nullptr || selfSection->getIsEmpty();
 			}
 
-			if ((processed & 15) == 0 && PLATFORM_CHUNK_BUILD_STEP_US > 0)
+			if (sectionConfirmedEmpty)
 			{
-				const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
-				if (nowUs > stepStartUs && nowUs - stepStartUs >= (uint64_t)PLATFORM_CHUNK_BUILD_STEP_US)
-					break;
+				processed += totalBlocks - dsiBuildCursor;
+				dsiBuildCursor = totalBlocks;
+			}
+			else
+			while (dsiBuildCursor < totalBlocks && processed < blockBudget)
+			{
+				const int_t cursor = dsiBuildCursor++;
+				const int_t lx = cursor % sizeWidth;
+				const int_t yz = cursor / sizeWidth;
+				const int_t lz = yz % sizeDepth;
+				const int_t ly = yz / sizeDepth;
+				const int_t x = x0 + lx;
+				const int_t y = y0 + ly;
+				const int_t z = z0 + lz;
+				++processed;
+
+				const int_t id = chunkcache.getBlockId(x, y, z);
+				if (id > 0)
+				{
+					Block *block = Block::blocksList[id];
+					if (block == nullptr)
+						continue;
+
+#if PLATFORM_ENABLE_GREEDY_MESH
+					// Already emitted by the greedy pass above for the opaque pass.
+					if (dsiAllowGreedyMesh && dsiBuildPass == 0 && renderTerrainIsGreedyCube(block))
+						continue;
+#endif
+
+					if (dsiBuildPass == 0 && Block::isBlockContainer[id])
+					{
+						TileEntity *te = chunkcache.getBlockTileEntity(x, y, z);
+						if (te != nullptr && TileEntityRenderer::instance.hasSpecialRenderer(te) &&
+							std::find(dsiBuildTileEntityRenderers.begin(), dsiBuildTileEntityRenderers.end(), te) == dsiBuildTileEntityRenderers.end())
+							dsiBuildTileEntityRenderers.push_back(te);
+					}
+
+					const int_t blockPass = block->getRenderBlockPass();
+					if (dsiBuildPass == 0 && blockPass != 0)
+						dsiBuildHasPass1 = true;
+					if (blockPass != dsiBuildPass)
+						continue;
+
+#if PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
+					// Reaches here whenever the greedy pass didn't already claim this
+					// block above -- either dsiAllowGreedyMesh is off this build
+					// (connected/natural textures, or the kill switch), or it is a
+					// simpleOpaqueCube block the greedy pass itself excludes (grass,
+					// for its side-tint path). Either way a fully buried instance is
+					// exactly the same wasted tessellate-six-invisible-faces work the
+					// greedy pass's own per-face neighbour check already avoids for
+					// its own blocks, so give this one the same cheap reject.
+					if (dsiBuildPass == 0 && dsiGetBlockRenderInfo(id).simpleOpaqueCube &&
+						dsiFullyEnclosedOpaqueCube(chunkcache, x, y, z))
+						continue;
+#endif
+
+					stepDrew |= renderblocks.renderBlockByRenderType(block, x, y, z);
+				}
+
+				if ((processed & 15) == 0 && PLATFORM_CHUNK_BUILD_STEP_US > 0)
+				{
+					const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
+					if (nowUs > stepStartUs && nowUs - stepStartUs >= (uint64_t)PLATFORM_CHUNK_BUILD_STEP_US)
+						break;
+				}
 			}
 		}
 

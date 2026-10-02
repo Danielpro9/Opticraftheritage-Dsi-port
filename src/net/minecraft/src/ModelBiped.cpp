@@ -2,6 +2,7 @@
 
 #include "MathHelper.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelBiped::~ModelBiped()
 {
@@ -62,6 +63,19 @@ ModelBiped::ModelBiped(float f, float f1)
 void ModelBiped::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// Every part below is a ModelBox (ModelRenderer::addBox), and ModelBox
+	// always calls flipFace() on a mirrored box's quads (ModelBox.cpp), so
+	// winding stays consistent whether or not a part is mirrored. That makes
+	// it safe to cull each closed box's invisible back half here, even
+	// though RenderLiving disables face culling globally before calling into
+	// any model (for legacy models that aren't this consistent). This is the
+	// player, zombie, skeleton and enderman body -- some of the most common
+	// models on screen -- so halving their submitted vertex count is a real
+	// win on this platform's vertex-bound renderer.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	bipedHead->render(f5);
 	bipedBody->render(f5);
 	bipedRightArm->render(f5);
@@ -69,6 +83,9 @@ void ModelBiped::render(float f, float f1, float f2, float f3, float f4, float f
 	bipedRightLeg->render(f5);
 	bipedLeftLeg->render(f5);
 	bipedHeadwear->render(f5);
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelBiped::setRotationAngles(float f, float f1, float f2, float f3, float f4, float f5)

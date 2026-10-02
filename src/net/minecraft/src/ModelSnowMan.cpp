@@ -2,6 +2,7 @@
 
 #include "MathHelper.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelSnowMan::ModelSnowMan()
 {
@@ -40,11 +41,20 @@ ModelSnowMan::~ModelSnowMan()
 void ModelSnowMan::render(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)
 {
     setRotationAngles(limbSwing, limbAmount, age, headYaw, headPitch, scale);
+#if PLATFORM_DSI
+    // All parts are ModelBox, which winds mirrored boxes consistently
+    // (ModelBox.cpp), so culling each box's invisible back half is safe.
+    renderCullFace(RenderFace::Back);
+    renderEnable(RenderCapability::CullFace);
+#endif
     field_40306_a->render(scale);
     field_40304_b->render(scale);
     field_40305_c->render(scale);
     field_40302_d->render(scale);
     field_40303_e->render(scale);
+#if PLATFORM_DSI
+    renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelSnowMan::setRotationAngles(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)

@@ -2,6 +2,7 @@
 
 #include "MathHelper.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelSpider::~ModelSpider()
 {
@@ -60,6 +61,12 @@ ModelSpider::ModelSpider()
 void ModelSpider::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	spiderHead->render(f5);
 	spiderNeck->render(f5);
 	spiderBody->render(f5);
@@ -71,6 +78,9 @@ void ModelSpider::render(float f, float f1, float f2, float f3, float f4, float 
 	spiderLeg6->render(f5);
 	spiderLeg7->render(f5);
 	spiderLeg8->render(f5);
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelSpider::setRotationAngles(float f, float f1, float f2, float f3, float f4, float f5)

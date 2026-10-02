@@ -2,6 +2,7 @@
 
 #include "EntityMagmaCube.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelMagmaCube::ModelMagmaCube()
 {
@@ -53,7 +54,16 @@ void ModelMagmaCube::setLivingAnimations(EntityLiving* entity, float limbSwing, 
 
 void ModelMagmaCube::render(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)
 {
+#if PLATFORM_DSI
+    // All parts are ModelBox, which winds mirrored boxes consistently
+    // (ModelBox.cpp), so culling each box's invisible back half is safe.
+    renderCullFace(RenderFace::Back);
+    renderEnable(RenderCapability::CullFace);
+#endif
     field_40344_b->render(scale);
     for (ModelRenderer* part : field_40345_a)
         part->render(scale);
+#if PLATFORM_DSI
+    renderDisable(RenderCapability::CullFace);
+#endif
 }

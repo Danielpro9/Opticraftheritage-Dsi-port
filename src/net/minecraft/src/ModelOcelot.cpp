@@ -67,6 +67,12 @@ ModelOcelot::~ModelOcelot()
 void ModelOcelot::render(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch, float scale)
 {
 	setRotationAngles(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch, scale);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	if (isChild)
 	{
 		const float childScale = 2.0f;
@@ -89,6 +95,9 @@ void ModelOcelot::render(float limbSwing, float limbSwingAmount, float ageInTick
 		tailBase->render(scale);
 		tailTip->render(scale);
 		renderPopMatrix();
+#if PLATFORM_DSI
+		renderDisable(RenderCapability::CullFace);
+#endif
 		return;
 	}
 	head->render(scale);
@@ -102,6 +111,9 @@ void ModelOcelot::render(float limbSwing, float limbSwingAmount, float ageInTick
 	backRightLeg->render(scale);
 	frontLeftLeg->render(scale);
 	frontRightLeg->render(scale);
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelOcelot::setRotationAngles(float limbSwing, float limbSwingAmount, float, float netHeadYaw, float headPitch, float)

@@ -1,6 +1,7 @@
 #include "ModelSlime.h"
 
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelSlime::~ModelSlime()
 {
@@ -38,6 +39,12 @@ void ModelSlime::setRotationAngles(float f, float f1, float f2, float f3, float 
 void ModelSlime::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	slimeBodies->render(f5);
 	if (slimeRightEye != nullptr)
 	{
@@ -45,4 +52,7 @@ void ModelSlime::render(float f, float f1, float f2, float f3, float f4, float f
 		slimeLeftEye->render(f5);
 		slimeMouth->render(f5);
 	}
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }

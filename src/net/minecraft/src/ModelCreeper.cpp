@@ -2,6 +2,7 @@
 
 #include "MathHelper.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelCreeper::~ModelCreeper()
 {
@@ -47,12 +48,21 @@ ModelCreeper::ModelCreeper(float f)
 void ModelCreeper::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	head->render(f5);
 	body->render(f5);
 	leg1->render(f5);
 	leg2->render(f5);
 	leg3->render(f5);
 	leg4->render(f5);
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelCreeper::setRotationAngles(float f, float f1, float f2, float f3, float f4, float f5)

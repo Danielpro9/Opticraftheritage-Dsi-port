@@ -4,6 +4,7 @@
 
 #include "EntityIronGolem.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 ModelIronGolem::ModelIronGolem() : ModelIronGolem(0.0f)
 {
@@ -57,12 +58,21 @@ ModelIronGolem::~ModelIronGolem()
 void ModelIronGolem::render(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)
 {
     setRotationAngles(limbSwing, limbAmount, age, headYaw, headPitch, scale);
+#if PLATFORM_DSI
+    // All parts are ModelBox, which winds mirrored boxes consistently
+    // (ModelBox.cpp), so culling each box's invisible back half is safe.
+    renderCullFace(RenderFace::Back);
+    renderEnable(RenderCapability::CullFace);
+#endif
     field_48234_a->render(scale);
     field_48232_b->render(scale);
     field_48231_e->render(scale);
     field_48229_f->render(scale);
     field_48233_c->render(scale);
     field_48230_d->render(scale);
+#if PLATFORM_DSI
+    renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelIronGolem::setRotationAngles(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)

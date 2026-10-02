@@ -41,6 +41,14 @@ ModelQuadruped::ModelQuadruped(int_t i, float f)
 void ModelQuadruped::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// Every part here is a ModelBox, always wound consistently whether or
+	// not it's mirrored (see ModelBox.cpp's flipFace() on mirrored quads),
+	// so culling each closed box's invisible back half is safe. Covers cow,
+	// pig and both sheep-model passes (wool and body).
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	if (isChild)
 	{
 		renderPushMatrix();
@@ -66,6 +74,9 @@ void ModelQuadruped::render(float f, float f1, float f2, float f3, float f4, flo
 		leg3->render(f5);
 		leg4->render(f5);
 	}
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelQuadruped::setRotationAngles(float f, float f1, float f2, float f3, float f4, float f5)

@@ -50,6 +50,12 @@ void ModelGhast::setRotationAngles(float f, float f1, float f2, float f3, float 
 void ModelGhast::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	renderPushMatrix();
 	renderTranslate(0.0f, 0.6f, 0.0f);
 	body->render(f5);
@@ -58,4 +64,7 @@ void ModelGhast::render(float f, float f1, float f2, float f3, float f4, float f
 		tentacles[i]->render(f5);
 	}
 	renderPopMatrix();
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }

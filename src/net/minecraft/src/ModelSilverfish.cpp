@@ -4,6 +4,7 @@
 
 #include "MathHelper.h"
 #include "ModelRenderer.h"
+#include "platform/RenderAPI.h"
 
 namespace
 {
@@ -58,10 +59,19 @@ ModelSilverfish::~ModelSilverfish()
 void ModelSilverfish::render(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)
 {
     setRotationAngles(limbSwing, limbAmount, age, headYaw, headPitch, scale);
+#if PLATFORM_DSI
+    // All parts are ModelBox, which winds mirrored boxes consistently
+    // (ModelBox.cpp), so culling each box's invisible back half is safe.
+    renderCullFace(RenderFace::Back);
+    renderEnable(RenderCapability::CullFace);
+#endif
     for (ModelRenderer* part : silverfishBodyParts)
         part->render(scale);
     for (ModelRenderer* wing : silverfishWings)
         wing->render(scale);
+#if PLATFORM_DSI
+    renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelSilverfish::setRotationAngles(float limbSwing, float limbAmount, float age, float headYaw, float headPitch, float scale)

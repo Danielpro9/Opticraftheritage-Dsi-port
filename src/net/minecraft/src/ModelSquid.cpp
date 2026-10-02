@@ -3,6 +3,7 @@
 
 #include "ModelRenderer.h"
 #include "platform/PlatformTuning.h"
+#include "platform/RenderAPI.h"
 
 #include <cmath>
 
@@ -61,9 +62,18 @@ void ModelSquid::setRotationAngles(float f, float f1, float f2, float f3, float 
 void ModelSquid::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	squidBody->render(f5);
 	for (int_t i = 0; i < 8; i++)
 	{
 		squidTentacles[i]->render(f5);
 	}
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }

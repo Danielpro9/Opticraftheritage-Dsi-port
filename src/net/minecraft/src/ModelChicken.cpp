@@ -48,6 +48,12 @@ ModelChicken::ModelChicken()
 void ModelChicken::render(float f, float f1, float f2, float f3, float f4, float f5)
 {
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	if (isChild)
 	{
 		renderPushMatrix();
@@ -77,6 +83,9 @@ void ModelChicken::render(float f, float f1, float f2, float f3, float f4, float
 		rightWing->render(f5);
 		leftWing->render(f5);
 	}
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelChicken::setRotationAngles(float f, float f1, float f2, float f3, float f4, float f5)

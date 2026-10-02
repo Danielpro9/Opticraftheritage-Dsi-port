@@ -60,6 +60,12 @@ void ModelWolf::render(float f, float f1, float f2, float f3, float f4, float f5
 {
 	ModelBase::render(f, f1, f2, f3, f4, f5);
 	setRotationAngles(f, f1, f2, f3, f4, f5);
+#if PLATFORM_DSI
+	// All parts are ModelBox, which winds mirrored boxes consistently
+	// (ModelBox.cpp), so culling each box's invisible back half is safe.
+	renderCullFace(RenderFace::Back);
+	renderEnable(RenderCapability::CullFace);
+#endif
 	if (isChild)
 	{
 		renderPushMatrix();
@@ -89,6 +95,9 @@ void ModelWolf::render(float f, float f1, float f2, float f3, float f4, float f5
 		wolfTail->renderWithRotation(f5);
 		wolfMane->render(f5);
 	}
+#if PLATFORM_DSI
+	renderDisable(RenderCapability::CullFace);
+#endif
 }
 
 void ModelWolf::setLivingAnimations(EntityLiving *entityliving, float f, float f1, float f2)

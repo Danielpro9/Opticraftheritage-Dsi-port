@@ -12,6 +12,7 @@ public:
 	TextureCompassFX(Minecraft *minecraft);
 
 	void onTick() override;
+	bool isAnimationEnabled() const override;
 
 private:
 	Minecraft *mc;

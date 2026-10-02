@@ -6,7 +6,10 @@
 #include "World.h"
 #include "WorldProvider.h"
 #include "RenderEngine.h"
+#include "EntityPlayerSP.h"
+#include "InventoryPlayer.h"
 #include "java/Math.h"
+#include "platform/PlatformConfig.h"
 #include <algorithm>
 #include <vector>
 
@@ -35,6 +38,20 @@ TextureWatchFX::TextureWatchFX(Minecraft *minecraft) :
 		if (dial.size() >= 256)
 			std::copy(dial.begin(), dial.begin() + 256, dialImageData);
 	}
+}
+
+bool TextureWatchFX::isAnimationEnabled() const
+{
+#if PLATFORM_DSI
+	// Same reasoning as TextureCompassFX::isAnimationEnabled() -- this redraws
+	// two 16x16 tiles (dial + hands) every single call regardless of whether
+	// the item (Item::pocketSundial, needs gold AND redstone -- later-game
+	// than the compass) has ever been owned this session.
+	return mc != nullptr && mc->thePlayer != nullptr && mc->thePlayer->inventory != nullptr &&
+		mc->thePlayer->inventory->hasItem(Item::pocketSundial->shiftedIndex);
+#else
+	return true;
+#endif
 }
 
 void TextureWatchFX::onTick()

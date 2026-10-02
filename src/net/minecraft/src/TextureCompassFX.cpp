@@ -6,10 +6,12 @@
 #include "World.h"
 #include "ChunkCoordinates.h"
 #include "EntityPlayerSP.h"
+#include "InventoryPlayer.h"
 #include "WorldProvider.h"
 #include "MathHelper.h"
 #include "RenderEngine.h"
 #include "java/Math.h"
+#include "platform/PlatformConfig.h"
 #include <algorithm>
 
 TextureCompassFX::TextureCompassFX(Minecraft *minecraft) :
@@ -32,6 +34,25 @@ TextureCompassFX::TextureCompassFX(Minecraft *minecraft) :
 					compassIconImageData[y * 16 + x] = items[(startY + y) * 256 + startX + x];
 		}
 	}
+}
+
+bool TextureCompassFX::isAnimationEnabled() const
+{
+#if PLATFORM_DSI
+	// RenderEngine::updateDynamicTextures() calls onTick() for every
+	// registered TextureFX unconditionally, every call, for as long as the
+	// game runs -- including this one, which redraws a 16x16 needle (256
+	// pixels, several sinf/cosf/atan2 calls) into the items atlas whether or
+	// not a compass has ever been picked up this session. A compass needs 4
+	// iron and a furnace before it can even exist; most of that cost is pure
+	// waste on every DSi session that hasn't reached one yet, and on no-FPU
+	// ARM9, trig is real work, not noise. hasItem() is a <=36-slot int
+	// comparison loop -- far cheaper than the computation it's gating.
+	return mc != nullptr && mc->thePlayer != nullptr && mc->thePlayer->inventory != nullptr &&
+		mc->thePlayer->inventory->hasItem(Item::compass->shiftedIndex);
+#else
+	return true;
+#endif
 }
 
 void TextureCompassFX::onTick()

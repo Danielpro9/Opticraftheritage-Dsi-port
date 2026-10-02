@@ -11,6 +11,7 @@ public:
 	TextureWatchFX(Minecraft *minecraft);
 
 	void onTick() override;
+	bool isAnimationEnabled() const override;
 
 private:
 	Minecraft *mc;

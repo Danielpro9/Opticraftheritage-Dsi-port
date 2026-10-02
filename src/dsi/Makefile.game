@@ -205,24 +205,27 @@ ASFLAGS		+= -x assembler-with-cpp $(INCLUDEFLAGS) $(DEFINES) \
 		   $(ARCH) -ffunction-sections -fdata-sections \
 		   -specs=$(SPECS)
 
-# -flto: this project's own CFLAGS/CXXFLAGS already split every function/
-# global into its own section (-ffunction-sections/-fdata-sections) so
-# --gc-sections below can drop whatever nothing references, but that pass
-# only sees one translation unit at a time -- it cannot inline a short
-# function from one .cpp into a hot call site in another, or notice a
-# function is unreachable only once every caller across the whole tree is
-# considered together. LTO defers codegen to link time with the whole
-# program visible at once, so it can do both. No source change, purely a
-# build flag -- reversible by deleting this block alone.
-# RISK, stated plainly, same spirit as every other DSi change in this file:
-# not yet confirmed on real hardware, and not even confirmed to build yet in
-# this sandbox (no local BlocksDS toolchain to test against) -- only the
-# GitHub Actions build will say whether this particular cross-compiler/
-# linker combination accepts it cleanly. If a build breaks or a real-
-# hardware regression ever traces back to this, delete this block (and the
-# matching -flto on LDFLAGS below) first before suspecting anything else
-# touched the same build.
-LTOFLAGS	:= -flto
+# LTO was tried here and reverted. The very first real-hardware build that
+# included it (debug.log build=Oct 2 2026 19:23:25) produced a silent
+# crash/hang partway through ordinary gameplay -- heap (7778/13346KB) and
+# VRAM (466/512KB) both unremarkable right up to the last logged frame, no
+# warning or error anywhere before it, log just stops. A second run of the
+# identical build shut down cleanly ("Stopping!"), so whatever this is is
+# intermittent, not a hard per-frame cost -- consistent with LTO's more
+# aggressive whole-program inlining/codegen exposing something that this
+# tree's lower-level code (bit tricks, memcpy-based type punning, the
+# quantization/palette paths) happened to get away with when every file was
+# optimized in isolation. That build was also the first to carry the
+# cursor-decomposition shift/mask change and the empty-section mesh skip,
+# but both are small, easily-reasoned, and far less likely culprits than a
+# compiler flag that changes codegen for the entire 1100+ file tree at
+# once. LTO is the single newest, least-tested, highest-blast-radius change
+# in that build, so it is the first thing to rule out -- per this project's
+# own standing rule of always reverting the riskiest change first rather
+# than guessing. Re-adding it should wait for a dedicated test build (LTO
+# alone, nothing else new) with its own real-hardware confirmation before
+# it goes back in next to anything else.
+LTOFLAGS	:=
 
 CFLAGS		+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
 		   $(ARCH) -O2 -ffunction-sections -fdata-sections $(LTOFLAGS) \

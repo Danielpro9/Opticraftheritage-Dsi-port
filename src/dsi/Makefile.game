@@ -205,8 +205,27 @@ ASFLAGS		+= -x assembler-with-cpp $(INCLUDEFLAGS) $(DEFINES) \
 		   $(ARCH) -ffunction-sections -fdata-sections \
 		   -specs=$(SPECS)
 
+# -flto: this project's own CFLAGS/CXXFLAGS already split every function/
+# global into its own section (-ffunction-sections/-fdata-sections) so
+# --gc-sections below can drop whatever nothing references, but that pass
+# only sees one translation unit at a time -- it cannot inline a short
+# function from one .cpp into a hot call site in another, or notice a
+# function is unreachable only once every caller across the whole tree is
+# considered together. LTO defers codegen to link time with the whole
+# program visible at once, so it can do both. No source change, purely a
+# build flag -- reversible by deleting this block alone.
+# RISK, stated plainly, same spirit as every other DSi change in this file:
+# not yet confirmed on real hardware, and not even confirmed to build yet in
+# this sandbox (no local BlocksDS toolchain to test against) -- only the
+# GitHub Actions build will say whether this particular cross-compiler/
+# linker combination accepts it cleanly. If a build breaks or a real-
+# hardware regression ever traces back to this, delete this block (and the
+# matching -flto on LDFLAGS below) first before suspecting anything else
+# touched the same build.
+LTOFLAGS	:= -flto
+
 CFLAGS		+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
-		   $(ARCH) -O2 -ffunction-sections -fdata-sections \
+		   $(ARCH) -O2 -ffunction-sections -fdata-sections $(LTOFLAGS) \
 		   -specs=$(SPECS)
 
 # No -fno-exceptions/-fno-rtti: unlike libnds's own build, the shared engine
@@ -215,7 +234,7 @@ CFLAGS		+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
 # them either -- see cmake/ps2.cmake, cmake/wii.cmake). See the DsiBringup
 # Makefile's own history for why this was tried and reverted.
 CXXFLAGS	+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
-		   $(ARCH) -O2 -ffunction-sections -fdata-sections \
+		   $(ARCH) -O2 -ffunction-sections -fdata-sections $(LTOFLAGS) \
 		   -std=gnu++17 \
 		   -specs=$(SPECS)
 
@@ -228,7 +247,7 @@ CXXFLAGS	+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
 # the compiled ARM9 binary in RAM, any dead code/data this strips shrinks
 # the binary and grows real available heap by the same amount -- this is
 # the missing other half of a flag pairing that's meaningless alone.
-LDFLAGS		+= $(ARCH) $(LIBDIRSFLAGS) -Wl,-Map,$(MAP) $(DEFINES) \
+LDFLAGS		+= $(ARCH) $(LIBDIRSFLAGS) -Wl,-Map,$(MAP) $(DEFINES) $(LTOFLAGS) \
 		   -Wl,--gc-sections \
 		   -Wl,--start-group $(LIBS) -Wl,--end-group -specs=$(SPECS)
 

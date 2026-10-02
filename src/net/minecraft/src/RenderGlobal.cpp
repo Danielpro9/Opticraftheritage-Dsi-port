@@ -190,31 +190,43 @@ RenderGlobal::RenderGlobal(Minecraft *minecraft, RenderEngine *renderengine)
 	const int_t i = 256 / byte1 + 2;
 	float f = 16.0f;
 
+	// skyMesh/skyMesh2 used to tile this span with a byte1-sized (64 unit)
+	// quad grid -- 13x13 = 169 quads each, captured once here but replayed
+	// (renderStaticMeshDraw()) every frame sky rendering is on. Every quad in
+	// the grid is coplanar (f is constant across the whole loop, no height
+	// variation) and gets the SAME colour: neither loop below ever calls
+	// setColorRGBA_F/setColorOpaque per cell, so every vertex takes whatever
+	// the tessellator's state already was, and the real colour is applied
+	// uniformly afterwards via renderColor3f() right before each
+	// renderStaticMeshDraw(skyMesh/skyMesh2) call site (RenderGlobal::
+	// renderSky()) -- the same "no per-vertex colour" property already
+	// relied on for skyMesh2 elsewhere (see buildCloudMesh()'s own comment).
+	// No texture either (addVertex, not addVertexWithUV). A flat, untextured,
+	// uniformly-coloured plane does not need 169 quads to look identical to
+	// one spanning the same area -- 4 vertices instead of 676 (169*4) cover
+	// the exact same ground, replayed every single frame instead of rebuilt
+	// (this is still a one-time capture; only the replay cost -- per-frame
+	// GPU vertex processing of a captured mesh's full vertex count, the same
+	// bottleneck WorldRendererDsi.cpp's own banner comment identifies for
+	// terrain -- changes). Shared with PS2/Wii (same #if above), not
+	// DSi-specific: the reasoning is platform-agnostic geometry, not a
+	// tuned budget.
+	const float lo = -(float)(byte1 * i);
+	const float hi = (float)(byte1 * i + byte1);
+
 	tessellator->startDrawingQuads();
-	for (int_t j = -byte1 * i; j <= byte1 * i; j += byte1)
-	{
-		for (int_t l = -byte1 * i; l <= byte1 * i; l += byte1)
-		{
-			tessellator->addVertex(j + 0, f, l + 0);
-			tessellator->addVertex(j + byte1, f, l + 0);
-			tessellator->addVertex(j + byte1, f, l + byte1);
-			tessellator->addVertex(j + 0, f, l + byte1);
-		}
-	}
+	tessellator->addVertex(lo, f, lo);
+	tessellator->addVertex(hi, f, lo);
+	tessellator->addVertex(hi, f, hi);
+	tessellator->addVertex(lo, f, hi);
 	tessellator->finishStaticMesh(skyMesh);
 
 	f = -16.0f;
 	tessellator->startDrawingQuads();
-	for (int_t k = -byte1 * i; k <= byte1 * i; k += byte1)
-	{
-		for (int_t l = -byte1 * i; l <= byte1 * i; l += byte1)
-		{
-			tessellator->addVertex(k + byte1, f, l + 0);
-			tessellator->addVertex(k + 0, f, l + 0);
-			tessellator->addVertex(k + 0, f, l + byte1);
-			tessellator->addVertex(k + byte1, f, l + byte1);
-		}
-	}
+	tessellator->addVertex(hi, f, lo);
+	tessellator->addVertex(lo, f, lo);
+	tessellator->addVertex(lo, f, hi);
+	tessellator->addVertex(hi, f, hi);
 	tessellator->finishStaticMesh(skyMesh2);
 
 #if PLATFORM_PS2

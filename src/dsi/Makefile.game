@@ -27,12 +27,14 @@ NAME		:= OptiCraftDsi
 # Makefile's own longer-standing note on this same requirement, sourced from
 # BlocksDS docs/internal/build_process.md section 5); Pillow/most image tools
 # only ever write 8bpp BMPs, so this one was packed by hand rather than
-# exported normally. It is an original placeholder (a simple blocky
-# grass/dirt/sky landscape, not any existing game's actual artwork) -- swap
-# it for real branding whenever art exists, same filename, same format.
-GAME_TITLE	:= OptiCraft
-GAME_SUBTITLE	:= Heritage Edition DSi
-GAME_AUTHOR	:= OptiJuegos
+# exported normally. Quantized down from a user-supplied source PNG -- swap
+# for different artwork whenever wanted, same filename, same format.
+GAME_TITLE	:= Minecraft: Heritage Edition
+GAME_SUBTITLE	:= DSi Port
+# Left blank on purpose: OptiJuegos made the original (non-DSi) project this
+# fork builds on, not this port specifically -- crediting them here as this
+# ROM's author would be misattributing someone else's separate work.
+GAME_AUTHOR	:=
 GAME_ICON	:= icon.bmp
 
 # The shared engine tree (same set as cmake/SourceSelection.cmake's

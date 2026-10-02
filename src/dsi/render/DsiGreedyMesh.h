@@ -58,4 +58,22 @@ bool dsi_greedy_mesh_face(ChunkCache& cc, int face,
 // Number of face directions dsi_greedy_mesh_face accepts.
 enum { DSI_GREEDY_FACE_COUNT = 6 };
 
+// Cumulative, process-lifetime counters for verifying on real hardware that
+// this file is actually merging faces, not just running as an expensive
+// no-op pass that happens to emit one quad per block every time (which would
+// look identical to "working" from FPS alone -- the whole point of these is
+// to not have to infer correctness from frame rate). dsiGetTotalGreedyQuads()
+// is how many quads dsi_greedy_mesh_face() has emitted in total;
+// dsiGetTotalGreedyFacesCovered() is how many individual block faces those
+// quads cover (sum of each quad's width*height). Surfaced on Minecraft.cpp's
+// memtrend line as greedyQuads=/greedyFaces=: if greedyFaces stays equal to
+// greedyQuads as both climb, every merge came out 1x1 -- the pass is running
+// but never actually merging anything, which DSI_GREEDY_MESH_RUNTIME_ENABLED
+// being 1 and dsiAllowGreedyMesh being true do not by themselves rule out
+// (a FaceKey mismatch on every single adjacent cell would produce exactly
+// that). greedyFaces noticeably larger than greedyQuads is the actual proof
+// merging is happening, not just that the code path was reached.
+unsigned long dsiGetTotalGreedyQuads();
+unsigned long dsiGetTotalGreedyFacesCovered();
+
 #endif // DSI_PLATFORM

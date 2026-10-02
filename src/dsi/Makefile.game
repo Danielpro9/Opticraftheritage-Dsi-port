@@ -22,6 +22,19 @@ ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
 
 NAME		:= OptiCraftDsi
 
+# DSi/TWiLight Menu++ home-menu banner. icon.bmp is a hand-built 32x32, 4bpp
+# (16-colour indexed) BMP -- the format ndstool's -b flag expects (see
+# Makefile's own longer-standing note on this same requirement, sourced from
+# BlocksDS docs/internal/build_process.md section 5); Pillow/most image tools
+# only ever write 8bpp BMPs, so this one was packed by hand rather than
+# exported normally. It is an original placeholder (a simple blocky
+# grass/dirt/sky landscape, not any existing game's actual artwork) -- swap
+# it for real branding whenever art exists, same filename, same format.
+GAME_TITLE	:= OptiCraft
+GAME_SUBTITLE	:= Heritage Edition DSi
+GAME_AUTHOR	:= OptiJuegos
+GAME_ICON	:= icon.bmp
+
 # The shared engine tree (same set as cmake/SourceSelection.cmake's
 # mcbeta_collect_common_sources(), minus src/external which is added below
 # separately since it sits next to, not under, these), plus this platform's
@@ -234,11 +247,11 @@ all: $(ROM)
 sources:
 	@echo "$(SOURCES_CPP)" | tr ' ' '\n'
 
-# No -b/icon/title-banner yet -- see Makefile's own note on this.
-$(ROM): $(ELF)
+$(ROM): $(ELF) $(GAME_ICON)
 	@echo "  NDSTOOL $@"
 	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
-		-7 $(ARM7ELF) -9 $(ELF)
+		-7 $(ARM7ELF) -9 $(ELF) \
+		-b $(GAME_ICON) "$(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)"
 
 $(ELF): $(OBJS)
 	@echo "  LD      $@"

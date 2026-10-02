@@ -14,6 +14,11 @@
 
 namespace
 {
+// See DsiGreedyMesh.h's own comment on dsiGetTotalGreedyQuads()/
+// dsiGetTotalGreedyFacesCovered() for why these exist and what they prove.
+unsigned long g_dsiGreedyQuadCount = 0ul;
+unsigned long g_dsiGreedyFacesCoveredCount = 0ul;
+
 struct FaceKey
 {
 	int_t texture;
@@ -145,6 +150,9 @@ static void emitQuad(int_t face, const FaceKey &key,
 	                 int_t x, int_t y, int_t z,
 	                 int_t width, int_t height)
 {
+	++g_dsiGreedyQuadCount;
+	g_dsiGreedyFacesCoveredCount += (unsigned long)(width * height);
+
 	Tessellator &t = Tessellator::instance;
 	t.setBrightness(key.brightness);
 	t.setColorOpaque((int_t)key.red, (int_t)key.green, (int_t)key.blue);
@@ -347,6 +355,16 @@ bool dsi_greedy_mesh_face(ChunkCache &cc, int face,
 	}
 
 	return emittedAny;
+}
+
+unsigned long dsiGetTotalGreedyQuads()
+{
+	return g_dsiGreedyQuadCount;
+}
+
+unsigned long dsiGetTotalGreedyFacesCovered()
+{
+	return g_dsiGreedyFacesCoveredCount;
 }
 
 #endif // DSI_PLATFORM

@@ -14,6 +14,7 @@
 #include "client/ClientProfiler.h"
 #if PLATFORM_DSI
 #include "dsi/DsiEarlyInit.h"
+#include "dsi/render/DsiGreedyMesh.h"
 #endif
 
 #include <iostream>
@@ -1968,14 +1969,23 @@ void Minecraft::runTick()
                 // that confirms the coalescing-gap hypothesis WorldRenderer.cpp's
                 // markDirty() comment and dsiGetTotalBuildRestarts()'s own
                 // comment describe -- see those for the full account.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u\n",
+                // greedyQuads=/greedyFaces= (DsiGreedyMesh.h's own comment on
+                // dsiGetTotalGreedyQuads()/dsiGetTotalGreedyFacesCovered() has
+                // the full account): proof the greedy mesher is actually
+                // merging faces, not just running. greedyFaces==greedyQuads
+                // would mean every merge came out 1x1 -- the pass runs but
+                // never merges anything; greedyFaces clearly larger than
+                // greedyQuads is the real confirmation.
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
                     (unsigned)theWorld->loadedEntityList.size(),
                     (unsigned)theWorld->loadedTileEntityList.size(),
                     dsiGetTotalRendererRebuilds(),
-                    dsiGetTotalBuildRestarts());
+                    dsiGetTotalBuildRestarts(),
+                    dsiGetTotalGreedyQuads(),
+                    dsiGetTotalGreedyFacesCovered());
 
                 // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() already
                 // proved /mob/*.png (~40 distinct skins vanilla can load across a

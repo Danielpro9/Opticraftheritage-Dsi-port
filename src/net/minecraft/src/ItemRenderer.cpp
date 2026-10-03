@@ -76,10 +76,10 @@ void ItemRenderer::renderItem(EntityLiving* entityliving, ItemStack* itemstack, 
             : cachedItemsTextureId.get(mc->renderEngine, "/gui/items.png"));
         Tessellator* tessellator = &Tessellator::instance;
         int icon = entityliving->getItemIcon(itemstack, renderPass);
-        float minU = (static_cast<float>((icon % 16) * 16) + 0.0f) / 256.0f;
-        float maxU = (static_cast<float>((icon % 16) * 16) + 15.99f) / 256.0f;
-        float minV = (static_cast<float>((icon / 16) * 16) + 0.0f) / 256.0f;
-        float maxV = (static_cast<float>((icon / 16) * 16) + 15.99f) / 256.0f;
+        float minU = (static_cast<float>((icon & 15) * 16) + 0.0f) / 256.0f;
+        float maxU = (static_cast<float>((icon & 15) * 16) + 15.99f) / 256.0f;
+        float minV = (static_cast<float>((icon >> 4) * 16) + 0.0f) / 256.0f;
+        float maxV = (static_cast<float>((icon >> 4) * 16) + 15.99f) / 256.0f;
 
         renderEnable(RenderCapability::RescaleNormal);
         renderTranslate(0.0f, -0.3f, 0.0f);
@@ -505,10 +505,10 @@ void ItemRenderer::renderInsideOfBlock(float f, int i) {
     float f5 =  1.0f;
     float f6 = -0.5f;
     float f7 = 0.0078125f;
-    float f8  = (float)(i % 16) / 256.0f - f7;
-    float f9  = ((float)(i % 16) + 15.99f) / 256.0f + f7;
-    float f10 = (float)(i / 16) / 256.0f - f7;
-    float f11 = ((float)(i / 16) + 15.99f) / 256.0f + f7;
+    float f8  = (float)(i & 15) / 256.0f - f7;
+    float f9  = ((float)(i & 15) + 15.99f) / 256.0f + f7;
+    float f10 = (float)(i >> 4) / 256.0f - f7;
+    float f11 = ((float)(i >> 4) + 15.99f) / 256.0f + f7;
     tessellator->startDrawingQuads();
     tessellator->addVertexWithUV(f2, f4, f6, f9, f11);
     tessellator->addVertexWithUV(f3, f4, f6, f8, f11);

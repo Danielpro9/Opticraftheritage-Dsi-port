@@ -1276,10 +1276,10 @@ void GuiIngame::renderPortalOverlay(float_t intensity, int_t w, int_t h)
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 	renderColor4f(1.0f, 1.0f, 1.0f, intensity);
 	renderBindTexture(mc->renderEngine->getTexture("/terrain.png"));
-	float_t u1 = (float_t)(Block::portal->blockIndexInTexture % 16)       / 16.0f;
-	float_t v1 = (float_t)(Block::portal->blockIndexInTexture / 16)       / 16.0f;
-	float_t u2 = (float_t)(Block::portal->blockIndexInTexture % 16 + 1)   / 16.0f;
-	float_t v2 = (float_t)(Block::portal->blockIndexInTexture / 16 + 1)   / 16.0f;
+	float_t u1 = (float_t)(Block::portal->blockIndexInTexture & 15)       / 16.0f;
+	float_t v1 = (float_t)(Block::portal->blockIndexInTexture >> 4)       / 16.0f;
+	float_t u2 = (float_t)((Block::portal->blockIndexInTexture & 15) + 1) / 16.0f;
+	float_t v2 = (float_t)((Block::portal->blockIndexInTexture >> 4) + 1) / 16.0f;
 	Tessellator *tess = &Tessellator::instance;
 	tess->startDrawingQuads();
 	tess->addVertexWithUV(0, h, -90.0f, u1, v2);

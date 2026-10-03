@@ -435,8 +435,8 @@ float_t FontRenderer::renderStringScaled(const std::string &s, float_t x, float_
 
 		const int_t glyph = charIndex + 32;
 		const float_t glyphWidth = static_cast<float_t>(charWidth[glyph]);
-		const int_t col = glyph % 16;
-		const int_t row = glyph / 16;
+		const int_t col = glyph & 15;
+		const int_t row = glyph >> 4;
 		const float_t u0 = static_cast<float_t>(col * 8) / 128.0f;
 		const float_t v0 = static_cast<float_t>(row * 8) / 128.0f;
 		const float_t u1 = static_cast<float_t>(col * 8 + 7.99f) / 128.0f;
@@ -536,8 +536,8 @@ float_t FontRenderer::renderStringScaled(const std::string &s, float_t x, float_
 		const float_t glyphWidth = static_cast<float_t>(charWidth[glyph]);
 		if (italic)
 		{
-			const int_t col = glyph % 16;
-			const int_t row = glyph / 16;
+			const int_t col = glyph & 15;
+			const int_t row = glyph >> 4;
 			const float_t u0 = static_cast<float_t>(col * 8) / 128.0f;
 			const float_t v0 = static_cast<float_t>(row * 8) / 128.0f;
 			const float_t u1 = static_cast<float_t>(col * 8 + 7.99f) / 128.0f;

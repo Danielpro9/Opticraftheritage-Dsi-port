@@ -41,10 +41,10 @@ void RenderSnowball::doRender(Entity *entity, double x, double y, double z, floa
 
 void RenderSnowball::renderIcon(int_t iconIndex)
 {
-	float u0 = (float)((iconIndex % 16) * 16) / 256.0f;
-	float u1 = (float)((iconIndex % 16) * 16 + 16) / 256.0f;
-	float v0 = (float)((iconIndex / 16) * 16) / 256.0f;
-	float v1 = (float)((iconIndex / 16) * 16 + 16) / 256.0f;
+	float u0 = (float)((iconIndex & 15) * 16) / 256.0f;
+	float u1 = (float)((iconIndex & 15) * 16 + 16) / 256.0f;
+	float v0 = (float)((iconIndex >> 4) * 16) / 256.0f;
+	float v1 = (float)((iconIndex >> 4) * 16 + 16) / 256.0f;
 	float size = 1.0f;
 	float half = 0.5f;
 	float yOffset = 0.25f;

@@ -38,9 +38,9 @@ int_t EntityDiggingFX::getFXLayer()
 
 void EntityDiggingFX::renderParticle(Tessellator *tessellator, float f, float f1, float f2, float f3, float f4, float f5)
 {
-	float f6  = ((float)(particleTextureIndex % 16) + particleTextureJitterX / 4.0f) / 16.0f;
+	float f6  = ((float)(particleTextureIndex & 15) + particleTextureJitterX / 4.0f) / 16.0f;
 	float f7  = f6 + 0.999f / 64.0f;
-	float f8  = ((float)(particleTextureIndex / 16) + particleTextureJitterY / 4.0f) / 16.0f;
+	float f8  = ((float)(particleTextureIndex >> 4) + particleTextureJitterY / 4.0f) / 16.0f;
 	float f9  = f8 + 0.999f / 64.0f;
 	float f10 = 0.1f * particleScale;
 	float f11 = interpolateRenderCoordinate(prevPosX, posX, interpPosX, f);

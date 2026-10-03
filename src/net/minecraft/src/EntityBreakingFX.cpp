@@ -35,9 +35,9 @@ void EntityBreakingFX::renderParticle(Tessellator *tessellator, float partialTic
                                       float rotationX, float rotationXZ, float rotationZ,
                                       float rotationYZ, float rotationXY)
 {
-	const float u0 = (static_cast<float>(getParticleTextureIndex() % 16) + particleTextureJitterX / 4.0f) / 16.0f;
+	const float u0 = (static_cast<float>(getParticleTextureIndex() & 15) + particleTextureJitterX / 4.0f) / 16.0f;
 	const float u1 = u0 + 0.999f / 64.0f;
-	const float v0 = (static_cast<float>(getParticleTextureIndex() / 16) + particleTextureJitterY / 4.0f) / 16.0f;
+	const float v0 = (static_cast<float>(getParticleTextureIndex() >> 4) + particleTextureJitterY / 4.0f) / 16.0f;
 	const float v1 = v0 + 0.999f / 64.0f;
 	const float scale = 0.1f * particleScale;
 	const float x = interpolateRenderCoordinate(prevPosX, posX, interpPosX, partialTick);

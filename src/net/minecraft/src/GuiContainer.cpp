@@ -293,7 +293,7 @@ void GuiContainer::drawSlotInventory(Slot *slot)
 		{
 			renderDisable(RenderCapability::Lighting);
 			mc->renderEngine->bindTexture(mc->renderEngine->getTexture("/gui/items.png"));
-			drawTexturedModalRect(x, y, (icon % 16) * 16, (icon / 16) * 16, 16, 16);
+			drawTexturedModalRect(x, y, (icon & 15) * 16, (icon >> 4) * 16, 16, 16);
 			renderEnable(RenderCapability::Lighting);
 			return;
 		}

@@ -213,10 +213,10 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
             }
 
             Tessellator* tessellator = &Tessellator::instance;
-            const float minU = (float)((icon % 16) * 16) / 256.0f;
-            const float maxU = (float)((icon % 16) * 16 + 16) / 256.0f;
-            const float minV = (float)((icon / 16) * 16) / 256.0f;
-            const float maxV = (float)((icon / 16) * 16 + 16) / 256.0f;
+            const float minU = (float)((icon & 15) * 16) / 256.0f;
+            const float maxU = (float)((icon & 15) * 16 + 16) / 256.0f;
+            const float minV = (float)((icon >> 4) * 16) / 256.0f;
+            const float maxV = (float)((icon >> 4) * 16 + 16) / 256.0f;
             const float size = 1.0f;
             const float xOffset = 0.5f;
             const float yOffset = 0.25f;
@@ -306,7 +306,7 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
             if (field_27004_a) {
                 renderColor4f(red, green, blue, 1.0f);
             }
-            renderTexturedQuad(l, i1, (icon % 16) * 16, (icon / 16) * 16, 16, 16);
+            renderTexturedQuad(l, i1, (icon & 15) * 16, (icon >> 4) * 16, 16, 16);
         }
         renderEnable(RenderCapability::Lighting);
     } else if (k >= 0) {
@@ -323,7 +323,7 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         if (field_27004_a) {
             renderColor4f(f, f1, f3, 1.0f);
         }
-        renderTexturedQuad(l, i1, (k % 16) * 16, (k / 16) * 16, 16, 16);
+        renderTexturedQuad(l, i1, (k & 15) * 16, (k >> 4) * 16, 16, 16);
         renderEnable(RenderCapability::Lighting);
     }
     renderEnable(RenderCapability::CullFace);

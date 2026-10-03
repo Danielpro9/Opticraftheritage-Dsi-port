@@ -12,8 +12,27 @@
 // getMonotonicMicros() below for why that matters over std::chrono on a
 // toolchain this new.
 #include <nds/system_counter.h>
+// libnds' ready-made ITCM/DTCM placement attributes (ndstypes.h). The
+// ARM946E-S does have small I/D caches, but ITCM/DTCM are a separate,
+// smaller (32KB/16KB total, shared with the stack and whatever the runtime
+// already claims) memory wired directly into the core: a fetch from there
+// never competes for cache lines with anything else and never misses, unlike
+// main RAM. Only worth it for something both tiny and called constantly;
+// see PLATFORM_FAST_CODE/PLATFORM_FAST_RODATA's own call sites for what
+// qualified. A size that doesn't fit is a build-time linker error on this
+// toolchain, not a runtime corruption, so this is self-checking.
+#include <nds/ndstypes.h>
+#define PLATFORM_FAST_CODE   ITCM_CODE
+#define PLATFORM_FAST_RODATA DTCM_BSS
 #elif !defined(PS2_PLATFORM) && !defined(WII_PLATFORM)
 #include <SDL.h>
+#endif
+
+#ifndef PLATFORM_FAST_CODE
+#define PLATFORM_FAST_CODE
+#endif
+#ifndef PLATFORM_FAST_RODATA
+#define PLATFORM_FAST_RODATA
 #endif
 
 #ifdef WII_PLATFORM

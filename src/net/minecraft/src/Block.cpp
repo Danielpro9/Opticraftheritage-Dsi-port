@@ -115,6 +115,7 @@
 #include "Vec3D.h"
 #include "World.h"
 #include "java/Random.h"
+#include "platform/PlatformCompat.h"
 #include <stdexcept>
 
 StepSound *Block::soundPowderFootstep = nullptr;
@@ -129,10 +130,15 @@ StepSound *Block::soundSandFootstep = nullptr;
 
 Block *Block::blocksList[Block::BLOCK_REGISTRY_SIZE] = {nullptr};
 bool Block::tickOnLoad[Block::BLOCK_REGISTRY_SIZE] = {false};
-bool Block::opaqueCubeLookup[Block::BLOCK_REGISTRY_SIZE] = {false};
+// DSi only (PLATFORM_FAST_RODATA is a no-op elsewhere): these two are the
+// ones WorldRendererDsi.cpp's dsiOpaqueNeighbour() reads for every one of a
+// solid block's six neighbours during meshing (dsiFullyEnclosedOpaqueCube()),
+// on top of the usual per-face render/culling checks -- 256 bytes each,
+// small enough to both fit in DTCM alongside MathHelper::SIN_TABLE.
+PLATFORM_FAST_RODATA bool Block::opaqueCubeLookup[Block::BLOCK_REGISTRY_SIZE] = {false};
 bool Block::treeReplaceableLookup[Block::BLOCK_REGISTRY_SIZE] = {false};
 bool Block::vineAttachableLookup[Block::BLOCK_REGISTRY_SIZE] = {false};
-bool Block::staticOpaqueCubeLookupSafe[Block::BLOCK_REGISTRY_SIZE] = {false};
+PLATFORM_FAST_RODATA bool Block::staticOpaqueCubeLookupSafe[Block::BLOCK_REGISTRY_SIZE] = {false};
 bool Block::usesDefaultFaceCullingLookup[Block::BLOCK_REGISTRY_SIZE] = {false};
 bool Block::isBlockContainer[Block::BLOCK_REGISTRY_SIZE] = {false};
 int_t Block::lightOpacity[Block::BLOCK_REGISTRY_SIZE] = {0};

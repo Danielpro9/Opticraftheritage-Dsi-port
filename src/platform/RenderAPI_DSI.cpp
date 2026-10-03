@@ -235,6 +235,18 @@ std::size_t textureVramBytes(const DsiTexture& tex)
 std::vector<DsiTexture> g_textures; // index 0 unused (0 means "no texture" in GL)
 int g_boundTexture = 0;
 
+// Same dedup shape as g_boundTexture above, for the three capabilities that
+// go straight to glEnable()/glDisable() instead of through g_poly's dirty-
+// flag batching. 209 call sites across the engine toggle these (GUI draws,
+// item/particle rendering, translucent terrain passes), many consecutively
+// in the same state -- e.g. a run of opaque quads all calling
+// renderDisable(Blend) between each other for no reason. -1 means "unknown"
+// so the first real call for each always goes through; 0/1 afterwards skip
+// the hardware write when the state already matches.
+int g_texture2DEnabled = -1;
+int g_alphaTestEnabled = -1;
+int g_blendEnabled = -1;
+
 DsiTexture* textureSlot(int name)
 {
 	if (name <= 0)
@@ -1705,9 +1717,21 @@ void renderEnable(RenderCapability capability)
 {
 	switch (capability)
 	{
-		case RenderCapability::Texture2D: glEnable(GL_TEXTURE_2D); break;
-		case RenderCapability::AlphaTest: glEnable(GL_ALPHA_TEST); break;
-		case RenderCapability::Blend:     glEnable(GL_BLEND); break;
+		case RenderCapability::Texture2D:
+			if (g_texture2DEnabled == 1) break;
+			g_texture2DEnabled = 1;
+			glEnable(GL_TEXTURE_2D);
+			break;
+		case RenderCapability::AlphaTest:
+			if (g_alphaTestEnabled == 1) break;
+			g_alphaTestEnabled = 1;
+			glEnable(GL_ALPHA_TEST);
+			break;
+		case RenderCapability::Blend:
+			if (g_blendEnabled == 1) break;
+			g_blendEnabled = 1;
+			glEnable(GL_BLEND);
+			break;
 		case RenderCapability::Fog:       glEnable(GL_FOG); g_poly.fogEnabled = true; markPolyDirty(); break;
 		case RenderCapability::CullFace:  g_poly.cullEnabled = true; markPolyDirty(); break;
 		case RenderCapability::Light0:    g_poly.light0 = true; markPolyDirty(); break;
@@ -1725,9 +1749,21 @@ void renderDisable(RenderCapability capability)
 {
 	switch (capability)
 	{
-		case RenderCapability::Texture2D: glDisable(GL_TEXTURE_2D); break;
-		case RenderCapability::AlphaTest: glDisable(GL_ALPHA_TEST); break;
-		case RenderCapability::Blend:     glDisable(GL_BLEND); break;
+		case RenderCapability::Texture2D:
+			if (g_texture2DEnabled == 0) break;
+			g_texture2DEnabled = 0;
+			glDisable(GL_TEXTURE_2D);
+			break;
+		case RenderCapability::AlphaTest:
+			if (g_alphaTestEnabled == 0) break;
+			g_alphaTestEnabled = 0;
+			glDisable(GL_ALPHA_TEST);
+			break;
+		case RenderCapability::Blend:
+			if (g_blendEnabled == 0) break;
+			g_blendEnabled = 0;
+			glDisable(GL_BLEND);
+			break;
 		case RenderCapability::Fog:       glDisable(GL_FOG); g_poly.fogEnabled = false; markPolyDirty(); break;
 		case RenderCapability::CullFace:  g_poly.cullEnabled = false; markPolyDirty(); break;
 		case RenderCapability::Light0:    g_poly.light0 = false; markPolyDirty(); break;

@@ -3,12 +3,18 @@
 #include "java/Random.h"
 #include "java/Arithmetic.h"
 #include "platform/IntegerFloorDouble.h"
+#include "platform/PlatformCompat.h"
 
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 
-float MathHelper::SIN_TABLE[MathHelper::SIN_TABLE_SIZE];
+// DSi only (PLATFORM_FAST_RODATA is a no-op everywhere else): sin()/cos()
+// below are table lookups called from dozens of per-tick/per-frame sites
+// (every rotation, every look-direction calc), and at the DSi's configured
+// PLATFORM_SIN_TABLE_BITS=6 the whole table is 64 floats -- 256 bytes, a
+// small enough slice of DTCM to be worth it for a table this hot.
+PLATFORM_FAST_RODATA float MathHelper::SIN_TABLE[MathHelper::SIN_TABLE_SIZE];
 
 namespace
 {
@@ -87,17 +93,23 @@ bool MathHelper::initSinTable()
 
 bool MathHelper::sinTableInitialized = MathHelper::initSinTable();
 
-float MathHelper::sin(float f)
+// DSi only: these four are tiny (a table lookup; a bit-hack-plus-two-
+// Newton-iterations sqrt), never inlined across translation units (every
+// other .cpp calls them through the exported MathHelper:: symbol, paying a
+// BL regardless), and each is called from "dozens of per-tick/per-frame
+// sites" per fastSqrtApprox()'s own comment above. ITCM gives that BL a
+// fixed-latency fetch instead of a main-RAM one on every one of those calls.
+PLATFORM_FAST_CODE float MathHelper::sin(float f)
 {
 	return SIN_TABLE[JavaArithmetic::floatToInt(f * SIN_TABLE_SCALE) & SIN_TABLE_MASK];
 }
 
-float MathHelper::cos(float f)
+PLATFORM_FAST_CODE float MathHelper::cos(float f)
 {
 	return SIN_TABLE[JavaArithmetic::floatToInt(f * SIN_TABLE_SCALE + SIN_TABLE_QUARTER) & SIN_TABLE_MASK];
 }
 
-float MathHelper::sqrt_float(float f)
+PLATFORM_FAST_CODE float MathHelper::sqrt_float(float f)
 {
 #if PLATFORM_PS2
 	return std::sqrt(f);
@@ -106,7 +118,7 @@ float MathHelper::sqrt_float(float f)
 #endif
 }
 
-float MathHelper::sqrt_double(double d)
+PLATFORM_FAST_CODE float MathHelper::sqrt_double(double d)
 {
 #if PLATFORM_PS2
 	// The result is a float either way, so the only question is where the

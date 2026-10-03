@@ -494,10 +494,10 @@ std::unique_ptr<BufferedImage> dsiDownscaleAtlasHalf(std::unique_ptr<BufferedIma
 }
 
 // Container-screen background panels (inventory/crafting/furnace/chest/
-// dispenser/brewing-stand/enchanting-table/creative), NOT item icons --
-// deliberately excludes gui/items.png, which real players actually look at
-// closely, unlike a flat background panel mostly hidden under slots and
-// text. Real-hardware log evidence: '/gui/inventory.png' (256x256, 145
+// dispenser/brewing-stand/enchanting-table/creative). gui/items.png (the
+// item icons themselves) used to be deliberately excluded from this list --
+// see the loadTextureStreamInto() call site's own comment on why a later
+// real-hardware log reversed that. Real-hardware log evidence: '/gui/inventory.png' (256x256, 145
 // opaque colours after quantization) failing outright -- "GPU out of
 // texture VRAM space" on the paletted attempt, then the RGBA attempt, then
 // paletted again, then giving up to the checkerboard placeholder, with
@@ -562,9 +562,26 @@ bool RenderEngine::loadTextureStreamInto(const std::string &s, int_t texture, st
 		// terrain.png (the same shape of problem, confirmed first) plus every
 		// container-screen background panel -- see dsiDownscaleAtlasHalf()'s
 		// and dsiIsDownscalableGuiBackground()'s own comments for the full why
-		// and why this is safe. gui/items.png (the item icons themselves, not
-		// a background) is deliberately excluded -- see the latter's comment.
-		if (normalizedPath == "/terrain.png" || dsiIsDownscalableGuiBackground(normalizedPath))
+		// and why this is safe.
+		//
+		// gui/items.png used to be deliberately excluded here (item icons are
+		// something players actually look at closely, unlike a mostly-hidden
+		// background panel), but a real-hardware log showed why that's the
+		// wrong trade-off in practice: by the time items.png loads, terrain/
+		// font/gui/particles/mob skins already fill ~386KB of the 512KB
+		// texture-VRAM budget, so its own forceHighPrecision 256x256 RGBA
+		// request (128KB) doesn't fit, and the paletted fallback it then
+		// tries ALSO doesn't fit at full size and has to quantize down to
+		// shift=3 -- just 61 colours for the whole atlas. That is a much
+		// worse hit to how icons actually look (flat colour, no shading, and
+		// -- the real-hardware report this round -- no transparency at all,
+		// armor/tool icons rendering as solid blocks) than losing half the
+		// linear resolution ever would. Halved to 128x128, the same RGBA
+		// request is 32KB -- comfortably inside the ~126KB that was free --
+		// so it uploads at full colour and alpha fidelity, just softer, the
+		// same trade terrain.png already makes.
+		if (normalizedPath == "/terrain.png" || normalizedPath == "/gui/items.png" ||
+			dsiIsDownscalableGuiBackground(normalizedPath))
 			image = dsiDownscaleAtlasHalf(std::move(image));
 #endif
 #ifdef WII_PLATFORM

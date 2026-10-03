@@ -559,8 +559,25 @@
 // rebuild cycles during a flood by roughly the same factor. Revisit once a
 // real-hardware log with this change confirms rebuilds= climbing much more
 // slowly relative to getLoadedChunkCount() staying flat.
+//
+// That revisit happened: a later real-hardware log (chunks=12 the entire
+// session -- player stayed near one streaming edge instead of walking past
+// it) showed rebuilds=12->93+ and restarts=0->17 still climbing continuously
+// at 4, with frame time dominated by the opaque replay pass growing in step
+// (54ms -> 140ms+) as each restart/rebuild re-submits that section's geometry.
+// 4 frames was not enough to get ahead of a sustained flood (thousands of
+// jobs queued at once, draining PLATFORM_LIGHTING_UPDATES_PER_FRAME=128 at a
+// time -- dozens of calls per flood regardless of this window). Doubled to 8:
+// still bounded, non-regressive staleness (the final flush once the queue
+// actually empties is unconditional, per this function's own comment --
+// World::updatingLighting() in World.cpp -- so this only changes how many
+// extra frames a mid-flood section's visible light can lag behind, never
+// whether it catches up), and at this platform's ~7-14fps, 8 frames is still
+// well under a second. Not pushed further than that in one step: this is
+// still an estimate pending a real-hardware log with THIS value to confirm
+// how much it actually cuts the rebuild rate during a sustained flood.
 #undef  PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES
-#define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 4
+#define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 8
 
 // CORRECTNESS FIX, not a performance tuning value: PLATFORM_SAVE_RUNTIME_
 // CHUNK_EDITS_ON_UNLOAD defaults to PLATFORM_PS2 only (PlatformConfig.h), and

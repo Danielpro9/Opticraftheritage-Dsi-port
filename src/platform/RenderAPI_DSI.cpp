@@ -246,6 +246,15 @@ int g_boundTexture = 0;
 int g_texture2DEnabled = -1;
 int g_alphaTestEnabled = -1;
 int g_blendEnabled = -1;
+// Fog belongs in this group too: unlike CullFace/Light0/Light1 (pure g_poly
+// flags, no direct GL call at all), Fog's renderEnable/renderDisable cases
+// call glEnable(GL_FOG)/glDisable(GL_FOG) unconditionally on every call --
+// the exact gap the three above were added to close, just missed for this
+// one. RenderGlobal.cpp alone toggles it several times a frame (sky pass,
+// terrain pass, back to GUI/HUD), on top of every GuiScreen/FontRenderer/
+// GuiIngame call that disables it before drawing 2D -- the same "many
+// consecutive calls already in the right state" pattern as Blend.
+int g_fogEnabled = -1;
 
 DsiTexture* textureSlot(int name)
 {
@@ -1732,7 +1741,13 @@ void renderEnable(RenderCapability capability)
 			g_blendEnabled = 1;
 			glEnable(GL_BLEND);
 			break;
-		case RenderCapability::Fog:       glEnable(GL_FOG); g_poly.fogEnabled = true; markPolyDirty(); break;
+		case RenderCapability::Fog:
+			g_poly.fogEnabled = true;
+			markPolyDirty();
+			if (g_fogEnabled == 1) break;
+			g_fogEnabled = 1;
+			glEnable(GL_FOG);
+			break;
 		case RenderCapability::CullFace:  g_poly.cullEnabled = true; markPolyDirty(); break;
 		case RenderCapability::Light0:    g_poly.light0 = true; markPolyDirty(); break;
 		case RenderCapability::Light1:    g_poly.light1 = true; markPolyDirty(); break;
@@ -1764,7 +1779,13 @@ void renderDisable(RenderCapability capability)
 			g_blendEnabled = 0;
 			glDisable(GL_BLEND);
 			break;
-		case RenderCapability::Fog:       glDisable(GL_FOG); g_poly.fogEnabled = false; markPolyDirty(); break;
+		case RenderCapability::Fog:
+			g_poly.fogEnabled = false;
+			markPolyDirty();
+			if (g_fogEnabled == 0) break;
+			g_fogEnabled = 0;
+			glDisable(GL_FOG);
+			break;
 		case RenderCapability::CullFace:  g_poly.cullEnabled = false; markPolyDirty(); break;
 		case RenderCapability::Light0:    g_poly.light0 = false; markPolyDirty(); break;
 		case RenderCapability::Light1:    g_poly.light1 = false; markPolyDirty(); break;

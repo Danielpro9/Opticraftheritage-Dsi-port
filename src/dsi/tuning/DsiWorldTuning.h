@@ -253,6 +253,32 @@
 #undef  PLATFORM_MAX_SCHEDULED_TICK_UPDATES
 #define PLATFORM_MAX_SCHEDULED_TICK_UPDATES      100
 
+// The other half of the fix above, same real-hardware shape as
+// PLATFORM_LIGHTING_BUDGET_US (World::updatingLighting(), PlatformGameTuning.h):
+// a real-hardware log taken AFTER the 100-entry cap above still showed
+// "worldTick" spikes of 174/327/361/821ms -- worse than the 80-190ms the cap
+// was sized against, not better. The cap bounds how many scheduled ticks
+// World::TickUpdates() drains per call, but never how long each one takes:
+// every one of those 100 runs an arbitrary Block::updateTick(), and fluid
+// flow / redstone propagation are exactly the kind of call whose cost swings
+// by an order of magnitude with what it actually touches (same reasoning
+// PS2_LIGHTING_BUDGET_US's own comment gives for lighting jobs) -- a run of
+// chunks with active water or a redstone contraption can make 100 of those
+// average several ms each instead of the usual fraction of one.
+//
+// 3000us (3ms) adds a wall-clock ceiling on top of the existing count cap:
+// TickUpdates() now stops and returns as soon as EITHER limit is hit,
+// exactly like updatingLighting() already does with its own budget. Not a
+// correctness risk: an entry not reached this call is simply still in
+// scheduledTickTreeSet for the next world tick, the same "catches up a few
+// ticks later instead of stalling" trade the 100-entry cap above already
+// made, just with a bound that actually tracks wall-clock time instead of
+// hoping a fixed count stays cheap. First estimate, same as every other
+// unmeasured budget in this file -- revisit once a real-hardware log with
+// this change confirms "worldTick" no longer spikes past a few ms.
+#undef  PLATFORM_TICK_UPDATES_BUDGET_US
+#define PLATFORM_TICK_UPDATES_BUDGET_US          3000
+
 // Ambient world particles (torch flame, lava drip, portal sparkle, ...):
 // World::randomDisplayUpdates() probes PLATFORM_RANDOM_DISPLAY_PROBES nearby
 // block positions every tick (6 RNG draws + a block lookup each) purely to

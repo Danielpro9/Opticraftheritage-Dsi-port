@@ -196,6 +196,11 @@
 #  define PLATFORM_LIGHTING_INTERACTIVE_QUEUE_MAX       PS2_LIGHTING_INTERACTIVE_QUEUE_MAX
 #  define PLATFORM_LIGHTING_INTERACTIVE_BURST           PS2_LIGHTING_INTERACTIVE_BURST
 #  define PLATFORM_LIGHTING_BUDGET_US                   PS2_LIGHTING_BUDGET_US
+// Wall-clock ceiling on World::TickUpdates()'s scheduled-tick drain (fluid
+// spread, leaf decay, redstone, crop growth). 0 here (PS2 unchanged, same
+// job-count-only bound vanilla always used); see DsiWorldTuning.h for why
+// DSi turns this on.
+#  define PLATFORM_TICK_UPDATES_BUDGET_US                0
 // How many consecutive World::updatingLighting() calls (one per rendered
 // frame) share a single render-dirty flush instead of each issuing its own.
 // 1 here (PS2 unchanged); see DsiWorldTuning.h for why DSi overrides this.
@@ -463,6 +468,9 @@
 // for time here: one MetadataChunkBlock is a flood fill over a box, so its cost
 // varies by more than an order of magnitude with what just streamed in.
 #  define PLATFORM_LIGHTING_BUDGET_US                   (PLATFORM_PC_LEGACY ? PC_LEGACY_LIGHTING_BUDGET_US : 0)
+// See the PS2/DSI branch above for what this does; disabled (0) here too --
+// desktop/PC_LEGACY have never shown this spike.
+#  define PLATFORM_TICK_UPDATES_BUDGET_US                0
 // See the PS2/DSI branch above for what this does; unchanged (1) here.
 #  define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 1
 #  define PLATFORM_LIGHTING_MERGE_SCAN                   (PLATFORM_PC_LEGACY ? PC_LEGACY_LIGHTING_MERGE_SCAN : 5)

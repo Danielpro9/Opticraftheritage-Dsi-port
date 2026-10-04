@@ -5359,6 +5359,18 @@ bool World::TickUpdates(bool flag)
         size = PLATFORM_MAX_SCHEDULED_TICK_UPDATES;
     }
 
+    // Wall-clock complement to the entry-count cap above -- see
+    // PLATFORM_TICK_UPDATES_BUDGET_US's own comment (DsiWorldTuning.h) for the
+    // real-hardware "worldTick" spikes (174-821ms) that showed the count cap
+    // alone doesn't bound this call's actual cost, since Block::updateTick()
+    // (fluid flow, redstone) varies wildly in cost per entry. Checked once per
+    // iteration rather than in a fixed stride: each updateTick() call is
+    // already real, variable work, so there is no fast inner loop here to
+    // keep this check from dominating, unlike e.g. a per-voxel scan.
+    const uint64_t budgetStartUs = PLATFORM_TICK_UPDATES_BUDGET_US > 0
+        ? PlatformCompat::getMonotonicMicros()
+        : 0;
+
     for (int j = 0; j < size; j++)
     {
 #if PLATFORM_PC_LEGACY && PC_LEGACY_TICK_SCHEDULER
@@ -5387,6 +5399,17 @@ bool World::TickUpdates(bool flag)
                               JavaArithmetic::intAdd(entry->zCoord, RANGE)))
         {
             delete entry;
+            // Same budget check as below -- continue skips past it otherwise,
+            // and a long run of stale entries whose chunks unloaded (cheap
+            // per check, but size can be up to PLATFORM_MAX_SCHEDULED_TICK_
+            // UPDATES of them) deserves the same wall-clock ceiling as the
+            // real updateTick() path.
+            if (PLATFORM_TICK_UPDATES_BUDGET_US > 0)
+            {
+                const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
+                if (nowUs > budgetStartUs && nowUs - budgetStartUs >= (uint64_t)PLATFORM_TICK_UPDATES_BUDGET_US)
+                    break;
+            }
             continue;
         }
 
@@ -5396,6 +5419,13 @@ bool World::TickUpdates(bool flag)
             Block::blocksList[blockId]->updateTick(this, entry->xCoord, entry->yCoord, entry->zCoord, rand);
         }
         delete entry;
+
+        if (PLATFORM_TICK_UPDATES_BUDGET_US > 0)
+        {
+            const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
+            if (nowUs > budgetStartUs && nowUs - budgetStartUs >= (uint64_t)PLATFORM_TICK_UPDATES_BUDGET_US)
+                break;
+        }
     }
 
 #if PLATFORM_PC_LEGACY && PC_LEGACY_TICK_SCHEDULER

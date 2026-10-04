@@ -1578,12 +1578,13 @@ void Minecraft::runTick()
             renderViewEntity = thePlayer;
         }
 
+        const unsigned worldDeleteCount = (unsigned)worldsToDelete.size();
         {
             char tag[48];
-            std::snprintf(tag, sizeof(tag), "world delete x%u pre",
-                          (unsigned)worldsToDelete.size());
+            std::snprintf(tag, sizeof(tag), "world delete x%u pre", worldDeleteCount);
             platformMemoryCheckpoint(tag);
         }
+        const uint64_t worldDeleteStartUs = PlatformCompat::getMonotonicMicros();
         for (World *w : worldsToDelete)
         {
             MC_LOG_DEBUG("heap", "Deleting deferred World ptr=%p\n", static_cast<void *>(w));
@@ -1593,6 +1594,17 @@ void Minecraft::runTick()
         }
         worldsToDelete.clear();
         platformMemoryCheckpoint("world delete post");
+        // Found while chasing a 2.6s stall on real hardware that landed exactly on
+        // this "tick" call (dsi.perf's frame=.../tick=... line), with the heap
+        // checkpoints bracketing it unchanged -- so the cost isn't an allocation
+        // storm, it's time spent somewhere in this block. Neither delete chunkProvider
+        // (ChunkProviderLoadOrGenerate's destructor just frees Chunk objects, no save
+        // call) nor any destructor reached from delete w has an obvious multi-second
+        // cost by inspection, so rather than guess at a fix, log each candidate phase's
+        // own span: the next real-hardware log says which one it actually is.
+        MC_LOG_INFO("client.exit", "world delete (x%u) took %lldus\n",
+                     worldDeleteCount,
+                     (long long)(PlatformCompat::getMonotonicMicros() - worldDeleteStartUs));
 
         // When returning to the main menu there is no active world left, so the
         // temporary Java-style math pools can release their overflow heap storage.
@@ -1600,9 +1612,17 @@ void Minecraft::runTick()
         // they intentionally keep overflow entries for reuse while a world is active.
         if (theWorld == nullptr)
         {
+            const uint64_t trimStartUs = PlatformCompat::getMonotonicMicros();
             AxisAlignedBB::trimBoundingBoxPool();
             Vec3D::trimVectorPool();
+            const uint64_t poolTrimUs = PlatformCompat::getMonotonicMicros() - trimStartUs;
+
+            const uint64_t releaseAssetsStartUs = PlatformCompat::getMonotonicMicros();
             ClientPlatformPolicy::releaseWorldExitAssets(renderEngine);
+            const uint64_t releaseAssetsUs = PlatformCompat::getMonotonicMicros() - releaseAssetsStartUs;
+
+            MC_LOG_INFO("client.exit", "back-to-menu trim=%lldus releaseAssets=%lldus\n",
+                         (long long)poolTrimUs, (long long)releaseAssetsUs);
             platformMemoryCheckpoint("back-to-menu post-trim");
 
             // WorldClient only borrows NetClientHandler. Once its old world is gone,

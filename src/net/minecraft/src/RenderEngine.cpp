@@ -948,11 +948,24 @@ int_t RenderEngine::getTexture(const std::string &s)
 			// map lookup per entry, not a re-decode -- so this cannot become the
 			// unconditional-per-frame logging cost already found and reverted
 			// once this session.
+			//
+			// Info, not Warning: a real-hardware log (6cc53fc8-debug.log) caught
+			// this loop firing 9 Warning lines back to back for one failed
+			// upload, each one forcing Log.cpp's writeFile() to fclose()+fopen()
+			// the SD-card log file (commitFile(), same mechanism documented on
+			// RenderAPI_DSI.cpp's tryUploadPaletted() -- "palette overflow"
+			// retries were moved off Warning for this exact reason earlier this
+			// session, but this sibling dump was added afterward and never got
+			// the same treatment). Measured on that log as a tick=1201ms spike
+			// coinciding exactly with this dump. The one-shot summary line above
+			// (the actual "which texture, how full" finding) stays Warning --
+			// only this per-entry breakdown, which repeats the same forced-
+			// commit cost once per resident texture, moves to Info.
 			for (const auto &entry : textureMap)
 			{
 				const std::size_t bytes = dsiTextureVramBytes(entry.second);
 				if (bytes > 0)
-					MC_LOG_WARN("dsi", "  resident: '%s' ~%uKB\n", entry.first.c_str(), (unsigned)(bytes / 1024u));
+					MC_LOG_INFO("dsi", "  resident: '%s' ~%uKB\n", entry.first.c_str(), (unsigned)(bytes / 1024u));
 			}
 		}
 		setupTexture(missingTextureImage.get(), texture, isTileAtlasResource(s), isTerrainAlphaFixResource(s));

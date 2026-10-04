@@ -670,10 +670,16 @@ bool Tessellator::addAxisAlignedUnitFaceWithPackedUVFast(int_t side, tess_coord_
 
 void Tessellator::addVertex(tess_coord_t d, tess_coord_t d1, tess_coord_t d2)
 {
-	const bool expandsQuad = drawMode == 7 && convertQuadsToTriangles && (addedVertices + 1) % 4 == 0;
+	// addedVertices only ever starts at 0 (constructor/reset) and is incremented
+	// (++ or += 4), never negative, so % 4 is exactly & 3 -- no ARM9 HW divide,
+	// same class as the other non-negative power-of-two div/mod fixes this
+	// session (MathHelper/Chunk/FontRenderer/RenderItem/particle FX indices).
+	// This is the hottest of all of them: once per vertex of every face the
+	// Tessellator ever emits.
+	const bool expandsQuad = drawMode == 7 && convertQuadsToTriangles && ((addedVertices + 1) & 3) == 0;
 	ensureRawBufferCapacity(expandsQuad ? 24 : 8);
 	addedVertices++;
-	if (drawMode == 7 && convertQuadsToTriangles && addedVertices % 4 == 0)
+	if (drawMode == 7 && convertQuadsToTriangles && (addedVertices & 3) == 0)
 	{
 		for (int iter = 0; iter < 2; iter++)
 		{

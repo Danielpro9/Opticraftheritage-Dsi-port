@@ -3,6 +3,7 @@
 
 #include "IBlockAccess.h"
 #include "BiomeGenBase.h"
+#include "Config.h"
 #include "Material.h"
 #include "Vec3D.h"
 #include "World.h"
@@ -23,6 +24,22 @@ int_t BlockFluid::colorMultiplier(IBlockAccess *iblockaccess, int_t i, int_t j, 
 	if (blockMaterial != Material::water)
 	{
 		return 0xffffff;
+	}
+
+	// Unlike BlockGrass::colorMultiplier/BlockLeaves::colorMultiplier, this used
+	// to run the full 3x3-neighbour blend unconditionally, ignoring
+	// Config::isSmoothBiomes() entirely -- so turning that setting off (already
+	// DSi's own default; see GameSettings::setDefaults()'s PLATFORM_DSI comment
+	// on the same 9x-lookup cost) still left every water surface paying the
+	// full nine getBiomeGenForCoords() calls per block, and still left its
+	// colour varying column to column, which is exactly what keeps
+	// DsiGreedyMesh.cpp's exact-colour-match merge (and DsiWaterMerge.cpp's own
+	// still-water-top pass) from ever matching two water faces into one quad.
+	// Same single-lookup fallback the other two already use.
+	if (!Config::isSmoothBiomes())
+	{
+		BiomeGenBase *biome = iblockaccess->getBiomeGenForCoords(i, k);
+		return biome != nullptr ? biome->waterColorMultiplier : 0xffffff;
 	}
 
 	int_t red = 0;

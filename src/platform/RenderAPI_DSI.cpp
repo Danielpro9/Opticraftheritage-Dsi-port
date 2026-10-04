@@ -2266,13 +2266,42 @@ void renderLightModelAmbient(const float*)
 	// No global ambient term on this hardware's fixed lighting model.
 }
 
-void renderColorMaterial(RenderFace, RenderColorMaterialMode)
+void renderColorMaterial(RenderFace, RenderColorMaterialMode mode)
 {
 	// DS materials are set with glMaterialf() per material type, not toggled
-	// on/off per face the way desktop GL_COLOR_MATERIAL is; nothing here maps
-	// cleanly, and Minecraft's lighting mostly comes from the vertex colours
-	// already carried by the mesh (see the lightmap block above), so this is
-	// a no-op rather than a guess.
+	// on/off per face the way desktop GL_COLOR_MATERIAL is, so this was left
+	// a no-op rather than a guess -- but that no-op had a real consequence
+	// this round's real-hardware report traced down: glMaterialf() is never
+	// called ANYWHERE else in this codebase either, and libnds's own
+	// glMaterialf() (videoGL.c) only ever writes GFX_DIFFUSE_AMBIENT /
+	// GFX_SPECULAR_EMISSION when called -- its static diffuse_ambient/
+	// specular_emission locals both start at 0, and the hardware register is
+	// left untouched (at the GPU's own true zero) otherwise. RenderHelper.cpp's
+	// enableStandardItemLighting() -- shared by every entity (RenderLiving),
+	// the held item (ItemRenderer), and every GUI item/block icon
+	// (GuiContainer/GuiInventory/GuiEnchantment/...) -- turns Light0/Light1 on
+	// and calls exactly this function expecting it to establish SOME usable
+	// material, the role glColorMaterial(..., GL_AMBIENT_AND_DIFFUSE) plays on
+	// desktop. Left a pure no-op, material diffuse AND ambient stayed at zero
+	// for the whole session: Emission (also never set) + Ambient_light*0 +
+	// Diffuse_light*0*max(N.L,0) = 0,0,0 regardless of the light colours
+	// RenderHelper.cpp computes or the vertex/texture colour underneath --
+	// every lit draw this mechanism touches came out solid black. Matches
+	// exactly: mobs in-world, the held item, and GUI item/block icons all
+	// share this one lighting path, and nothing else that draws (terrain,
+	// particles, text) ever enables Light0/Light1 at all.
+	//
+	// Fix: set the material to white on the one mode this engine actually
+	// uses this way (AmbientAndDiffuse). White makes the material a no-op
+	// multiplier -- the closest this hardware has to "let the light colour
+	// and vertex/texture colour through unscaled", not pixel-identical to
+	// desktop's per-vertex-colour-tracking GL_COLOR_MATERIAL, but turns
+	// "always black" into actually shaded and visible, which is what every
+	// caller here needs. RenderColorMaterialMode::Ambient (EntityRenderer.cpp's
+	// fogMode==999 lava/suffocation overlay) does not enable Light0/Light1 at
+	// all, so it is left alone rather than guessed at.
+	if (mode == RenderColorMaterialMode::AmbientAndDiffuse)
+		glMaterialf(GL_AMBIENT_AND_DIFFUSE, RGB15(31, 31, 31));
 }
 
 void renderShadeModel(RenderShadeModel model)

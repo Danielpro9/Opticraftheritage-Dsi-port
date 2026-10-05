@@ -163,6 +163,51 @@ void releaseWorldExitAssets(RenderEngine* renderEngine)
 	// exactly as gameplay-only as the three above, but was missing from this
 	// list.
 	renderEngine->releaseTexture("/gui/gui.png");
+	// Two more "never released at all" textures from the same family, found
+	// while chasing why a 256x256/128x128 RGBA upload (terrain.png/gui/items.
+	// png/font/*.png, all forceHighPrecision -- see RenderEngine.cpp's
+	// isTileAtlasResource()/dsiNeedsRealAlphaTransparency()) kept losing the
+	// VRAM race by a few KB in session after session (real-hardware evidence:
+	// dozens of archived debug.logs all show "high-precision upload failed
+	// for 256x256/128x128 ... vram=386/512KB" at a near-identical, modest
+	// fill level -- not genuine exhaustion, just not enough headroom left for
+	// a 128KB/32KB request). A forceHighPrecision texture that loses that
+	// race falls back to the paletted path, where index-0 transparency is
+	// already confirmed broken on this hardware -- for font.png specifically,
+	// that turns glyph edges/anti-aliasing (whatever colour a quantization
+	// scan happens to assign palette slot 0) into a solid block instead of
+	// transparent, which a real-hardware report described as text/blocks
+	// "turning white" -- plausibly this mechanism, not a one-off glitch,
+	// recurring every time the budget happens to be this tight. "/gui/
+	// particles.png" (GuiParticle.cpp, GUI-embedded particle effects any
+	// GuiScreen can show via its guiParticles member -- enchanting, etc., NOT
+	// the world particle atlas below) sat resident at 64KB in the large
+	// majority of those same logs' resident-texture dumps, right alongside
+	// terrain/items/font, the whole time nothing on screen was a GUI
+	// particle. "/particles.png" (EffectRenderer.cpp/RenderFish.cpp, the
+	// WORLD's own particle atlas -- break/splash/smoke effects) is exactly as
+	// gameplay-only as terrain.png and had no release path at all either.
+	// Together these are 64KB+ of permanently pinned VRAM this function
+	// already frees for every other asset in the same situation; lazy-reload
+	// on next use costs nothing more than the other releases above already
+	// do, and giving that headroom back is the direct, structural fix for
+	// the race these textures keep losing.
+	renderEngine->releaseTexture("/gui/particles.png");
+	renderEngine->releaseTexture("/particles.png");
+	// Same search turned up three more small FX textures with no release
+	// path anywhere: "/misc/explosion.png" (EntityLargeExplodeFX.cpp, TNT/
+	// bed explosions), "/misc/footprint.png" (EntityFootStepFX.cpp, snow/
+	// sand footprints), "/misc/water.png" (ItemRenderer.cpp, the underwater
+	// warp overlay). None huge individually, but each is exactly as
+	// gameplay-only as terrain.png and was pinned in VRAM for the rest of
+	// the session after the first explosion/footstep/swim -- same gap,
+	// same fix. ("/misc/tunnel.png"/"/misc/particlefield.png", the other
+	// two members of this family, already get released on leaving the
+	// creative inventory -- see GuiContainerCreative.cpp -- so are left
+	// alone here to avoid a second, redundant release path.)
+	renderEngine->releaseTexture("/misc/explosion.png");
+	renderEngine->releaseTexture("/misc/footprint.png");
+	renderEngine->releaseTexture("/misc/water.png");
 	// Sky/weather textures: clouds render whenever clouds are enabled (i.e.
 	// session-scoped, same as terrain.png), and rain/snow only bind while
 	// precipitation is actually rendering, but neither had a release path at

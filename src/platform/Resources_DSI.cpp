@@ -3,6 +3,7 @@
 #ifdef DSI_PLATFORM
 
 #include "dsi/DsiEarlyInit.h"
+#include "platform/storage/AssetPak.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -30,6 +31,17 @@ std::string PlatformResources::audioDir()
 
 std::string PlatformResources::resolveExisting(const std::string& path)
 {
+	// sd:/OptiCraft/assets.pak, keyed the same way the loose data/assets tree
+	// is ("assets/gui/items.png", "resources/sound/..."). A hit answers with a
+	// "pak://<key>" string that GameResources::openPath() already knows how
+	// to read (AssetPak::isPakPath(), checked there unconditionally on every
+	// platform) -- mirrors Resources_WII.cpp, the only other platform this
+	// was ever wired up for. A missing assets.pak, or a key it does not hold,
+	// falls through to the loose file exactly as before, so an install with
+	// only the data/ tree keeps working and a pak can be partial.
+	if (AssetPak::mountFrom(baseDir()) && AssetPak::exists(path))
+		return AssetPak::makePath(path);
+
 	std::string resolved;
 	if (path.rfind("assets/", 0) == 0)
 		resolved = assetsDir() + "/" + path.substr(7);
@@ -50,12 +62,16 @@ std::string PlatformResources::resolveAsset(const std::string& input)
 
 long PlatformResources::fileSize(const std::string& path)
 {
+	if (AssetPak::isPakPath(path))
+		return AssetPak::size(AssetPak::keyOf(path));
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	return file ? static_cast<long>(file.tellg()) : -1L;
 }
 
 unsigned char* PlatformResources::loadFile(const std::string& path, unsigned int* outSize)
 {
+	if (AssetPak::isPakPath(path))
+		return AssetPak::load(AssetPak::keyOf(path), outSize);
 	if (outSize)
 		*outSize = 0;
 	const long size = fileSize(path);

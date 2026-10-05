@@ -1042,10 +1042,32 @@ void ChunkProvider::unloadChunk(std::uint64_t key, Chunk *chunk)
 #if PLATFORM_PROFILE_STREAMING
 		const long_t unloadSaveStartNs = System::nanoTime();
 #endif
+#if PLATFORM_DSI
+		// Diagnostic only, not a fix: this platform's own PLATFORM_PROFILE_
+		// STREAMING (PlatformConfig.h) is PS2/Wii-only, and Profiler_DSI.cpp's
+		// platformProfileUnloadSave() is a no-op, so this specific cost has
+		// never actually been measured here -- see DsiWorldTuning.h's own
+		// PLATFORM_MAX_CHUNK_UNLOADS_PER_TICK comment ("Unverified without a
+		// measured SD write latency"). This is exactly the one call
+		// World::tick()'s own unload100OldestChunks() call runs unconditionally
+		// every tick, with SD write latency through BlocksDS's FatFs still
+		// unmeasured. Real-hardware evidence (a debug.log): "worldTick" spikes
+		// up to 194ms with TickUpdates()'s own wall-clock budget (3ms) and
+		// everything else in World::tick() already accounted for elsewhere in
+		// the same log -- a synchronous NBT-serialize-plus-SD-write for a
+		// genuinely edited chunk, at only 1-2 unloads/tick, is a real
+		// candidate for the rest. INFO, not Warning, so this line itself
+		// never forces the exact SD-commit cost it is trying to measure.
+		const long_t dsiUnloadSaveStartNs = System::nanoTime();
+#endif
 		saveChunkToFile(chunk);
 		chunk->isModified = false;
 		chunk->clearRuntimeSaveRequired();
 		saveExtraChunkData(chunk);
+#if PLATFORM_DSI
+		MC_LOG_INFO("dsi", "chunk unload save took %lldus\n",
+			(long long)((System::nanoTime() - dsiUnloadSaveStartNs) / 1000));
+#endif
 #if PLATFORM_PROFILE_STREAMING
 		platformProfileUnloadSave(System::nanoTime() - unloadSaveStartNs);
 #endif

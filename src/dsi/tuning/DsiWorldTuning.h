@@ -205,6 +205,27 @@
 #undef  PLATFORM_SMALL_REGION_SCRATCH
 #define PLATFORM_SMALL_REGION_SCRATCH             1
 
+// A third PS2-only knob found in the same sweep, this time a genuine
+// unbounded-growth bug rather than an unmeasured trade-off: RenderEngine.cpp's
+// shouldCacheDecodedTexturePixels() defaults (its #else branch, active
+// whenever this is 0) to "cache every decoded texture's raw ARGB pixel
+// vector, forever" -- field_28151_c (readTextureImageData()'s cache) is
+// never cleared and never bounded without this flag. That cache exists for
+// exactly one real reuse (compass and watch both decode gui/items.png while
+// building their TextureFX), but as shipped to DSi it was also permanently
+// retaining every colormap (misc/grasscolor.png, foliagecolor.png,
+// watercolor.png), every font, and any custom color table ever decoded
+// through this path -- a second, CPU-heap-side copy of each on top of
+// whatever RenderEngine's own GPU-texture-VRAM tracking already holds,
+// same "never released, only grows for the life of the process" shape as
+// the /gui/particles.png-and-friends fix earlier this session, just on the
+// ~13.5MB heap budget instead of the 512KB VRAM one. Enabling this bounds
+// the cache to the one resource that actually benefits (gui/items.png) and
+// restores the clear-before-insert this flag also gates, so every other
+// decode is a one-shot read exactly as it already is on PC/vanilla.
+#undef  PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE
+#define PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE    1
+
 // Read-only worlds (prebuilt maps) never need to keep a dirty chunk resident
 // for a later save, so they can use a faster unload throttle than a normal
 // world -- same values PS2 uses, since this is again about I/O-stall shape, not

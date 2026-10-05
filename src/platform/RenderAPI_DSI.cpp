@@ -2300,8 +2300,21 @@ void renderColorMaterial(RenderFace, RenderColorMaterialMode mode)
 	// caller here needs. RenderColorMaterialMode::Ambient (EntityRenderer.cpp's
 	// fogMode==999 lava/suffocation overlay) does not enable Light0/Light1 at
 	// all, so it is left alone rather than guessed at.
-	if (mode == RenderColorMaterialMode::AmbientAndDiffuse)
+	//
+	// Same dedup shape as g_boundTexture/g_texture2DEnabled/g_fogEnabled
+	// above: RenderHelper::enableStandardItemLighting() -- the only caller
+	// that ever reaches this with AmbientAndDiffuse -- runs at least once a
+	// frame for as long as anything lit is on screen (world entities, the
+	// held item, an open inventory/container/enchanting/stats/achievements
+	// screen), every single one issuing this exact same white value with no
+	// other call anywhere in this codebase ever writing a different one. A
+	// real glMaterialf() past the first call is pure repetition.
+	static bool s_dsiMaterialIsWhite = false;
+	if (mode == RenderColorMaterialMode::AmbientAndDiffuse && !s_dsiMaterialIsWhite)
+	{
 		glMaterialf(GL_AMBIENT_AND_DIFFUSE, RGB15(31, 31, 31));
+		s_dsiMaterialIsWhite = true;
+	}
 }
 
 void renderShadeModel(RenderShadeModel model)

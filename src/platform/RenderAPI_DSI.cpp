@@ -365,7 +365,21 @@ PalettedUploadResult tryUploadPalettedAtDepth(int name, const DsiTexture& tex, i
 	// pixel into either neighbouring palette level depending on position.
 	const int ditherStep = quantShift > 0 ? (1 << (quantShift + 3)) : 0;
 
-	std::vector<std::int16_t> colorToIndex(32768, -1);
+	// A fixed 32768-entry (64KB) table regardless of image size -- always the
+	// same size, so a fresh std::vector here means a fresh malloc/free of the
+	// same 64KB block every single call. tryUploadPaletted() above calls this
+	// up to 5 times in a row (quantShift 0..4) for one texture load, and a
+	// texture load itself happens repeatedly over a session (world entry/
+	// exit, texture pack switch) -- real-hardware investigation this round
+	// into why returning to the menu stays slow even after the SD-commit
+	// fixes traced part of that cost to texture decode/upload work exactly
+	// like this. Static and reused instead: std::fill() resets it to the
+	// same -1 state a fresh vector would start at, without the allocator
+	// round-trip. Not threaded (single ARM9 core, no concurrent texture
+	// uploads), so a shared static is safe here.
+	static std::vector<std::int16_t> s_dsiColorToIndex(32768, -1);
+	std::fill(s_dsiColorToIndex.begin(), s_dsiColorToIndex.end(), -1);
+	std::vector<std::int16_t> &colorToIndex = s_dsiColorToIndex;
 	std::vector<std::uint16_t>& palette = outPalette;
 	palette.clear();
 	palette.reserve(256);

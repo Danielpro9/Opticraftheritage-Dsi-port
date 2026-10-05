@@ -2055,11 +2055,12 @@ void RenderEngine::releaseTexture(const std::string &s)
 // Prefix match instead of hardcoding the full list: cheaper to keep correct
 // as new mobs/skins are added, and releaseTexture() is already a safe no-op
 // for a name that was never loaded, so over-matching costs nothing here.
-void RenderEngine::releaseTexturesWithPrefix(const std::string &prefix)
+void RenderEngine::releaseTexturesWithPrefix(const std::string &prefix, const std::string &except)
 {
 	std::vector<std::string> toRelease;
 	for (const auto &entry : textureMap)
-		if (entry.first.compare(0, prefix.size(), prefix) == 0)
+		if (entry.first.compare(0, prefix.size(), prefix) == 0 &&
+			(except.empty() || entry.first != except))
 			toRelease.push_back(entry.first);
 	for (const std::string &name : toRelease)
 		releaseTexture(name);

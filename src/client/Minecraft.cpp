@@ -2034,8 +2034,27 @@ void Minecraft::runTick()
                         break;
                     }
                 }
+                // "/mob/" also matches "/mob/char.png" -- the DEFAULT PLAYER
+                // SKIN, not just other mobs' -- and the player is always the
+                // one non-"other living entity" guaranteed to be on screen
+                // (the first-person hand/arm alone binds it every frame,
+                // EntityPlayer.cpp's own ctor default). Real-hardware
+                // evidence (a debug.log showing "texture id N = '/mob/char.
+                // png'" printed again and again, once roughly every second,
+                // for an entire session with no other mob ever in view):
+                // this call was tearing down and fully re-decoding the
+                // player's own skin from SD on the exact ~1s cadence this
+                // block runs on, the whole time nothing else was around to
+                // free space for -- the common case on this hardware's
+                // render distance, so paying full reload cost nearly every
+                // second was the rule, not the exception. Custom skins
+                // (SkinManager.cpp's scanCustomSkins()) store their
+                // modelPath under the SD card's skins directory, never under
+                // "/mob/", so this literal is the only skin path this prefix
+                // can ever actually match; excluding it still releases every
+                // other /mob/*.png (zombie, cow, pig, ...) exactly as before.
                 if (!dsiHasNonPlayerLiving)
-                    renderEngine->releaseTexturesWithPrefix("/mob/");
+                    renderEngine->releaseTexturesWithPrefix("/mob/", "/mob/char.png");
 
                 // Same gap, other family: ClientPlatformPolicy_DSI.cpp's
                 // releaseWorldExitAssets() now also releases "/item/" on

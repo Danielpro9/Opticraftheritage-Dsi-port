@@ -38,7 +38,10 @@ public:
 	void updateTextureSubImage(const std::vector<int_t> &ai, int_t i, int_t j, int_t k);
 	void deleteTexture(int_t i);
 	void releaseTexture(const std::string &s);
-	void releaseTexturesWithPrefix(const std::string &prefix);
+	// except, when non-empty, is skipped even though it matches prefix --
+	// see the DSi mid-session mob-skin eviction call site for why this is
+	// needed (releasing the player's own skin, not just other mobs').
+	void releaseTexturesWithPrefix(const std::string &prefix, const std::string &except = "");
 
 	// Bumped once every time deleteTexture() actually frees a GPU texture
 	// slot (releaseTexture()/releaseTexturesWithPrefix() both funnel through

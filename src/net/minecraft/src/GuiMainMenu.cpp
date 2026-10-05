@@ -43,6 +43,7 @@
 #ifdef PS2_PLATFORM
 #include "java/Resource.h"
 #endif
+#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <vector>
@@ -353,22 +354,50 @@ void GuiMainMenu::initGui()
         return;
     }
 
-    const int_t y = height / 4 + 48;
+    // Vanilla's button column assumes a logical canvas at least 240px tall: the
+    // 24px row stride and the fixed +72/+84 offsets for the bottom row (Options/
+    // Quit/Language) both come from that floor, which ScaledResolution.cpp's
+    // scale-factor search always guarantees on desktop. DSi's non-legacy GUI is
+    // pinned to its native, much shorter screen instead (PLATFORM_FORCE_GUI_SCALE
+    // == 1, see DsiPresentationTuning.h), so those fixed offsets run the bottom
+    // row straight into the copyright/version strip drawn at (height - 10) in
+    // drawScreen() -- the overlapping text reported on hardware with Legacy UI
+    // off. Shrink the top gap first and only then the row stride (same give-way
+    // order LegacyMainMenuLayout.cpp already uses for its own small-screen
+    // budget), and only when the fixed layout would actually collide, so this is
+    // a no-op on every screen tall enough for it to have fit already.
+    int_t topGap = 48;
+    int_t stride = 24;
+    int_t y = height / 4 + topGap;
+    int_t row5Y = y + 84;
+
+    constexpr int_t ROW5_BOTTOM_MARGIN = 34; // a 20px row plus clearance above (height - 10)
+    const int_t maxRow5Y = height - ROW5_BOTTOM_MARGIN;
+    if (row5Y > maxRow5Y)
+    {
+        topGap = std::max<int_t>(16, topGap - (row5Y - maxRow5Y));
+        y = height / 4 + topGap;
+        row5Y = maxRow5Y;
+        stride = std::max<int_t>(22, (row5Y - y) / 3);
+    }
+    const int_t row4Y = y + 3 * stride;
+    row5Y = std::min<int_t>(row4Y + 12, maxRow5Y);
+
     controlList.push_back(new GuiButton(1, width / 2 - 100, y, tr->translateKey("menu.singleplayer")));
-    controlList.push_back(multiplayerButton = new GuiButton(2, width / 2 - 100, y + 24, tr->translateKey("menu.multiplayer")));
-    controlList.push_back(new GuiButton(3, width / 2 - 100, y + 48, tr->translateKey("menu.mods")));
+    controlList.push_back(multiplayerButton = new GuiButton(2, width / 2 - 100, y + stride, tr->translateKey("menu.multiplayer")));
+    controlList.push_back(new GuiButton(3, width / 2 - 100, y + stride * 2, tr->translateKey("menu.mods")));
 
     if (mc->hideQuitButton)
     {
-        controlList.push_back(new GuiButton(0, width / 2 - 100, y + 72, tr->translateKey("menu.options")));
+        controlList.push_back(new GuiButton(0, width / 2 - 100, row4Y, tr->translateKey("menu.options")));
     }
     else
     {
-        controlList.push_back(new GuiButton(0, width / 2 - 100, y + 84, 98, 20, tr->translateKey("menu.options")));
-        controlList.push_back(new GuiButton(4, width / 2 + 2, y + 84, 98, 20, tr->translateKey("menu.quit")));
+        controlList.push_back(new GuiButton(0, width / 2 - 100, row5Y, 98, 20, tr->translateKey("menu.options")));
+        controlList.push_back(new GuiButton(4, width / 2 + 2, row5Y, 98, 20, tr->translateKey("menu.quit")));
     }
 
-    controlList.push_back(new GuiButtonLanguage(5, width / 2 - 124, y + 84));
+    controlList.push_back(new GuiButtonLanguage(5, width / 2 - 124, row5Y));
 #if !PLATFORM_PS2
     if (mc->session == nullptr)
         multiplayerButton->enabled = false;

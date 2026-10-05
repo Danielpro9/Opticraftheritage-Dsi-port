@@ -331,7 +331,14 @@ void GameSettings::loadOptions()
 			}
 			catch (...)
 			{
-				MC_LOG_WARN("settings", "Skipping bad option: %s\n", s.c_str());
+				// Info, not Warning: this runs inside loadOptions()'s per-line loop
+				// over the whole options.txt, once at boot -- same class of bug as
+				// RenderEngine.cpp's resident-texture dump (see that commit): an old
+				// or hand-edited options.txt with several stale/bad lines would fire
+				// this many times in a row, each Warning forcing Log.cpp's
+				// writeFile() to fclose()+fopen() the SD-card log file. A single bad
+				// line is not worth the same urgency as a genuine runtime failure.
+				MC_LOG_INFO("settings", "Skipping bad option: %s\n", s.c_str());
 			}
 		}
 	}

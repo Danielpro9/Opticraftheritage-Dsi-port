@@ -306,8 +306,19 @@ void GuiMainMenu::initGui()
     if (viewportTexture >= 0)
         mc->renderEngine->deleteTexture(viewportTexture);
     viewportTexture = -1;
+#if PLATFORM_DSI
+    // DSi always prefers the single-image legacy panorama as the menu
+    // background, even with Legacy UI (the button layout) off -- see
+    // drawScreen()'s own comment on why. Gating this on gameSettings->legacyUI
+    // like every other platform does is what let the vanilla menu fall
+    // through to renderSkybox()'s 6-face cubemap, which real hardware showed
+    // exhausting the 512KB texture VRAM budget outright.
+    legacyPanoramaAvailable = mc->renderEngine != nullptr &&
+        mc->renderEngine->hasResource(legacyPanoramaResourcePath());
+#else
     legacyPanoramaAvailable = mc->gameSettings != nullptr && mc->gameSettings->legacyUI &&
         mc->renderEngine != nullptr && mc->renderEngine->hasResource(legacyPanoramaResourcePath());
+#endif
     // DSi excluded alongside PS2/WII: RenderAPI_DSI's
     // renderCopyFramebufferToBoundTexture() always returns false (no
     // framebuffer-to-texture copy path implemented on this backend), so
@@ -585,8 +596,23 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
     hoveredControlIndex = legacyUi ? legacyHoveredSelectableButton(controlList, mouseX, mouseY) : -1;
     if (hoveredControlIndex >= 0)
         selectedControlIndex = hoveredControlIndex;
+#if PLATFORM_DSI
+    // Real-hardware log evidence: with Legacy UI off, renderSkybox() below
+    // falls through to its 6-face cubemap (title/bg/panorama0..5.png, 256x256
+    // each) -- a real log showed texture VRAM climbing past 460/512KB loading
+    // them and 5 of the 7 panorama/logo textures failing to upload, each
+    // falling back to the checkerboard placeholder (RenderEngine.cpp) right
+    // on the menu background -- the white/checkerboard flicker reported on
+    // hardware. initGui() now keeps legacyPanoramaAvailable independent of
+    // legacyUi for this platform for exactly this reason, so draw it
+    // regardless of the button-layout toggle: a single resident image instead
+    // of six is a real, proven-cheap background this hardware can afford.
+    const bool legacyPanoramaDrawn = legacyPanoramaAvailable &&
+        legacyDrawPanorama(mc, width, height, legacyScenePanoramaTimer(), partialTick, zLevel);
+#else
     const bool legacyPanoramaDrawn = legacyUi && legacyPanoramaAvailable &&
         legacyDrawPanorama(mc, width, height, legacyScenePanoramaTimer(), partialTick, zLevel);
+#endif
 
     if (!legacyPanoramaDrawn)
         renderSkybox(mouseX, mouseY, partialTick);

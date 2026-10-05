@@ -882,7 +882,31 @@ int_t RenderEngine::getTexture(const std::string &s)
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
 	const std::uint32_t textureLoadStart = platformProfileRenderPhaseBegin();
 #endif
+#if PLATFORM_DSI
+	// dsiTextureRetryAttempts[s] already reaching DSI_TEXTURE_MAX_RETRIES
+	// (see the retry-countdown branch above) is meant to permanently stop
+	// retrying a name that keeps failing -- but that branch only runs when
+	// textureMap still holds this name. releaseTexture() (world-exit/menu
+	// asset churn) erases the textureMap entry without touching
+	// dsiTextureRetryAttempts, so the very next getTexture() for the same
+	// name lands here instead, as a "never attempted" fresh load, and pays
+	// the whole SD-decode-plus-quantization-retry cost again regardless of
+	// how many times it already gave up in a previous life. Real-hardware
+	// evidence (a debug.log with /legacy/scroll_down.png's "paletted upload
+	// rejected"/"high-precision upload failed" pair recurring every time its
+	// owning menu screen reopened, each pair forcing two Warning-level SD
+	// commits -- Log.cpp's writeFile() -- worth 700ms-1s of frozen input):
+	// once a name is known to be a permanent loss, skip the real attempt
+	// entirely and fall straight into the same checkerboard-fallback branch
+	// a fresh failure would reach, exactly as if loadTextureInto() had just
+	// failed again -- same bound result, none of the repeated SD/VRAM cost.
+	const auto priorAttempts = dsiTextureRetryAttempts.find(s);
+	const bool dsiAlreadyGaveUp = priorAttempts != dsiTextureRetryAttempts.end() &&
+		priorAttempts->second >= DSI_TEXTURE_MAX_RETRIES;
+	bool loaded = dsiAlreadyGaveUp ? false : loadTextureInto(s, texture);
+#else
 	bool loaded = loadTextureInto(s, texture);
+#endif
 	const bool textureValid = renderTextureIsValid(texture);
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
 	platformProfileTextureLookup(s.c_str(), false, loaded && textureValid,

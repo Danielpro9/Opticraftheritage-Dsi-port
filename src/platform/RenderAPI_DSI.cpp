@@ -2254,6 +2254,18 @@ void renderLightfv(int lightIndex, RenderLightParameter parameter, const float* 
 			static_cast<int>(values[0] * 31.0f),
 			static_cast<int>(values[1] * 31.0f),
 			static_cast<int>(values[2] * 31.0f));
+		// Same dedup shape as renderColorMaterial()'s own glMaterialf guard
+		// just above: this function's only caller, RenderHelper::
+		// enableStandardItemLighting(), passes the same cached, lazily-
+		// computed light0Diffuse/light1Diffuse every single time it runs
+		// (at least once a frame for as long as anything lit is on screen),
+		// and nothing else anywhere in this codebase ever calls this with a
+		// different colour for either light index. A real glLight() past
+		// the first call per index is pure repetition.
+		static rgb s_dsiLastLightColor[2] = {0xFFFFu, 0xFFFFu}; // sentinel: no valid RGB15 is all-1s
+		if (s_dsiLastLightColor[lightIndex] == color)
+			return;
+		s_dsiLastLightColor[lightIndex] = color;
 		// Direction defaults to "straight down" until a Position update
 		// supplies a real one; good enough for a first pass on top-down
 		// block lighting.

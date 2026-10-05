@@ -181,7 +181,45 @@ std::unique_ptr<BufferedImage> legacyPreparePanoramaForUpload(
 		false;
 #endif
 
-	if (!image || (!isDsiLegacyDecorativeTexture && !isDsiLegacyUiSprite))
+	// Real-hardware log evidence: with Legacy UI (the button layout) off,
+	// GuiMainMenu's renderSkybox() binds all six of these every frame it is
+	// on screen. At their native 256x256, even the cheap paletted GL_RGB256
+	// path is a fixed 64KB each (RenderAPI_DSI.cpp always stores one byte per
+	// pixel there, regardless of how few colours survive quantisation) --
+	// 6 * 64KB = 384KB of the DSi's fixed 512KB texture budget for the
+	// background alone, before the menu's own gui.png/font/items.png atlases
+	// (which have to be resident at the same time) get any room. A real log
+	// showed exactly that: by the time panorama2.png loaded, ~380KB was
+	// already resident from the rest of the menu, and it plus three more
+	// faces (and, as a knock-on, the logo right after them) all failed to
+	// upload and fell back to RenderEngine.cpp's checkerboard placeholder --
+	// the white/checkerboard screen flicker reported with Legacy UI off. The
+	// background has to stay the original vanilla artwork (unlike
+	// LEGACY_PANORAMA_*, no swap to a different image), so shrink it the same
+	// way terrain.png and gui/items.png already are for the identical VRAM
+	// reason: halve it. Down to 128x128, the same paletted upload needs
+	// 16KB, 6 * 16KB = 96KB total -- the freed 288KB comfortably covers the
+	// logo's own 64KB too, so it is not included here.
+	//
+	// /title/mclogo.png deliberately excluded despite failing in the same
+	// log: GuiMainMenu.cpp draws it with Gui::drawTexturedModalRect(), which
+	// hardcodes a 1/256 UV scale (Gui.cpp) rather than deriving it from the
+	// texture's actual size the way terrain.png/items.png's tile math does
+	// (Config::iconWidthTerrain/iconWidthItems) -- resizing it here would
+	// have every one of its sprite-sheet slices (the logo's "oo" vs "nooo"
+	// variant, each a hardcoded pixel rect) sample the wrong region of a now-
+	// smaller texture. Freeing the panorama faces' 288KB already gives its
+	// unresized 64KB request room to fit.
+	const bool isDsiVanillaPanoramaAsset =
+#if defined(DSI_PLATFORM)
+		name == "/title/bg/panorama0.png" || name == "/title/bg/panorama1.png" ||
+		name == "/title/bg/panorama2.png" || name == "/title/bg/panorama3.png" ||
+		name == "/title/bg/panorama4.png" || name == "/title/bg/panorama5.png";
+#else
+		false;
+#endif
+
+	if (!image || (!isDsiLegacyDecorativeTexture && !isDsiLegacyUiSprite && !isDsiVanillaPanoramaAsset))
 		return image;
 
 	const int_t sourceWidth = image->getWidth();
@@ -257,6 +295,18 @@ std::unique_ptr<BufferedImage> legacyPreparePanoramaForUpload(
 		// distortion risk either way.
 		targetWidth = roundUpToPowerOfTwo(sourceWidth);
 		targetHeight = roundUpToPowerOfTwo(sourceHeight);
+	}
+	else if (isDsiVanillaPanoramaAsset)
+	{
+		// All six are resident at once (see the VRAM-budget comment above),
+		// unlike panorama.png/the title banner below which are each the only
+		// one of their kind on screen -- a 256 cap is not tight enough on its
+		// own, so halve on top of it. A plain source-size halving
+		// (not a fixed 128 target) so a texture pack with a non-256 panorama
+		// still gets the same proportional VRAM win instead of an arbitrary
+		// upscale or a no-op.
+		targetWidth = roundDownToPowerOfTwo(std::max<int_t>(1, sourceWidth / 2));
+		targetHeight = roundDownToPowerOfTwo(std::max<int_t>(1, sourceHeight / 2));
 	}
 	else
 	{

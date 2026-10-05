@@ -900,14 +900,27 @@ int_t RenderEngine::getTexture(const std::string &s)
 	// entirely and fall straight into the same checkerboard-fallback branch
 	// a fresh failure would reach, exactly as if loadTextureInto() had just
 	// failed again -- same bound result, none of the repeated SD/VRAM cost.
-	const auto priorAttempts = dsiTextureRetryAttempts.find(s);
-	const bool dsiAlreadyGaveUp = priorAttempts != dsiTextureRetryAttempts.end() &&
-		priorAttempts->second >= DSI_TEXTURE_MAX_RETRIES;
+	const bool dsiAlreadyGaveUp = dsiTextureRetryAttempts[s] >= DSI_TEXTURE_MAX_RETRIES;
 	bool loaded = dsiAlreadyGaveUp ? false : loadTextureInto(s, texture);
 #else
 	bool loaded = loadTextureInto(s, texture);
 #endif
 	const bool textureValid = renderTextureIsValid(texture);
+#if PLATFORM_DSI
+	// A genuine attempt (not a skip above) that still failed counts toward
+	// the same give-up budget the retry-countdown branch uses -- otherwise a
+	// name whose owning screen never keeps it resident for a full
+	// TEXTURE_RETRY_INTERVAL (120 frames, ~2-4s) never reaches that branch
+	// at all, and dsiAlreadyGaveUp above would never trip no matter how many
+	// times this exact fresh-load path fails it. operator[] (used to read
+	// dsiAlreadyGaveUp above) default-constructs the counter at 0 the first
+	// time a name is seen, so this is safe to increment unconditionally on a
+	// real failure. textureValid, not loaded, is the signal the checkerboard-
+	// fallback branch right below actually trusts, so that is what this
+	// counts against too.
+	if (!dsiAlreadyGaveUp && !textureValid)
+		++dsiTextureRetryAttempts[s];
+#endif
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
 	platformProfileTextureLookup(s.c_str(), false, loaded && textureValid,
 		platformProfileRenderPhaseBegin() - textureLoadStart);

@@ -308,6 +308,32 @@ std::unique_ptr<BufferedImage> legacyPreparePanoramaForUpload(
 		targetWidth = roundDownToPowerOfTwo(std::max<int_t>(1, sourceWidth / 2));
 		targetHeight = roundDownToPowerOfTwo(std::max<int_t>(1, sourceHeight / 2));
 	}
+	else if (name == "/legacy/panorama.png" && sourceWidth > sourceHeight)
+	{
+		// Real-hardware report: this background looks "very compressed, with a
+		// grid" -- and the "cap the longest side to 256" rule just below is
+		// why. This source image is an extremely wide horizontal strip (a
+		// real log showed it landing at 256x32 after that rule, i.e. an 8:1
+		// aspect ratio), and legacyPanoramaUv() only ever shows a thin
+		// vertical slice of it at a time, sliding sideways as the menu scrolls
+		// -- the SHORT side (height) is what gets stretched across the FULL
+		// screen height every frame, not the long one. Capping the long
+		// (horizontal) side to 256 crushes that short side down to a sliver
+		// (32px), magnified 6x vertically on screen by legacyDrawPanorama()'s
+		// full-height quad -- the reported blockiness. Target the height
+		// directly instead -- doubled to 64 (the next DS-valid power of two
+		// up), halving that on-screen magnification -- and scale width to
+		// match the same way the generic path below does. Paletted VRAM cost
+		// goes from 8KB to 32KB; this is the ONLY resident copy of this
+		// texture (unlike the six-cube-face case above), and a real log
+		// showed ~70KB of headroom at the old size even with Legacy UI's
+		// other textures resident, so this is a safe, bounded increase.
+		const int_t boundedTargetHeight = std::min<int_t>(sourceHeight, 64);
+		const double scale = static_cast<double>(boundedTargetHeight) / static_cast<double>(sourceHeight);
+		const int_t scaledWidth = std::max<int_t>(1, static_cast<int_t>(sourceWidth * scale + 0.5));
+		targetHeight = roundDownToPowerOfTwo(boundedTargetHeight);
+		targetWidth = roundDownToPowerOfTwo(std::min<int_t>(scaledWidth, 1024));
+	}
 	else
 	{
 		const int_t longSide = std::max<int_t>(sourceWidth, sourceHeight);

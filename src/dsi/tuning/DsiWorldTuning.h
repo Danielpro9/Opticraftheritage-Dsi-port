@@ -599,11 +599,30 @@
 // World::updatingLighting() in World.cpp -- so this only changes how many
 // extra frames a mid-flood section's visible light can lag behind, never
 // whether it catches up), and at this platform's ~7-14fps, 8 frames is still
-// well under a second. Not pushed further than that in one step: this is
-// still an estimate pending a real-hardware log with THIS value to confirm
-// how much it actually cuts the rebuild rate during a sustained flood.
+// well under a second.
+//
+// That revisit happened too: a real-hardware log at 8 (chunks=12->15, the
+// player walking rather than standing still at one edge -- a lighter flood
+// than the stationary case that motivated 4->8, but a sustained one) still
+// showed rebuilds=9->53 (restarts stayed flat at 0 throughout, confirming
+// the interrupted-build class DSI_GREEDY_BATCHES_PER_CALL's fix already
+// handles is fully gone -- what is left is entirely the complete-then-
+// immediately-redo class this knob targets) and the opaque replay pass
+// growing in step, 11ms -> 72ms worst-case, over a session short enough
+// that a user report of "~3 fps worse than before" traced back to this log
+// specifically. Same shape as the 4->93+ case that justified 4->8, just
+// less extreme because this session's flood was smaller -- not yet "ahead
+// of the flood" the way restarts=0 suggests the interrupted-build side now
+// is. Doubled again to 16, same reasoning as the first doubling (bounded,
+// non-regressive staleness, well under a second even at this platform's
+// framerate): if a real-hardware log at 16 still shows rebuilds climbing
+// this fast relative to a flat/near-flat chunk count, the bottleneck is the
+// flood's drain rate (PLATFORM_LIGHTING_UPDATES_PER_FRAME=128, inherited
+// from PS2 and never tuned for DSi -- see this knob's own comment above)
+// and not this window, and that is the next knob to revisit instead of
+// widening this one further.
 #undef  PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES
-#define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 8
+#define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 16
 
 // CORRECTNESS FIX, not a performance tuning value: PLATFORM_SAVE_RUNTIME_
 // CHUNK_EDITS_ON_UNLOAD defaults to PLATFORM_PS2 only (PlatformConfig.h), and

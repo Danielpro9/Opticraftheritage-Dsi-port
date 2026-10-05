@@ -185,13 +185,30 @@ bool mountFile(const std::string &path)
     // a locator cannot adopt a root on the strength of a pak mounted elsewhere.
     if (archive().isOpen())
         return archive().path() == path;
+
+    // mountFrom() is called from PlatformResources::resolveExisting(), i.e.
+    // on every single asset lookup -- hundreds of calls across one session,
+    // nearly all with the same baseDir-derived path on any platform that
+    // doesn't cycle several candidate roots. Without an archive mounted, a
+    // refused path used to mean a real file-open attempt on every one of
+    // those calls (s_lastRefusedPath only throttled the log line below, not
+    // the attempt itself) -- the exact "repeated failed open on a storage
+    // medium that was never going to say yes this time" cost this session
+    // has already found and fixed more than once elsewhere (texture retry
+    // countdowns, the mid-session mob-skin eviction). The common case for
+    // every platform is no assets.pak at all, so this matters whether or
+    // not one is ever actually shipped. Safe to skip the real attempt for
+    // the exact path already refused: nothing in this process writes
+    // assets.pak, so a path that doesn't exist now won't start existing
+    // mid-session. A genuinely different candidate path (PS2's locator
+    // cycling several roots) still gets a real attempt.
+    if (path == s_lastRefusedPath)
+        return false;
+
     if (!archive().open(path))
     {
-        if (s_lastRefusedPath != path)
-        {
-            s_lastRefusedPath = path;
-            MC_LOG_INFO("assets", "[pak] no %s; reading loose files\n", path.c_str());
-        }
+        s_lastRefusedPath = path;
+        MC_LOG_INFO("assets", "[pak] no %s; reading loose files\n", path.c_str());
         return false;
     }
     return true;

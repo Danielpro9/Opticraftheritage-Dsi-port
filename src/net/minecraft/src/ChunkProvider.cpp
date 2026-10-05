@@ -845,8 +845,36 @@ bool ChunkProvider::drainPendingGeneration(int_t stepBudget, long_t budgetNs, bo
 			continue;
 		}
 
+#if PLATFORM_DSI
+		// Diagnostic only, not a fix: chasing an uninstrumented "worldTick"
+		// spike (up to 467ms in a real-hardware log) that TickUpdates()'s own
+		// wall-clock budget cannot explain and this session's chunk-unload-
+		// save diagnostic (ChunkProvider::unloadChunk()) never fired for in
+		// that same log -- ruling out the only two previously-suspected
+		// causes. Ps2WorldTuning.h's own PS2_GENERATION_SOURCE_COLUMNS_PER_
+		// STEP comment already names the remaining structural gap: the
+		// per-call wall-clock budget below (PLATFORM_GENERATION_BUDGET_US)
+		// "can only stop the generator BETWEEN steps... a step that is
+		// internally atomic sets the floor." Caves/Ravines are sliced by
+		// source column, but "one [column] that passes carves a WHOLE
+		// TUNNEL" in that one still-atomic step regardless -- cheap enough
+		// to not need further attention on PS2's EE, not necessarily on an
+		// FPU-less ARM9. One nanoTime() pair around the single call this
+		// session's other wall-clock budgets already treat as the smallest
+		// unit says definitively whether this is where the spike's time
+		// goes, and roughly how much of it, without guessing further.
+		const long_t dsiStepStartNs = System::nanoTime();
+#endif
 		if (!generator->advanceGenerationTask())
 			break;
+#if PLATFORM_DSI
+		{
+			const long_t dsiStepUs = (System::nanoTime() - dsiStepStartNs) / 1000;
+			if (dsiStepUs >= 20000)
+				MC_LOG_INFO("dsi", "generation step at %d,%d took %lldus\n",
+					(int)taskX, (int)taskZ, (long long)dsiStepUs);
+		}
+#endif
 		didWork = true;
 		++steps;
 

@@ -226,6 +226,24 @@
 #undef  PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE
 #define PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE    1
 
+// Fourth find in the same sweep: World::getClosestPlayer() (World.cpp) has a
+// PS2-only fast path for the common single-player case -- skip the generic
+// playerEntities vector scan entirely and go straight to index 0 with float
+// (not double) distance math, already proven safe there. DSi is just as
+// single-local-player as PS2 (PLATFORM_FLOAT_ENTITY_AI_MATH is already
+// shared with PS2 via PlatformGameTuning.h's PS2||DSi branch, so the float
+// math half of this was already active -- only the outer flag that lets the
+// fast path trigger at all was missing). This is on the mob-AI hot path
+// (every hostile/passive mob's target-seeking tick calls it), the exact
+// kind of per-entity-per-tick cost this session has repeatedly found worth
+// trimming on this hardware. Zero behaviour change when there is exactly
+// one player, which this platform always has: the generic loop it replaces
+// computes the identical result for a one-element vector, just through a
+// vector iteration and double-precision arithmetic instead of a direct
+// index and float arithmetic.
+#undef  PLATFORM_SINGLE_LOCAL_PLAYER
+#define PLATFORM_SINGLE_LOCAL_PLAYER              1
+
 // Read-only worlds (prebuilt maps) never need to keep a dirty chunk resident
 // for a later save, so they can use a faster unload throttle than a normal
 // world -- same values PS2 uses, since this is again about I/O-stall shape, not

@@ -176,6 +176,35 @@
 #undef  PLATFORM_MIN_UNUSED_TICKS_BEFORE_UNLOAD
 #define PLATFORM_MIN_UNUSED_TICKS_BEFORE_UNLOAD  30
 
+// Two more region-file knobs (RegionFile.cpp) that were PS2/Wii-only
+// (PlatformConfig.h's #ifndef defaults) and had never been evaluated for
+// DSi, found while chasing the same unload-save cost the comment just above
+// already flags as real but unmeasured. Both fire on exactly the call path
+// above: a gameplay-edited chunk's synchronous unload save.
+//
+// PLATFORM_FAST_REGION_COMPRESSION: RegionFile::write()'s own comment says
+// it plainly -- "console chunk writes run synchronously inside a world
+// tick, so the deflate level is frame time, not disk space." Z_BEST_SPEED
+// (zlib level 1) is several times faster to compute than the
+// Z_DEFAULT_COMPRESSION (level 6) DSi was defaulting to, for sectors only
+// 10-15% larger -- space the region format absorbs for free in its 4KB
+// sector rounding anyway, per that same comment. DSi's ARM9 has no FPU and
+// is weaker than either console this was already proven safe on, so the
+// CPU-time case for the cheaper level is at least as strong here.
+#undef  PLATFORM_FAST_REGION_COMPRESSION
+#define PLATFORM_FAST_REGION_COMPRESSION         1
+// PLATFORM_SMALL_REGION_SCRATCH: inflateChunkData()'s own comment says a
+// Beta chunk's raw NBT is ~85KB, yet the default starting scratch buffer
+// for decompressing one on load is 256KB (PS2 already dropped to 64KB,
+// growing on demand only if a chunk genuinely needs more, up to the same
+// 1MB cap either way). DSi's heap ceiling (~13.5MB committed, observed) is
+// smaller than PS2's 32MB this 256KB default was deemed safe for, so the
+// transient over-allocation this causes on every single chunk load is
+// proportionally far more expensive here, for no benefit: the buffer still
+// grows past 64KB on request for the rare chunk that needs it.
+#undef  PLATFORM_SMALL_REGION_SCRATCH
+#define PLATFORM_SMALL_REGION_SCRATCH             1
+
 // Read-only worlds (prebuilt maps) never need to keep a dirty chunk resident
 // for a later save, so they can use a faster unload throttle than a normal
 // world -- same values PS2 uses, since this is again about I/O-stall shape, not

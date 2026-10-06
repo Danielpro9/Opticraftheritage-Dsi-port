@@ -52,8 +52,29 @@ int RenderPlayer::setArmorModel(EntityPlayer* entityPlayer, int i, float)
     static const char* const armorFilenamePrefix[] = {"cloth", "chain", "iron", "diamond", "gold"};
     if (armor->renderIndex < 0 || armor->renderIndex >= 5)
         return -1;
-    std::string texture = std::string("/armor/") + armorFilenamePrefix[armor->renderIndex] + "_" + (i != 2 ? "1" : "2") + ".png";
-    loadTexture(texture);
+    // Only 10 distinct textures exist here (5 renderIndex values x the
+    // chestplate-model/legs-model split below), but this rebuilt the path by
+    // string concatenation (4 allocations) and re-looked it up via
+    // RenderEngine::getTexture() every single call -- unconditionally every
+    // frame, per equipped armor piece, for every rendered player. Cached by
+    // the same two inputs that already determine the result; the path
+    // string itself is built at most once per combination (passing a
+    // freshly-concatenated string to CachedTextureId::get() every call would
+    // still pay the concatenation cost even on a texture-id cache hit, since
+    // that argument is evaluated before get() can skip anything).
+    static std::string cachedArmorPaths[5][2];
+    static bool cachedArmorPathsBuilt[5][2] = {};
+    static CachedTextureId cachedArmorTextureId[5][2];
+    const int_t legSlot = (i != 2) ? 0 : 1;
+    if (!cachedArmorPathsBuilt[armor->renderIndex][legSlot])
+    {
+        cachedArmorPaths[armor->renderIndex][legSlot] =
+            std::string("/armor/") + armorFilenamePrefix[armor->renderIndex] + "_" + (i != 2 ? "1" : "2") + ".png";
+        cachedArmorPathsBuilt[armor->renderIndex][legSlot] = true;
+    }
+    const int_t texture = cachedArmorTextureId[armor->renderIndex][legSlot].get(renderManager->renderEngine,
+        cachedArmorPaths[armor->renderIndex][legSlot].c_str());
+    renderBindTexture(texture);
 
     ModelBiped* model = i != 2 ? modelArmorChestplate : modelArmor;
     model->bipedHead->showModel = i == 0;

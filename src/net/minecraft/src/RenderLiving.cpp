@@ -250,7 +250,25 @@ void RenderLiving::renderEquippedItems(EntityLiving* entityliving, float f) {
 
 void RenderLiving::renderModel(EntityLiving* entityliving, float f, float f1, float f2, float f3, float f4, float f5)
 {
-    const std::string baseTexture = entityliving->getEntityTexture();
+    // getEntityTexture() returns a stable string literal (every override --
+    // EntityWolf, EntityOcelot, EntityVillager, the plain-literal default --
+    // returns a compile-time constant address, never a dynamically built
+    // pointer), but this heap-allocated a fresh std::string from it on every
+    // call regardless: once per visible EntityLiving (every mob, every
+    // player) every single frame. Cached by pointer identity -- comparing
+    // the literal's own address is both correct and cheaper than a content
+    // compare, and this renderModel() is shared across every entity of a
+    // given renderer type (e.g. one RenderZombie instance renders every
+    // zombie), so same-looking neighbors in the same frame hit the cache too.
+    static const char *cachedTexturePtr = nullptr;
+    static std::string cachedTextureStr;
+    const char *texturePtr = entityliving->getEntityTexture();
+    if (texturePtr != cachedTexturePtr)
+    {
+        cachedTexturePtr = texturePtr;
+        cachedTextureStr = texturePtr;
+    }
+    const std::string &baseTexture = cachedTextureStr;
 #if PLATFORM_OPTIFINE_RANDOM_MOBS
     const std::string renderTexture = RandomMobs::getTexture(entityliving, baseTexture,
         renderManager != nullptr ? renderManager->renderEngine : nullptr);

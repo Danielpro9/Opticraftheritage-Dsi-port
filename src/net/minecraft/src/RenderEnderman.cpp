@@ -44,7 +44,8 @@ void RenderEnderman::renderCarrying(EntityEnderman *enderman, float partialTick)
 	                                       (float)(brightness & 0xffff),
 	                                       (float)((brightness >> 16) & 0xffff));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	loadTexture("/terrain.png");
+	static CachedTextureId cachedTerrainTextureId;
+	renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
 	renderBlocks->renderBlockAsItem(Block::blocksList[carriedId], enderman->getCarryingData(), 1.0f);
 	renderPopMatrix();
 	renderDisable(RenderCapability::RescaleNormal);

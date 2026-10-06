@@ -56,7 +56,8 @@ int RenderCreeper::shouldRenderCreeperPass(EntityCreeper* entityCreeper, int i, 
     if (entityCreeper->getPowered()) {
         if (i == 1) {
             float f1 = (float)entityCreeper->ticksExisted + f;
-            loadTexture("/armor/power.png");
+            static CachedTextureId cachedPowerTextureId;
+            renderBindTexture(cachedPowerTextureId.get(renderManager->renderEngine, "/armor/power.png"));
             renderMatrixMode(RenderMatrixMode::Texture);
             renderLoadIdentity();
             float f2 = f1 * 0.01f;

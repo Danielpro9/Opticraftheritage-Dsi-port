@@ -48,7 +48,8 @@ void RenderIronGolem::renderEquippedItems(EntityLiving *entity, float partialTic
 	                                       (float)(brightness & 0xffff),
 	                                       (float)((brightness >> 16) & 0xffff));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	loadTexture("/terrain.png");
+	static CachedTextureId cachedTerrainTextureId;
+	renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
 	renderBlocks->renderBlockAsItem(Block::plantRed, 0, 1.0f);
 	renderPopMatrix();
 	renderDisable(RenderCapability::RescaleNormal);

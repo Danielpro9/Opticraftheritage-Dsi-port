@@ -21,7 +21,8 @@ void RenderEnderCrystal::doRender(Entity* entity, double x, double y, double z, 
     const float rotation = static_cast<float>(crystal->innerRotation) + partialTick;
     renderPushMatrix();
     renderTranslate(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-    loadTexture("/mob/enderdragon/crystal.png");
+    static CachedTextureId cachedCrystalTextureId;
+    renderBindTexture(cachedCrystalTextureId.get(renderManager->renderEngine, "/mob/enderdragon/crystal.png"));
     float bob = MathHelper::sin(rotation * 0.2f) / 2.0f + 0.5f;
     bob += bob * bob;
     crystalModel->renderCrystal(rotation * 3.0f, bob * 0.2f, 1.0f / 16.0f);

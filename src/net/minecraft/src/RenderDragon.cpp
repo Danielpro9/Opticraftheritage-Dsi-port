@@ -108,7 +108,8 @@ void RenderDragon::renderHealingBeam(EntityDragon* dragon, double x, double y, d
     Tessellator* tessellator = &Tessellator::instance;
     RenderHelper::disableStandardItemLighting();
     renderDisable(RenderCapability::CullFace);
-    loadTexture("/mob/enderdragon/beam.png");
+    static CachedTextureId cachedBeamTextureId;
+    renderBindTexture(cachedBeamTextureId.get(renderManager->renderEngine, "/mob/enderdragon/beam.png"));
     renderShadeModel(RenderShadeModel::Smooth);
     const float vStart = -((static_cast<float>(dragon->ticksExisted) + partialTick) * 0.01f);
     const float vEnd = distance / 32.0f - (static_cast<float>(dragon->ticksExisted) + partialTick) * 0.01f;
@@ -196,7 +197,8 @@ int RenderDragon::shouldRenderPass(EntityLiving* entity, int pass, float partial
     if (pass != 0)
         return -1;
 
-    loadTexture("/mob/enderdragon/ender_eyes.png");
+    static CachedTextureId cachedEyesTextureId;
+    renderBindTexture(cachedEyesTextureId.get(renderManager->renderEngine, "/mob/enderdragon/ender_eyes.png"));
     renderEnable(RenderCapability::Blend);
     renderDisable(RenderCapability::AlphaTest);
     renderBlendFunc(RenderBlendFactor::One, RenderBlendFactor::One);

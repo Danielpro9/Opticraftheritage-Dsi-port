@@ -115,7 +115,12 @@ void RenderLiving::doRenderLiving(EntityLiving* entityliving, double d, double d
                 // Enchanted armor glint, see RenderItem::renderItemIntoGUI.
                 if (passResult == 15) {
                     float glintTime = static_cast<float>(entityliving->ticksExisted) + f1;
-                    loadTexture("%blur%/misc/glint.png");
+                    // Cached rather than looked up fresh every frame -- this runs
+                    // once per enchanted-armor-wearing entity rendered (including
+                    // the player's own armor), and loadTexture() underneath is an
+                    // uncached RenderEngine::getTexture() hash-map lookup every call.
+                    static CachedTextureId cachedGlintTextureId;
+                    renderBindTexture(cachedGlintTextureId.get(renderManager->renderEngine, "%blur%/misc/glint.png"));
                     renderEnable(RenderCapability::Blend);
                     renderColor4f(0.5f, 0.5f, 0.5f, 1.0f);
                     renderDepthFunc(RenderCompare::Equal);

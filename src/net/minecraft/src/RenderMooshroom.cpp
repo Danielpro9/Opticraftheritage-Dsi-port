@@ -18,7 +18,8 @@ void RenderMooshroom::renderEquippedItems(EntityLiving* entity, float partialTic
     if (mooshroom->isChild())
         return;
 
-    loadTexture("/terrain.png");
+    static CachedTextureId cachedTerrainTextureId;
+    renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
     renderEnable(RenderCapability::CullFace);
     renderPushMatrix();
     renderScale(1.0f, -1.0f, 1.0f);

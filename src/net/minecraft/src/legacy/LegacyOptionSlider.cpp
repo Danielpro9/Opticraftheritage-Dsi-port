@@ -154,7 +154,15 @@ void LegacyOptionSlider::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
 
     const int_t textColor = !enabled ? theme.disabledTextColor
         : (active ? theme.selectedTextColor : static_cast<int_t>(0xffffffffu));
-    legacyDrawCenteredOptionText(mc->fontRenderer, displayString, xPosition + width / 2,
+    // Measured directly here instead of through legacyDrawCenteredOptionText()
+    // so the width can be cached -- see cachedWidthString's own comment
+    // (LegacyOptionSlider.h).
+    if (cachedWidthString != displayString)
+    {
+        cachedWidthString = displayString;
+        cachedWidth = mc->fontRenderer->getStringWidth(displayString);
+    }
+    legacyDrawOptionText(mc->fontRenderer, displayString, xPosition + width / 2 - cachedWidth / 2,
         legacyOptionTextY(yPosition, height), textColor);
 
 }

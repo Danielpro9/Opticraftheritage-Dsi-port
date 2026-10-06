@@ -66,7 +66,18 @@ void LegacyGuiButton::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
     // The same crisp emboss the sliders and the panel labels use. Java's soft
     // 38 % black shadow smeared the glyphs into the button frame, which read as a
     // dark, muddy label next to a slider drawn right above it.
-    legacyDrawCenteredOptionText(mc->fontRenderer, displayString, xPosition + width / 2,
+    //
+    // Measured directly here instead of through legacyDrawCenteredOptionText()
+    // (which calls FontRenderer::getStringWidth() unconditionally) so the width
+    // can be cached: getStringWidth() heap-allocates a UTF-16 std::vector and
+    // scans it per character every call, and this runs once per visible button
+    // every frame.
+    if (cachedWidthString != displayString)
+    {
+        cachedWidthString = displayString;
+        cachedWidth = mc->fontRenderer->getStringWidth(displayString);
+    }
+    legacyDrawOptionText(mc->fontRenderer, displayString, xPosition + width / 2 - cachedWidth / 2,
         legacyGuiButtonTextY(yPosition, height), visual.textColor);
 }
 

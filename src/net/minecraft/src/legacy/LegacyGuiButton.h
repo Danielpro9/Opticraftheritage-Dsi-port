@@ -15,4 +15,13 @@ public:
 private:
     float_t opacity;
     bool selected;
+
+    // Same fix as GuiButton.h's own cachedWidthString/cachedWidth, for the
+    // same reason: this class draws its own text directly (legacyDrawCenteredOptionText)
+    // instead of going through the base class's cached measurement, so it never
+    // got that fix. getStringWidth() heap-allocates a UTF-16 vector and scans it
+    // per character -- for every button on screen, every frame, while this
+    // (the active Legacy UI button class) is on screen.
+    std::string cachedWidthString;
+    int_t cachedWidth = 0;
 };

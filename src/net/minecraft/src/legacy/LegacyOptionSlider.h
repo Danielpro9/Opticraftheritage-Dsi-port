@@ -43,4 +43,13 @@ private:
     float_t sliderValue;
     bool dragging;
     bool selected;
+
+    // Same fix as GuiButton.h's own cachedWidthString/cachedWidth (see its
+    // comment): this class draws its label directly through
+    // legacyDrawCenteredOptionText(), which never got that fix. The label
+    // still legitimately changes often (it includes the current value, e.g.
+    // "Volume: 80%"), so this stays correct the same way the base class's
+    // cache does -- remeasure only when the text itself actually changed.
+    std::string cachedWidthString;
+    int_t cachedWidth = 0;
 };

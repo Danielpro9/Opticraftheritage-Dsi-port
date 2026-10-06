@@ -454,7 +454,10 @@ void GuiIngame::renderBossHealth()
 	static const int_t nameHalfWidth = fontRenderer->getStringWidth(name) / 2;
 	fontRenderer->drawStringWithShadow(name, screenWidth / 2 - nameHalfWidth, y - 10, 0xff00ff);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-	renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
+	// Cached per the same reasoning as renderGameOverlay()'s gui.png lookup
+	// above: this runs every frame a boss health bar is shown.
+	static CachedTextureId cachedIconsTextureId;
+	renderBindTexture(cachedIconsTextureId.get(mc->renderEngine, "/gui/icons.png"));
 }
 
 void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *captureTessellator)
@@ -1177,6 +1180,12 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 		const int_t top = 10;
 		drawRect(left - 1, top - 1, left + columnWidth * columns, top + 9 * rows, 0x80000000);
 
+		// Hoisted out of the per-player loop below: this was paying for a
+		// std::string temporary + hash-map lookup (RenderEngine::getTexture())
+		// once per listed player, every frame the player list is held open.
+		static CachedTextureId cachedIconsTextureId;
+		const int_t iconsTexture = cachedIconsTextureId.get(mc->renderEngine, "/gui/icons.png");
+
 		for (int_t index = 0; index < maxPlayers; ++index)
 		{
 			const int_t x = left + (index % columns) * columnWidth;
@@ -1189,7 +1198,7 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 			{
 				GuiPlayerInfo *info = players[index];
 				fr->drawStringWithShadow(info->name, x, y, 0xffffff);
-				renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
+				renderBindTexture(iconsTexture);
 				int_t pingIcon = 0;
 				if (info->responseTime < 0) pingIcon = 5;
 				else if (info->responseTime < 150) pingIcon = 0;
@@ -1224,7 +1233,8 @@ void GuiIngame::renderPumpkinBlur(int_t w, int_t h)
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	renderDisable(RenderCapability::AlphaTest);
-	renderBindTexture(mc->renderEngine->getTexture("%blur%/misc/pumpkinblur.png"));
+	static CachedTextureId cachedPumpkinBlurTextureId;
+	renderBindTexture(cachedPumpkinBlurTextureId.get(mc->renderEngine, "%blur%/misc/pumpkinblur.png"));
 	Tessellator *tess = &Tessellator::instance;
 	tess->startDrawingQuads();
 	tess->addVertexWithUV(0, h, -90.0f, 0.0f, 1.0f);
@@ -1248,7 +1258,8 @@ void GuiIngame::renderVignette(float_t brightness, int_t w, int_t h)
 	renderDepthMask(false);
 	renderBlendFunc(RenderBlendFactor::Zero, RenderBlendFactor::OneMinusSrcColor);
 	renderColor4f(prevVignetteBrightness, prevVignetteBrightness, prevVignetteBrightness, 1.0f);
-	renderBindTexture(mc->renderEngine->getTexture("%blur%/misc/vignette.png"));
+	static CachedTextureId cachedVignetteTextureId;
+	renderBindTexture(cachedVignetteTextureId.get(mc->renderEngine, "%blur%/misc/vignette.png"));
 	Tessellator *tess = &Tessellator::instance;
 	tess->startDrawingQuads();
 	tess->addVertexWithUV(0, h, -90.0f, 0.0f, 1.0f);
@@ -1275,7 +1286,8 @@ void GuiIngame::renderPortalOverlay(float_t intensity, int_t w, int_t h)
 	renderDepthMask(false);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 	renderColor4f(1.0f, 1.0f, 1.0f, intensity);
-	renderBindTexture(mc->renderEngine->getTexture("/terrain.png"));
+	static CachedTextureId cachedTerrainTextureId;
+	renderBindTexture(cachedTerrainTextureId.get(mc->renderEngine, "/terrain.png"));
 	float_t u1 = (float_t)(Block::portal->blockIndexInTexture & 15)       / 16.0f;
 	float_t v1 = (float_t)(Block::portal->blockIndexInTexture >> 4)       / 16.0f;
 	float_t u2 = (float_t)((Block::portal->blockIndexInTexture & 15) + 1) / 16.0f;

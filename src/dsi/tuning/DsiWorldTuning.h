@@ -743,4 +743,38 @@
 #undef  PLATFORM_CAN_SEE_CACHE_TICKS
 #define PLATFORM_CAN_SEE_CACHE_TICKS 5
 
+// Real-hardware evidence, finally captured: the per-generation-step timing
+// diagnostic added earlier this session (ChunkProvider::drainPendingGeneration(),
+// logs any single generateRange() call -- caves or ravines sweeping
+// PLATFORM_GENERATION_SOURCE_COLUMNS_PER_STEP source columns in one atomic,
+// uninterruptible call -- that takes 20ms or more) just reported back from a
+// real exploration session: 101 such steps in five minutes, several over
+// 200ms (242044us and 229382us the two worst), summing to over 10 SECONDS of
+// wall-clock time spent inside atomic generation steps alone -- squarely
+// matching the reported "performance drops hard once a lot of terrain is
+// loaded" symptom, and confirming the hypothesis that diagnostic was added
+// to test: Ps2WorldTuning.h's own comment on PS2_GENERATION_SOURCE_COLUMNS_
+// PER_STEP already explains why -- PLATFORM_GENERATION_BUDGET_US can only
+// interrupt the generator BETWEEN steps, so a step's own cost sets the floor
+// no budget can lower, and "lower [the columns-per-step count] if the frame
+// log still shows generation spikes at a small budget" is exactly what this
+// does. Columns per step bounds how many carving columns (the source columns
+// that pass their rarity roll and carve a whole cave/ravine tunnel in one
+// go -- most do not and return almost immediately) can land in a single
+// step, not a step's own per-carve cost -- it cannot make one successful
+// carve itself cheaper, only limit how many can stack into one atomic unit.
+// PS2's EE can apparently absorb several stacked carves inside its 16-column
+// slice without the budget check noticing; this hardware's FPU-less, far
+// slower ARM9 clearly cannot. A straight 4x cut (matching the kind of ratio
+// this session's other DSi-specific halvings already assume between this
+// hardware and PS2's) turns the radius-3 sweep's 4 PS2-sized steps into 13
+// smaller ones: the same total carving work, but at most a quarter as many
+// carves can land in any single atomic step, so the wall-clock-budget check
+// between steps gets roughly 4x as many chances to actually interrupt a long
+// run, as it already does for every other generation stage. Does not change
+// what gets generated -- same columns, same rolls, same seed -- only how
+// finely the work is sliced.
+#undef  PLATFORM_GENERATION_SOURCE_COLUMNS_PER_STEP
+#define PLATFORM_GENERATION_SOURCE_COLUMNS_PER_STEP 4
+
 #endif // PLATFORM_DSI

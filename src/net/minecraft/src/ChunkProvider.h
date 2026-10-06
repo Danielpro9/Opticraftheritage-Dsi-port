@@ -98,6 +98,23 @@ private:
 	bool   isOutsideUnloadRadius(int_t i, int_t j) const;
 	void   markChunkTopologyChanged();
 
+#if PLATFORM_DSI
+	// Deferred chunk-unload save queue -- see unloadChunk()'s own comment.
+	// A chunk that needs its runtime edits persisted is dropped from
+	// chunkMap/chunkList immediately, same as before, but the slow part
+	// (NBT serialize + zlib + SD write, and the onChunkUnload() that must
+	// follow it, not precede it) is not run inline: the Chunk* goes on this
+	// queue instead, and drainPendingSaves() writes one out per tick,
+	// spreading the cost over several frames instead of blocking the one
+	// that triggered the unload. reclaimPendingSave() is the other half --
+	// handing the same still-live chunk back if the player returns before
+	// its queued save lands, instead of racing it with a disk reload.
+	void drainPendingSaves(int_t budget);
+	void flushPendingSaves();
+	Chunk *reclaimPendingSave(std::uint64_t key);
+	std::deque<Chunk *> pendingSaveQueue;
+#endif
+
 #if PLATFORM_DEFERRED_POPULATE
 	// Deferred decoration queue (see PLATFORM_POPULATE_CHUNKS_PER_TICK). prepareChunk
 	// enqueues chunks whose +neighbours exist instead of populating inline, and the

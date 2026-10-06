@@ -137,6 +137,14 @@ ChunkProvider::ChunkProvider(World *world, IChunkLoader *ichunkloader, IChunkPro
 
 ChunkProvider::~ChunkProvider()
 {
+#if PLATFORM_DSI
+	// Last-resort net: normally empty by now (saveChunks() already flushes
+	// this queue on every exit/autosave path that can reach a destructor),
+	// but chunkLoader is about to be deleted below, so any stragglers must be
+	// written out (or at least attempted) while it is still valid rather than
+	// silently dropped.
+	flushPendingSaves();
+#endif
 #if PLATFORM_ASYNC_CHUNK_GENERATION
 	delete asyncGenerationScheduler;
 	asyncGenerationScheduler = nullptr;
@@ -345,7 +353,17 @@ Chunk *ChunkProvider::getChunkIfExists(int_t i, int_t j)
 	const std::uint64_t key = chunkKey(i, j);
 	auto it = chunkMap.find(key);
 	if (it == chunkMap.end())
+	{
+#if PLATFORM_DSI
+		// See reclaimPendingSave()'s own comment: a chunk whose deferred
+		// unload-save has not landed yet is not in chunkMap, but it is also
+		// not gone -- hand the same live object back instead of reporting
+		// "does not exist".
+		if (Chunk *reclaimed = reclaimPendingSave(key))
+			return reclaimed;
+#endif
 		return nullptr;
+	}
 
 #if PLATFORM_BOUNDED_WORLD
 	if (worldObj != nullptr && !worldObj->findingSpawnPoint && !canChunkExist(i, j))
@@ -926,6 +944,15 @@ Chunk *ChunkProvider::provideChunk(int_t i, int_t j)
 	auto it = chunkMap.find(key);
 	if (it == chunkMap.end())
 	{
+#if PLATFORM_DSI
+		// See reclaimPendingSave()'s own comment: a chunk whose deferred
+		// unload-save has not landed yet is not in chunkMap, but it is also
+		// not gone -- hand the same live object back instead of regenerating
+		// or reloading the last-saved (pre-edit) copy from disk underneath
+		// the write this queue still owes it.
+		if (Chunk *reclaimed = reclaimPendingSave(key))
+			return reclaimed;
+#endif
 #if PLATFORM_ASYNC_CHUNK_GENERATION && PLATFORM_PC_LEGACY
 		if (worldObj == nullptr || !worldObj->findingSpawnPoint)
 		{
@@ -1071,33 +1098,68 @@ void ChunkProvider::unloadChunk(std::uint64_t key, Chunk *chunk)
 		const long_t unloadSaveStartNs = System::nanoTime();
 #endif
 #if PLATFORM_DSI
-		// Diagnostic only, not a fix: this platform's own PLATFORM_PROFILE_
-		// STREAMING (PlatformConfig.h) is PS2/Wii-only, and Profiler_DSI.cpp's
-		// platformProfileUnloadSave() is a no-op, so this specific cost has
-		// never actually been measured here -- see DsiWorldTuning.h's own
-		// PLATFORM_MAX_CHUNK_UNLOADS_PER_TICK comment ("Unverified without a
-		// measured SD write latency"). This is exactly the one call
-		// World::tick()'s own unload100OldestChunks() call runs unconditionally
-		// every tick, with SD write latency through BlocksDS's FatFs still
-		// unmeasured. Real-hardware evidence (a debug.log): "worldTick" spikes
-		// up to 194ms with TickUpdates()'s own wall-clock budget (3ms) and
-		// everything else in World::tick() already accounted for elsewhere in
-		// the same log -- a synchronous NBT-serialize-plus-SD-write for a
-		// genuinely edited chunk, at only 1-2 unloads/tick, is a real
-		// candidate for the rest. INFO, not Warning, so this line itself
-		// never forces the exact SD-commit cost it is trying to measure.
-		const long_t dsiUnloadSaveStartNs = System::nanoTime();
-#endif
+		// Real-hardware evidence (the diagnostic right below this comment,
+		// added to measure exactly this call): this synchronous NBT-serialize
+		// -plus-SD-write averaged 262ms and peaked at 805ms across a real
+		// exploration session, with up to three landing back-to-back in one
+		// tick during an emergency chunk-unload burst (ChunkMemoryPolicy's
+		// PLATFORM_EMERGENCY_CHUNK_UNLOADS_PER_TICK) -- 2.2 seconds of
+		// straight blocking in one observed case. Region-file fragmentation
+		// was ruled out (a freshly-created world showed the same cost).
+		// Deferring the write itself (below) rather than lowering the
+		// emergency limit keeps that limit's actual job -- bounding how many
+		// chunks sit fully resident in chunkMap/chunkList -- intact.
+		//
+		// Deliberately NOT calling chunk->onChunkUnload() here before queuing
+		// it, unlike the old inline save below -- that call deletes the
+		// chunk's own TileEntity objects (chests, furnaces, ...), and the
+		// vanilla order was always save-first-then-unload specifically so
+		// their NBT gets written before they are destroyed. Queuing the
+		// now-detached-from-chunkMap Chunk* as-is keeps that same order, just
+		// with "later" instead of "immediately" between the two; onChunkUnload()
+		// runs in drainPendingSaves()/flushPendingSaves(), right after the
+		// deferred save actually happens, same relative order as before.
+		//
+		// The caller (unload100OldestChunks()) erases this chunk from
+		// chunkMap/chunkList unconditionally right after this function
+		// returns, exactly as it always did -- so if the player walks back
+		// into this exact position before the queued save lands, provideChunk()
+		// /getChunkIfExists() would otherwise find nothing and reload the
+		// last-saved (pre-edit) copy from disk, racing the pending write and
+		// silently losing whichever edit loses that race. reclaimPendingSave()
+		// (called from both of those on a chunkMap miss) checks this queue
+		// first and hands the same still-live Chunk* back instead, which
+		// cancels the now-unnecessary deferred save by construction (the
+		// reclaimed chunk simply unloads and re-queues normally, next time,
+		// if it is still dirty then).
+		pendingSaveQueue.push_back(chunk);
+		// Absolute cap, not expected to matter in practice (see
+		// drainPendingSaves()'s own per-tick rate vs. how rarely a dirty
+		// chunk unloads in the real-hardware logs this was measured against):
+		// if something pathological ever outpaces the drain, fall back to the
+		// old inline cost for the overflow rather than let queued Chunk
+		// objects grow the heap without bound.
+		constexpr std::size_t PENDING_SAVE_QUEUE_HARD_CAP = 16;
+		while (pendingSaveQueue.size() > PENDING_SAVE_QUEUE_HARD_CAP)
+		{
+			Chunk *overflow = pendingSaveQueue.front();
+			pendingSaveQueue.pop_front();
+			saveChunkToFile(overflow);
+			overflow->isModified = false;
+			overflow->clearRuntimeSaveRequired();
+			saveExtraChunkData(overflow);
+			overflow->onChunkUnload();
+			delete overflow;
+		}
+		return;
+#else
 		saveChunkToFile(chunk);
 		chunk->isModified = false;
 		chunk->clearRuntimeSaveRequired();
 		saveExtraChunkData(chunk);
-#if PLATFORM_DSI
-		MC_LOG_INFO("dsi", "chunk unload save took %lldus\n",
-			(long long)((System::nanoTime() - dsiUnloadSaveStartNs) / 1000));
-#endif
 #if PLATFORM_PROFILE_STREAMING
 		platformProfileUnloadSave(System::nanoTime() - unloadSaveStartNs);
+#endif
 #endif
 	}
 #elif !PLATFORM_CONSOLE_LOW
@@ -1122,6 +1184,80 @@ void ChunkProvider::unloadChunk(std::uint64_t key, Chunk *chunk)
 	chunk->onChunkUnload();
 	delete chunk;
 }
+
+#if PLATFORM_DSI
+// Writes out at most `budget` queued chunks (same 1/tick this platform
+// already ran unload-saves at before they were deferred -- see
+// PLATFORM_MAX_CHUNK_UNLOADS_PER_TICK -- so this does not raise the SD
+// commit rate, only decouples it from the exact tick a dirty chunk crossed
+// the unload radius). Called once per tick from unload100OldestChunks()
+// regardless of whether that tick unloaded anything new, so a backlog from
+// an emergency burst keeps draining on quiet ticks too.
+void ChunkProvider::drainPendingSaves(int_t budget)
+{
+	for (int_t i = 0; i < budget && !pendingSaveQueue.empty(); ++i)
+	{
+		Chunk *chunk = pendingSaveQueue.front();
+		pendingSaveQueue.pop_front();
+		const long_t startNs = System::nanoTime();
+		saveChunkToFile(chunk);
+		chunk->isModified = false;
+		chunk->clearRuntimeSaveRequired();
+		saveExtraChunkData(chunk);
+		MC_LOG_INFO("dsi", "deferred chunk save took %lldus (queue depth now %u)\n",
+			(long long)((System::nanoTime() - startNs) / 1000), (unsigned)pendingSaveQueue.size());
+		chunk->onChunkUnload();
+		delete chunk;
+	}
+}
+
+// Full/exit saves (World::saveChunks(true, ...), the "Saving world" screen)
+// walk chunkList for dirty chunks -- but a chunk in this queue was already
+// removed from chunkList the moment it was queued, so without this it would
+// be silently skipped and the pending edit lost on quit. Called
+// unconditionally at the top of ChunkProvider::saveChunks() regardless of
+// the full/autosave flag, and again from the destructor as a last-resort net
+// if the provider is torn down some other way.
+void ChunkProvider::flushPendingSaves()
+{
+	while (!pendingSaveQueue.empty())
+	{
+		Chunk *chunk = pendingSaveQueue.front();
+		pendingSaveQueue.pop_front();
+		saveChunkToFile(chunk);
+		chunk->isModified = false;
+		chunk->clearRuntimeSaveRequired();
+		saveExtraChunkData(chunk);
+		chunk->onChunkUnload();
+		delete chunk;
+	}
+}
+
+// Called from provideChunk()/getChunkIfExists() on a chunkMap miss, before
+// either falls through to loading/regenerating from disk. See the comment in
+// unloadChunk() on why: the queued chunk is still the live, fully up to date
+// object (its deferred save just has not reached the SD card yet), so handing
+// it straight back -- same as a normal chunkMap hit -- is both cheaper than a
+// disk round trip and the only way to not race that pending write with
+// whatever the player does next. The queue is small (capped at 16, typically
+// far less), so a linear scan here costs nothing next to the disk read this
+// replaces.
+Chunk *ChunkProvider::reclaimPendingSave(std::uint64_t key)
+{
+	for (auto it = pendingSaveQueue.begin(); it != pendingSaveQueue.end(); ++it)
+	{
+		Chunk *chunk = *it;
+		if (chunk == nullptr || chunkKey(chunk->xPosition, chunk->zPosition) != key)
+			continue;
+		pendingSaveQueue.erase(it);
+		chunkMap[key] = chunk;
+		chunkList.push_back(chunk);
+		markChunkTopologyChanged();
+		return chunk;
+	}
+	return nullptr;
+}
+#endif
 
 bool ChunkProvider::isChunkPopulationPending(int_t i, int_t j) const
 {
@@ -1355,6 +1491,18 @@ bool ChunkProvider::saveChunks(bool flag, IProgressUpdate *iprogressupdate)
 	// compressing and writing a large dirty batch synchronously produces a visible
 	// libfat stall. Full/menu saves still drain every dirty chunk and flush the
 	// RegionFile cache through saveExtraData() below.
+#if PLATFORM_DSI
+	// A chunk queued by unloadChunk()'s deferred save (see that function's own
+	// comment) was already removed from chunkMap/chunkList, so the chunkList
+	// sweep below would never see it -- without this, a pending edit could be
+	// silently dropped if the world saves (autosave or exit) before the
+	// per-tick drain gets to it. Periodic autosave only runs every
+	// PLATFORM_AUTOSAVE_PERIOD_TICKS ticks (minutes apart, not every tick),
+	// and the queue is normally near-empty by then anyway from the steady
+	// 1/tick drain, so this is a rare, small cost, not a reintroduction of
+	// the stall this whole mechanism exists to avoid.
+	flushPendingSaves();
+#endif
 	int_t saved = 0;
 	int_t totalToSave = 0;
 	if (iprogressupdate != nullptr)
@@ -1623,6 +1771,13 @@ bool ChunkProvider::unload100OldestChunks()
 
 #if PLATFORM_PROFILE_STREAMING
 	platformProfileChunkEvict(System::nanoTime() - chunkEvictStartNs);
+#endif
+#if PLATFORM_DSI
+	// Same rate unload-saves already ran at before they were deferred (see
+	// unloadChunk()); called every tick regardless of whether this tick
+	// unloaded anything, so a backlog left over from an emergency burst
+	// keeps draining on the quiet ticks that follow it.
+	drainPendingSaves(retentionPolicy.maxUnloadsPerTick);
 #endif
 	if (chunkLoader != nullptr)
 		chunkLoader->chunkTick();

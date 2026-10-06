@@ -104,8 +104,28 @@ void GuiIngameMenu::onGuiClosed()
 	// one (achievement/bg.png failed to upload in that same log, immediately
 	// after this menu's "Achievements" button). Same pattern as
 	// GuiAchievements::onGuiClosed()'s own release of achievement/bg.png.
+	//
+	// A second, follow-up log (taken after the fix above alone) still showed
+	// the same class of flicker, this time via a different leak: this
+	// screen's "Help & Options" button opens LegacyOptionsScreen, whose
+	// checkbox controls (LegacyOptionCheckbox.cpp's module-level g_tickBox/
+	// g_tickBoxHovered/g_tick) load legacy/tick.png, tickbox.png and
+	// tickbox_hovered.png -- and LegacyOptionsScreen has no onGuiClosed() of
+	// its own, so those three stayed resident too, the exact same way
+	// title.png did before this function existed. returnToParent() always
+	// routes back through this screen before gameplay resumes (confirmed:
+	// LegacyOptionsScreen's parentScreen in the pause flow is this
+	// GuiIngameMenu, never straight to the 3D world), so releasing all four
+	// textures here, in the one place every mid-game legacy menu detour
+	// funnels back through, covers the whole group instead of chasing each
+	// sub-screen individually.
 	if (mc != nullptr && mc->renderEngine != nullptr)
+	{
 		mc->renderEngine->releaseTexture(legacyUiTitleResourcePath());
+		mc->renderEngine->releaseTexture("/legacy/tick.png");
+		mc->renderEngine->releaseTexture("/legacy/tickbox.png");
+		mc->renderEngine->releaseTexture("/legacy/tickbox_hovered.png");
+	}
 #endif
 }
 

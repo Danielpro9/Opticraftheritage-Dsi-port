@@ -1271,6 +1271,34 @@ void Minecraft::displayGuiScreen(GuiScreen *guiscreen)
     currentScreen = guiscreen;
     if (guiscreen != nullptr)
     {
+#if PLATFORM_DSI
+        // Real risk raised after the deferred chunk-save queue shipped
+        // (ChunkProvider.cpp's pendingSaveQueue): that queue only drains
+        // from World::tick(), which this platform's own runTick() stops
+        // calling entirely the instant a pausing screen is open ("!isGame
+        // Paused ... theWorld->tick()") -- and there is no periodic
+        // background autosave on this platform either
+        // (PLATFORM_DISABLE_RUNTIME_AUTOSAVE: SD write latency never
+        // measured, explicit save only) to catch what the queue is still
+        // holding in the meantime. So without this, pausing right after a
+        // chunk happens to unload -- building something, then opening
+        // Options, or just the pause menu, and leaving the console there --
+        // leaves that chunk's edits sitting only in memory for as long as
+        // the game stays paused, with no save racing to catch a power loss
+        // in that window. guiscreen->doesGuiPauseGame() is the same check
+        // runTick() itself uses to decide whether ticking (and so this
+        // queue's drain) is about to stop; flushing here, once, right as
+        // that happens, bounds the exposure to "however long the chunk had
+        // already been queued" instead of "indefinitely". Singleplayer only
+        // (isMultiplayerWorld() already forces isGamePaused false and keeps
+        // ticking regardless, so there is nothing to catch here for MP).
+        if (theWorld != nullptr && !isMultiplayerWorld() && guiscreen->doesGuiPauseGame())
+        {
+            ChunkProvider *dsiChunkProvider = dynamic_cast<ChunkProvider *>(theWorld->getIChunkProvider());
+            if (dsiChunkProvider != nullptr)
+                dsiChunkProvider->flushPendingSaves();
+        }
+#endif
         // Track every screen we create. Java relied on GC; in C++ a screen and its
         // buttons leak unless we free them. We can't free on every transition because
         // child screens keep a parentScreen pointer (back-stack), so we defer to

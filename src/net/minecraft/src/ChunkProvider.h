@@ -77,6 +77,16 @@ public:
 	std::vector<Chunk *> getLoadedChunksSnapshot() const override { return chunkList; }
 	void    removeEntityFromLoadedChunks(Entity *entity) override;
 
+#if PLATFORM_DSI
+	// Public (unlike drainPendingSaves()/reclaimPendingSave() below, which
+	// stay implementation details): Minecraft::displayGuiScreen() calls this
+	// directly whenever a pausing screen opens, since that is also the
+	// moment World::tick() -- and so this queue's own per-tick drain --
+	// stops running until gameplay resumes. See that call site's own
+	// comment for why a screen opening is the right moment to force this.
+	void flushPendingSaves();
+#endif
+
 private:
 	static std::uint64_t chunkKey(int_t i, int_t j);
 
@@ -110,7 +120,6 @@ private:
 	// handing the same still-live chunk back if the player returns before
 	// its queued save lands, instead of racing it with a disk reload.
 	void drainPendingSaves(int_t budget);
-	void flushPendingSaves();
 	Chunk *reclaimPendingSave(std::uint64_t key);
 	std::deque<Chunk *> pendingSaveQueue;
 #endif

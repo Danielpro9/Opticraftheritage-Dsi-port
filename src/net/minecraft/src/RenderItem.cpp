@@ -342,7 +342,10 @@ void RenderItem::renderItemIntoGUI(FontRenderer* fontrenderer, RenderEngine* ren
         renderDepthFunc(RenderCompare::Greater);
         renderDisable(RenderCapability::Lighting);
         renderDepthMask(false);
-        renderengine->bindTexture(renderengine->getTexture("%blur%/misc/glint.png"));
+        // Cached for the same reason as drawItemIntoGui()'s two ids above --
+        // this runs once per enchanted SLOT drawn in a GUI, every frame.
+        static CachedTextureId cachedGlintTextureId;
+        renderengine->bindTexture(cachedGlintTextureId.get(renderengine, "%blur%/misc/glint.png"));
         zLevel -= 50.0f;
         renderEnable(RenderCapability::Blend);
         renderBlendFunc(RenderBlendFactor::DstColor, RenderBlendFactor::DstColor);

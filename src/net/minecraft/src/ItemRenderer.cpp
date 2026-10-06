@@ -94,7 +94,8 @@ void ItemRenderer::renderItem(EntityLiving* entityliving, ItemStack* itemstack, 
         if (itemstack->hasEffect() && renderPass == 0) {
             renderDepthFunc(RenderCompare::Equal);
             renderDisable(RenderCapability::Lighting);
-            renderBindTexture(mc->renderEngine->getTexture("%blur%/misc/glint.png"));
+            static CachedTextureId cachedGlintTextureId;
+            renderBindTexture(cachedGlintTextureId.get(mc->renderEngine, "%blur%/misc/glint.png"));
             renderEnable(RenderCapability::Blend);
             renderBlendFunc(RenderBlendFactor::SrcColor, RenderBlendFactor::One);
             const float tint = 0.76f;
@@ -298,7 +299,8 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
         renderRotate(180.0f, 0.0f, 0.0f, 1.0f);
         renderTranslate(-1.0f, -1.0f, 0.0f);
         renderScale(0.015625f, 0.015625f, 0.015625f);
-        mc->renderEngine->bindTexture(mc->renderEngine->getTexture("/misc/mapbg.png"));
+        static CachedTextureId cachedMapBgTextureId;
+        mc->renderEngine->bindTexture(cachedMapBgTextureId.get(mc->renderEngine, "/misc/mapbg.png"));
         Tessellator* tessellator = &Tessellator::instance;
         renderNormal3f(0.0f, 0.0f, -1.0f);
         tessellator->startDrawingQuads();
@@ -486,8 +488,8 @@ void ItemRenderer::renderOverlays(float f) {
         }
     }
     if (mc->thePlayer->isInsideOfMaterial(Material::water)) {
-        int k = mc->renderEngine->getTexture("/misc/water.png");
-        renderBindTexture(k);
+        static CachedTextureId cachedWaterTextureId;
+        renderBindTexture(cachedWaterTextureId.get(mc->renderEngine, "/misc/water.png"));
         renderWarpedTextureOverlay(f);
     }
     renderEnable(RenderCapability::AlphaTest);

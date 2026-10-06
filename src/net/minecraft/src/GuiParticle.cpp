@@ -32,7 +32,8 @@ void GuiParticle::updateAndRender(float_t partialTick)
 
 void GuiParticle::renderParticles(float_t partialTick)
 {
-	mc->renderEngine->bindTexture(mc->renderEngine->getTexture("/gui/particles.png"));
+	static CachedTextureId cachedParticlesTextureId;
+	mc->renderEngine->bindTexture(cachedParticlesTextureId.get(mc->renderEngine, "/gui/particles.png"));
 	for (int_t i = 0; i < (int_t)particles.size(); i++)
 	{
 		Particle *p = particles[i];

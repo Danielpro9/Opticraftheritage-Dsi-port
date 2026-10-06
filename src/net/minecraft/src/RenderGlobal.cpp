@@ -1678,7 +1678,8 @@ void RenderGlobal::renderSky(float f)
 		renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 		RenderHelper::disableStandardItemLighting();
 		renderDepthMask(false);
-		renderBindTexture(renderEngine->getTexture("/misc/tunnel.png"));
+		static CachedTextureId cachedTunnelTextureId;
+		renderBindTexture(cachedTunnelTextureId.get(renderEngine, "/misc/tunnel.png"));
 		Tessellator *tessellator = &Tessellator::instance;
 		float endSkyRed = 24.0f / 255.0f;
 		float endSkyGreen = 24.0f / 255.0f;
@@ -2125,7 +2126,8 @@ void RenderGlobal::renderCloudsFancy(float f)
 	const tess_coord_t fancyCloudLocalX = static_cast<tess_coord_t>(d);
 	const tess_coord_t fancyCloudLocalZ = static_cast<tess_coord_t>(d1);
 
-	renderBindTexture(renderEngine->getTexture("/environment/clouds.png"));
+	static CachedTextureId cachedCloudsFancyTextureId;
+	renderBindTexture(cachedCloudsFancyTextureId.get(renderEngine, "/environment/clouds.png"));
 	renderEnable(RenderCapability::Blend);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 

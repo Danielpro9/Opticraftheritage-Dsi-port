@@ -83,5 +83,19 @@ bool legacyDrawPanorama(Minecraft *mc, int_t screenWidth, int_t screenHeight,
     drawPanoramaQuad(screenWidth, screenHeight, zLevel, uv, -texelU, texelV, blurDiagonalAlpha);
     drawPanoramaQuad(screenWidth, screenHeight, zLevel, uv, texelU, texelV, blurDiagonalAlpha);
 #endif
+    // Every other draw helper in this codebase (Gui::drawRect/drawGradientRect,
+    // legacyDrawUiTexture, legacyDrawTitleTexture, ...) disables Blend again
+    // once it is done with it; this one never did. legacyDrawTitleTexture()
+    // (drawn right after this function on every screen that also shows the
+    // panorama) does its own renderEnable(Blend)/renderDisable(Blend) pair
+    // around its own draw, so by the time anything after THAT runs, Blend is
+    // back to a correctly-tracked "off" regardless of this leak -- meaning
+    // this fix alone is not expected to be the full story for the panel
+    // rendering see-through on panorama screens (LegacyOptionsPanel.cpp's
+    // own comment has the real-hardware detail on that). Still worth fixing
+    // on its own merits: a function that enables a capability and never
+    // disables it is a real inconsistency with every sibling draw helper
+    // here, regardless of whether it turns out to matter for this bug.
+    renderDisable(RenderCapability::Blend);
     return true;
 }

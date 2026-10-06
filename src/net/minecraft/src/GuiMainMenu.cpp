@@ -712,11 +712,17 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
     }
 #endif
 
+    if (cachedSplashWidthText != splashText)
+    {
+        cachedSplashWidthText = splashText;
+        cachedSplashWidth = fontRenderer->getStringWidth(splashText);
+    }
+
     tess->setColorOpaque_I(0xffffff);
     const float_t splashScaleRaw = 1.8f - MathHelper::abs(MathHelper::sin(
         (static_cast<float_t>(System::currentTimeMillis() % 1000LL) / 1000.0f) * 3.1415927f * 2.0f) * 0.1f);
     float_t splashScale = (splashScaleRaw * 100.0f) /
-        static_cast<float_t>(fontRenderer->getStringWidth(splashText) + 32);
+        static_cast<float_t>(cachedSplashWidth + 32);
 
     // The splash normalises itself to a constant width, a rule tuned against the
     // 274 px vanilla logo. The Legacy banner instead scales with the screen, so the
@@ -741,7 +747,7 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
         splashScale *= titleFactor;
     }
 
-    const float_t splashWidth = static_cast<float_t>(fontRenderer->getStringWidth(splashText)) * splashScale;
+    const float_t splashWidth = static_cast<float_t>(cachedSplashWidth) * splashScale;
     float_t splashCenterX = legacyTitleDrawn
         ? static_cast<float_t>(legacyTitleRect.x + legacyTitleRect.width) - SPLASH_ANCHOR_INSET * titleFactor
         : static_cast<float_t>(width / 2 + 90);
@@ -758,7 +764,7 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
     renderTranslate(splashCenterX, splashCenterY, 0.0f);
     renderRotate(-20.0f, 0.0f, 0.0f, 1.0f);
     renderScale(splashScale, splashScale, splashScale);
-    drawCenteredString(fontRenderer, splashText, 0, -8, 0xffff00);
+    fontRenderer->drawStringWithShadow(splashText, -cachedSplashWidth / 2, -8, 0xffff00);
     renderPopMatrix();
 
 #if PLATFORM_DSI

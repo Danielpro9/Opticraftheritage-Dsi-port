@@ -91,10 +91,19 @@ void EffectRenderer::renderParticles(Entity *entity, float_t f)
         if (fxLayers[i].empty())
             continue;
 
+        // Cached rather than looked up fresh every frame -- this runs once
+        // per non-empty particle layer every frame particles are on screen
+        // (block breaking, splashes, smoke -- common during normal play),
+        // and was paying for a std::string temporary + hash-map lookup
+        // (RenderEngine::getTexture()) per layer per frame for one of only
+        // three fixed texture names.
+        static CachedTextureId cachedParticlesTextureId;
+        static CachedTextureId cachedTerrainTextureId;
+        static CachedTextureId cachedItemsTextureId;
         int_t j = 0;
-        if (i == 0) j = renderer->getTexture("/particles.png");
-        if (i == 1) j = renderer->getTexture("/terrain.png");
-        if (i == 2) j = renderer->getTexture("/gui/items.png");
+        if (i == 0) j = cachedParticlesTextureId.get(renderer, "/particles.png");
+        if (i == 1) j = cachedTerrainTextureId.get(renderer, "/terrain.png");
+        if (i == 2) j = cachedItemsTextureId.get(renderer, "/gui/items.png");
 
         renderBindTexture(j);
 

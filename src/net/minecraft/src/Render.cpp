@@ -52,7 +52,12 @@ void Render::renderEntityOnFire(Entity* entity, double x, double y, double z, fl
     renderTranslate((float)x, (float)y, (float)z);
     float f9 = entity->width * 1.4f;
     renderScale(f9, f9, f9);
-    loadTexture("/terrain.png");
+    // Cached rather than looked up fresh every frame -- this runs once per
+    // burning entity rendered every frame (zombies catching fire in
+    // daylight is routine), and loadTexture() underneath is an uncached
+    // RenderEngine::getTexture() hash-map lookup every call.
+    static CachedTextureId cachedTerrainTextureId;
+    renderBindTexture(cachedTerrainTextureId.get(renderManager->renderEngine, "/terrain.png"));
     Tessellator* tessellator = &Tessellator::instance;
     float f10 = 0.5f;
     float f11 = 0.0f;

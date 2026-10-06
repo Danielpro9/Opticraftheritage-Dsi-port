@@ -43,6 +43,13 @@
 #  define PLATFORM_AUTOSAVE_PERIOD_TICKS                40
 // Runtime incremental saves stay small on PS2 to avoid long synchronous I/O stalls.
 #  define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT         2
+// How many chunks ChunkProvider::saveChunks() writes between IProgressUpdate::
+// setLoadingProgress() calls on a full/exit save. Vanilla's own value --
+// see the PC/default branch below, same constant -- fine on PS2 too (32+
+// chunks resident at once there, so this still fires several times over a
+// real save). See DsiWorldTuning.h's own override for why DSi needs this
+// much finer.
+#  define PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL        10
 #  define PLATFORM_MESH_BUDGET                          1
 #  define PLATFORM_MIN_RENDERER_UPDATES_PER_FRAME       PS2_MIN_RENDERER_UPDATES_PER_FRAME
 #  define PLATFORM_MESH_WAIT_FOR_PENDING_SOURCES        PS2_MESH_WAIT_FOR_PENDING_SOURCES
@@ -264,6 +271,10 @@
 #  define PLATFORM_AUTOSAVE_PERIOD_TICKS                40
 // Release 1.2.5 saves at most 24 dirty chunks during an incremental save.
 #  define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT         24
+// Vanilla's own granularity for ChunkProvider::saveChunks()'s progress-bar
+// updates during a full/exit save -- see the PS2||DSI branch above for the
+// console override this exists to allow.
+#  define PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL        10
 // Whether chunk meshing is bounded per frame. Off on the desktop, where
 // EntityRenderer's own time-limited retry loop is the budget and there is plenty
 // of headroom to overshoot it.

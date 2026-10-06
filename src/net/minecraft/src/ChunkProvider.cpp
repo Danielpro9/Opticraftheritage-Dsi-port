@@ -1540,7 +1540,8 @@ bool ChunkProvider::saveChunks(bool flag, IProgressUpdate *iprogressupdate)
 		// storage-constrained consoles without changing desktop/parity behavior.
 		if (saved == PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT && !flag)
 			return false;
-		if (iprogressupdate != nullptr && totalToSave > 0 && ++progress % 10 == 0)
+		if (iprogressupdate != nullptr && totalToSave > 0 &&
+		    ++progress % PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL == 0)
 			iprogressupdate->setLoadingProgress((progress * 100) / totalToSave);
 	}
 	if (flag)

@@ -302,6 +302,22 @@
 #undef  PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT
 #define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT    2
 
+// Real-hardware log evidence: a world-exit frame took 4313ms, with ~2.5s of
+// that unaccounted for by anything previously instrumented. Traced to
+// Minecraft::changeWorld()'s synchronous oldWorld->saveWorldIndirectly() call,
+// which blocks on ChunkProvider::saveChunks(flag=true, ...) before theWorld is
+// even swapped. That full exit save has always cost this much -- what's new
+// here is making it visible. saveChunks()'s progress-bar update only fires
+// every PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL chunks saved; vanilla's value
+// of 10 never fires on DSi, since a DSi world rarely has 10 dirty chunks to
+// save on exit, leaving the loading screen frozen with no feedback for the
+// whole save. LoadingScreenRenderer::setLoadingProgress() already
+// self-throttles its actual screen presents to once per 100ms internally, so
+// calling it after every single chunk here is always safe -- it just lets
+// the (rare, small) cases that do have enough dirty chunks actually redraw.
+#undef  PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL
+#define PLATFORM_SAVE_PROGRESS_UPDATE_INTERVAL   1
+
 // Real-hardware evidence (reported: 80-190ms "worldTick" spikes, worst right
 // after a burst of chunks streams in): World::TickUpdates() drains its
 // scheduledTickTreeSet (fluid spread, leaf decay, redstone, crop growth) in

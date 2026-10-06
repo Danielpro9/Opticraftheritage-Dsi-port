@@ -629,10 +629,29 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
     if (!legacyTitleDrawn)
     {
         const int_t logoWidth = 274;
-        const int_t logoX = width / 2 - logoWidth / 2;
         const int_t logoY = 30;
         renderBindTexture(mc->renderEngine->getTexture("/title/mclogo.png"));
         renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+        // Vanilla assumes a logical canvas wide enough for a 274px logo --
+        // true on desktop, where ScaledResolution's scale-factor search never
+        // goes below 320. DSi's non-legacy GUI is instead pinned 1:1 to its
+        // native 256px-wide screen (PLATFORM_FORCE_GUI_SCALE, see
+        // DsiPresentationTuning.h), narrower than the logo itself -- real
+        // hardware showed it overflowing the whole screen width and
+        // overlapping the Singleplayer button below it. Scale the whole draw
+        // down around its own horizontal centre instead of changing the tile
+        // w/h arguments below, which are also the texture-sample regions
+        // drawTexturedModalRect() reads with its own hardcoded 1/256 UV scale
+        // (Gui.cpp) -- resizing those would sample the wrong part of the
+        // (still full-size) texture rather than just shrink it.
+        const float_t logoScale = static_cast<float_t>(width) < static_cast<float_t>(logoWidth) + 16.0f
+            ? (static_cast<float_t>(width) - 16.0f) / static_cast<float_t>(logoWidth)
+            : 1.0f;
+        renderPushMatrix();
+        renderTranslate(static_cast<float_t>(width) / 2.0f, 0.0f, 0.0f);
+        renderScale(logoScale, logoScale, 1.0f);
+        const int_t logoX = -logoWidth / 2;
 
         if (updateCounter < 1.0E-4f)
         {
@@ -647,6 +666,7 @@ void GuiMainMenu::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
             drawTexturedModalRect(logoX, logoY, 0, 0, 155, 44);
             drawTexturedModalRect(logoX + 155, logoY, 0, 45, 155, 44);
         }
+        renderPopMatrix();
     }
 
 #if PLATFORM_DSI

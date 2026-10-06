@@ -113,6 +113,29 @@ static bool isTileAtlasResource(const std::string &name)
 // report: a solid box with no transparent crosshair cutout. 32x32,
 // resident only while a GuiScreen with PLATFORM_CURSOR_TEXTURE is open, so
 // this costs nothing terrain/items/mob skins would otherwise get either.
+//
+// title/mclogo.png added after a real-hardware report of it looking opaque
+// with no transparent cutout -- the identical "paletted index-0 transparency
+// is not actually working on this hardware" symptom already fixed for
+// title.png/logo1.png/logo2.png above, just never extended to this, the one
+// logo texture that was never screenshotted broken before now. Same
+// structure as those three (a logo graphic with transparent gaps meant to
+// show the background through), so the same fix applies; GuiMainMenu.cpp
+// keeps this texture at its native 256x256 (drawTexturedModalRect()'s
+// hardcoded 1/256 UV scale depends on that), so this only changes the GPU
+// pixel format, not the dimensions those UVs rely on.
+//
+// legacy/panorama.png added for a different reason than every entry above --
+// not transparency, colour-count pressure, the same shape of problem
+// terrain.png/gui/items.png have (see the DSi-only branch below). A real
+// log showed it needing colour quantization down to shift=2 (93 colours) to
+// fit the paletted GL_RGB256 format's 256-colour ceiling, even at this
+// texture's own small resolution -- a photographic background has far more
+// distinct shades than a 256-slot palette holds, and the visible result was
+// reported on hardware as "almost no colours, pixelated". The RGBA path
+// sidesteps the palette ceiling entirely; at this texture's size (tens of
+// KB) the extra bytes-per-pixel cost is trivial next to the headroom a real
+// log already confirmed.
 static bool dsiNeedsRealAlphaTransparency(const std::string &name)
 {
 	const std::string path = normalizedTexturePath(name);
@@ -120,7 +143,7 @@ static bool dsiNeedsRealAlphaTransparency(const std::string &name)
 		path == "/font/default.png" || path == "/font/alternate.png" ||
 		path == legacyUiTitleResourcePath() ||
 		path == "/legacy/logo1.png" || path == "/legacy/logo2.png" ||
-		path == "/cursor.png";
+		path == "/cursor.png" || path == "/legacy/panorama.png" || path == "/title/mclogo.png";
 }
 #endif
 

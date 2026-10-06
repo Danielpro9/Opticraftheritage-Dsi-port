@@ -95,6 +95,9 @@ void ModelRenderer::invalidateCompiledGeometry()
 #endif
         displayList = 0;
     }
+#if PLATFORM_MODEL_IMMEDIATE
+    renderStaticMeshDestroy(immediateMesh);
+#endif
     compiled = false;
 }
 
@@ -166,7 +169,13 @@ void ModelRenderer::drawGeometry(float scale)
     if (displayList == 0 || scale != compiledScale || !renderDrawPersistentMesh(displayList))
         renderImmediate(scale);
 #elif PLATFORM_MODEL_IMMEDIATE
-    renderImmediate(scale);
+    // Same scale/empty-geometry fallback reasoning as the PERSISTENT_MESH
+    // branch above (its own comment has the full explanation) -- a part
+    // invoked at a scale other than the one it was compiled at, or with no
+    // cached mesh at all (a pure pivot box with only child boxes), falls
+    // back to rebuilding its vertices immediately.
+    if (scale != compiledScale || !renderStaticMeshDraw(immediateMesh))
+        renderImmediate(scale);
 #else
     if (displayList != 0)
         renderCallDisplayList(displayList);
@@ -296,7 +305,27 @@ void ModelRenderer::compileDisplayList(float scale)
     compiledScale = scale;
     compiled = true;
 #elif PLATFORM_MODEL_IMMEDIATE
-    (void)scale;
+    // Captures this box list once into immediateMesh's RAM buffer (the same
+    // RenderStaticMesh fallback terrain/HUD already use on this backend),
+    // replayed every frame drawGeometry() runs instead of re-walking the
+    // ModelBox/TexturedQuad object graph -- virtual calls plus per-vertex
+    // position/UV float math -- from scratch each time. See this struct's
+    // own comment (ModelRenderer.h) for why no per-frame-varying state (the
+    // caller's matrix transform, tint, lightmap) ends up baked into it.
+    renderStaticMeshDestroy(immediateMesh);
+    if (!cubeList.empty())
+    {
+        Tessellator* tessellator = &Tessellator::instance;
+        tessellator->startDrawingQuads();
+        for (ModelBox* box : cubeList)
+        {
+            if (box != nullptr)
+                box->emitInto(tessellator, scale);
+        }
+        if (!tessellator->finishStaticMesh(immediateMesh))
+            tessellator->cancelDrawing();
+    }
+    compiledScale = scale;
     compiled = true;
 #else
     if (!cubeList.empty())

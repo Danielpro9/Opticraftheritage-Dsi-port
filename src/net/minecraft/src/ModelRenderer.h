@@ -5,6 +5,9 @@
 
 #include "java/Type.h"
 #include "platform/PlatformConfig.h"
+#if PLATFORM_MODEL_IMMEDIATE
+#include "platform/RenderAPI.h"
+#endif
 
 class ModelBase;
 class ModelBox;
@@ -51,6 +54,17 @@ private:
     std::string boxName;
     std::vector<ModelBox*> cubeList;
     std::vector<ModelRenderer*> childModels;
+#if PLATFORM_MODEL_IMMEDIATE
+    // DSi has no true persistent-mesh handle (RenderAPI_DSI.cpp implements
+    // neither renderCreatePersistentMesh() nor renderDrawPersistentMesh()),
+    // but RenderStaticMesh's captured-RAM-buffer fallback -- the same
+    // mechanism WorldRendererDsi.cpp uses for terrain and GuiIngame.cpp for
+    // the HUD -- works here too: box geometry (position/UV/normal) is fixed
+    // once built, and the only thing that varies per entity/frame is the
+    // matrix transform applied around drawGeometry(), which this mesh never
+    // captures. See compileDisplayList()/drawGeometry()'s own comments.
+    RenderStaticMesh immediateMesh;
+#endif
 
 public:
     float textureWidth;

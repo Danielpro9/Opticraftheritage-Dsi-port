@@ -173,10 +173,21 @@ std::unique_ptr<BufferedImage> legacyPreparePanoramaForUpload(
 	// (the resize below is a no-op if they already happen to be power-of-two)
 	// since they are the same kind of small Legacy4J UI art and share this
 	// exact failure mode if they ever turn out not to be.
+	//
+	// /legacy/scroll_down.png (13x7, LegacyPlayGameScreen.cpp's world-list
+	// scrollbar arrow) added after real-hardware logs kept showing it fail
+	// this exact check -- every single time that screen is shown, not just
+	// once, since RenderEngine.cpp's retry-countdown kept re-attempting the
+	// real upload rather than giving up (the countdown restarts whenever
+	// LegacyUiTexture::resolve() releases/reacquires it across screens). Same
+	// draw path as the three sprites above (LegacyUiTexture.cpp's
+	// legacyDrawUiTexture(), full 0..1 UV regardless of the texture's actual
+	// pixel size), so resizing it here is exactly as safe.
 	const bool isDsiLegacyUiSprite =
 #if defined(DSI_PLATFORM)
 		name == "/legacy/pointer_panel.png" || name == "/legacy/tick.png" ||
-		name == "/legacy/tickbox.png" || name == "/legacy/tickbox_hovered.png";
+		name == "/legacy/tickbox.png" || name == "/legacy/tickbox_hovered.png" ||
+		name == "/legacy/scroll_down.png";
 #else
 		false;
 #endif

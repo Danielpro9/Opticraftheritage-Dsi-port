@@ -9,6 +9,8 @@
 #include "legacy/LegacyMenuNavigation.h"
 #include "legacy/LegacyPauseStyle.h"
 #include "legacy/LegacyUiAssets.h"
+#include "legacy/LegacyUiPolicy.h"
+#include "RenderEngine.h"
 #include "GuiMainMenu.h"
 #include "GuiAchievements.h"
 #include "GuiStats.h"
@@ -84,6 +86,28 @@ void GuiIngameMenu::initGui()
 	controlList.push_back(new GuiButton(6, width / 2 + 2,   height / 4 + 48 + off, 98, 20, StatCollector::translateToLocal("gui.stats")));
 }
 
+void GuiIngameMenu::onGuiClosed()
+{
+#if PLATFORM_DSI
+	// Real-hardware evidence (a debug.log's resident-texture dump, taken
+	// mid-gameplay with the achievements screen open): legacy/title.png
+	// (16KB) showed up still resident well after the pause menu that drew it
+	// (drawScreen()'s legacyPause branch above, legacyDrawTitleTexture())
+	// had closed -- nothing here ever released it, unlike world entry
+	// (ClientPlatformPolicy_DSI.cpp's releaseWorldEntryAssets(), which drops
+	// this exact texture once for the same reason) and unlike GuiMainMenu's
+	// own mode-switch release. Every later re-pause reloads it fresh
+	// regardless (legacyDrawTitleTexture() always re-fetches by path), so
+	// nothing is cached by keeping it -- it was just sitting there eating
+	// into the 512KB budget gameplay's own terrain/items/icons/mob-skin
+	// textures compete for, and into whatever screen gets opened from this
+	// one (achievement/bg.png failed to upload in that same log, immediately
+	// after this menu's "Achievements" button). Same pattern as
+	// GuiAchievements::onGuiClosed()'s own release of achievement/bg.png.
+	if (mc != nullptr && mc->renderEngine != nullptr)
+		mc->renderEngine->releaseTexture(legacyUiTitleResourcePath());
+#endif
+}
 
 void GuiIngameMenu::syncLegacySelection()
 {

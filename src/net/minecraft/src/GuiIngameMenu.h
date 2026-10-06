@@ -10,6 +10,7 @@ public:
 	GuiIngameMenu();
 
 	void initGui() override;
+	void onGuiClosed() override;
 
 protected:
 	void handleSpecializedMenuInput() override;

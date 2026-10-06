@@ -143,7 +143,17 @@ static bool dsiNeedsRealAlphaTransparency(const std::string &name)
 		path == "/font/default.png" || path == "/font/alternate.png" ||
 		path == legacyUiTitleResourcePath() ||
 		path == "/legacy/logo1.png" || path == "/legacy/logo2.png" ||
-		path == "/cursor.png" || path == "/legacy/panorama.png" || path == "/title/mclogo.png";
+		path == "/cursor.png" || path == "/legacy/panorama.png" || path == "/title/mclogo.png" ||
+		// /legacy/scroll_down.png: only ever reached a real upload (paletted,
+		// this function's path) after LegacyPanoramaUpload.cpp started
+		// resizing it to a valid power-of-two -- before that it always hit
+		// the checkerboard fallback, which has no alpha to get wrong, so this
+		// exact "paletted index-0 transparency is not actually working on
+		// this hardware" symptom (same bug as every other entry above) only
+		// became visible once the resize fix let it actually reach this
+		// path, reported as the arrow sitting on a solid black square
+		// instead of a transparent background.
+		path == "/legacy/scroll_down.png";
 }
 #endif
 

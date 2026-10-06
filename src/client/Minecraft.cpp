@@ -2470,6 +2470,35 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
     if (renderEngine != nullptr && world == nullptr)
         renderEngine->setBackgroundTextureLoadingEnabled(false);
 
+#if PLATFORM_DSI
+    // Real-hardware evidence (a debug.log taken right after quitting a
+    // world): /achievement/bg.png failed to upload ("GPU out of texture
+    // VRAM space") at 468/512KB resident, with terrain.png/gui.png/items.png/
+    // icons.png/inventory.png/mob skins ALL still listed as resident --
+    // this screen was reached from the main menu, world already gone, yet
+    // every one of the old world's gameplay textures was still sitting in
+    // VRAM. releaseWorldExitAssets() (ClientPlatformPolicy_DSI.cpp) does
+    // free exactly these, but the only place that called it lives inside
+    // the DEFERRED World-destruction block further down in runTick() --
+    // "Safe point to free worlds abandoned by changeWorld(): no World::
+    // tick() is on the call stack here" -- which runs at the top of a
+    // LATER tick, not this one. Between this function returning (the menu
+    // is already interactive, theWorld already nullptr) and that later
+    // safe point actually running, there is a real window where the player
+    // can open another VRAM-hungry screen -- Achievements, here -- against
+    // a texture budget still full of a world that is already gone. The
+    // World OBJECT itself has a real reason to wait for that safe point
+    // (no World::tick() still on the stack); the TEXTURES do not share
+    // that constraint -- RenderEngine state, unrelated to the World's own
+    // memory safety -- so release them here too, synchronously, the
+    // instant the menu takes over, instead of only on the later safe
+    // point's own schedule. releaseTexture() no-ops on an already-released
+    // name, so the later call (still needed as a net for every other path
+    // that can null out theWorld) staying in place costs nothing extra.
+    if (world == nullptr)
+        ClientPlatformPolicy::releaseWorldExitAssets(renderEngine);
+#endif
+
     // Un jugador TRANSFERIDO (portal SP, o cambio de dimension MP) conserva el mismo
     // objeto EntityPlayer, pero su worldObj seguia apuntando al mundo viejo. Como ese
     // mundo se libera (diferido) al terminar el cambio, dejaba worldObj colgando y el

@@ -1,9 +1,11 @@
 #include "LegacyUiAssets.h"
 
+#include "LegacySceneLayout.h"
 #include "LegacyUiPolicy.h"
 #include "net/minecraft/src/Minecraft.h"
 #include "net/minecraft/src/RenderEngine.h"
 #include "net/minecraft/src/Tessellator.h"
+#include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
 
 namespace
@@ -82,6 +84,31 @@ bool legacyDrawTitleTexture(Minecraft *mc, const LegacyMainMenuLayout &layout, i
         textureWidth <= 0 || textureHeight <= 0)
         return false;
 
+#if PLATFORM_DSI
+    // Real-hardware report: the logo renders squashed/flattened. Root cause:
+    // DSi's upload-time resize (LegacyPanoramaUpload.cpp) scales both axes by
+    // the same factor to preserve this texture's true 995:205 aspect ratio,
+    // but then has to round EACH axis independently down to its own nearest
+    // power of two (the DS GPU's hard per-axis requirement) -- and that
+    // per-axis rounding error is not symmetric: a pre-rounded value that
+    // already sits near a power of two barely moves, one that does not can
+    // drop by nearly half. For this texture specifically that landed on
+    // 256x32 (an 8:1 ratio) instead of the source's ~4.85:1, and this
+    // function used to fit the drawn rectangle to THAT distorted ratio via
+    // the uploaded texture's own (now-wrong) pixel dimensions. The fix is at
+    // the call site, not the resize: UV mapping below is always the full
+    // 0..1 texture regardless of its real pixel size, so the drawn
+    // rectangle's SHAPE only needs the true source aspect ratio, which
+    // LegacySceneLayout.h already keeps as named constants for exactly this
+    // (titleMaxHeight's own derivation already uses them) -- just never
+    // threaded through to this, the actual draw call. DSi-only: PS2/Wii's own
+    // resize (LegacyPanoramaUpload.cpp's PS2/WII branch) has no power-of-two
+    // requirement to round against, so their uploaded dimensions stay
+    // accurate -- including for a custom texture pack's own title.png, which
+    // this constant would otherwise force to the default aspect ratio.
+    textureWidth = LEGACY_TITLE_ASPECT_WIDTH;
+    textureHeight = LEGACY_TITLE_ASPECT_HEIGHT;
+#endif
     const LegacyUiRect rect = legacyFitTitleRect(screenWidth, layout.titleY, layout.titleMaxWidth,
         layout.titleMaxHeight, textureWidth, textureHeight);
     if (rect.width <= 0 || rect.height <= 0)

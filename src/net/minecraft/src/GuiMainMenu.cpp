@@ -32,6 +32,7 @@
 #include "net/minecraft/src/legacy/LegacyMenuNavigation.h"
 #include "net/minecraft/src/legacy/LegacyUiAssets.h"
 #include "net/minecraft/src/legacy/LegacyPanorama.h"
+#include "net/minecraft/src/legacy/LegacyUiPolicy.h"
 #include "net/minecraft/src/legacy/LegacySceneLayout.h"
 #include "net/minecraft/src/legacy/LegacySceneState.h"
 #include "GameResources.h"
@@ -306,6 +307,40 @@ void GuiMainMenu::initGui()
     if (viewportTexture >= 0)
         mc->renderEngine->deleteTexture(viewportTexture);
     viewportTexture = -1;
+#if PLATFORM_DSI
+    // Real-hardware log evidence: Legacy UI and the vanilla (non-legacy)
+    // menu each load an entirely different background asset set -- legacy/
+    // panorama.png + legacy/title.png vs the six title/bg/panoramaN.png cube
+    // faces + mclogo.png -- and until now nothing released whichever set
+    // belonged to the OTHER mode once the player switched. Only
+    // ClientPlatformPolicy_DSI.cpp's releaseWorldEntryAssets() ever dropped
+    // them, and only once a world actually starts loading. A log from a
+    // session that had visited both menu styles showed ~467KB of just
+    // background/logo textures still resident by the time it reached the
+    // "Play Game" world list -- leaving too little of the 512KB texture VRAM
+    // budget for terrain.png to upload at all, which is why that screen's
+    // world icons rendered blank (terrain.png fell back to the checkerboard
+    // placeholder). This screen is the one place both paths are guaranteed
+    // to pass through (Play Game/Options/Language all route back here
+    // first), so drop the mode NOT currently selected every time it inits --
+    // at most one mode's background assets are ever resident at once. The
+    // active mode's own assets are left alone (no pointless release-and-
+    // immediately-reload on every ordinary visit to this screen).
+    if (mc->renderEngine != nullptr)
+    {
+        if (mc->gameSettings != nullptr && mc->gameSettings->legacyUI)
+        {
+            for (int_t face = 0; face < 6; ++face)
+                mc->renderEngine->releaseTexture("/title/bg/panorama" + std::to_string(face) + ".png");
+            mc->renderEngine->releaseTexture("/title/mclogo.png");
+        }
+        else
+        {
+            mc->renderEngine->releaseTexture(legacyPanoramaResourcePath());
+            mc->renderEngine->releaseTexture(legacyUiTitleResourcePath());
+        }
+    }
+#endif
     legacyPanoramaAvailable = mc->gameSettings != nullptr && mc->gameSettings->legacyUI &&
         mc->renderEngine != nullptr && mc->renderEngine->hasResource(legacyPanoramaResourcePath());
     // DSi excluded alongside PS2/WII: RenderAPI_DSI's

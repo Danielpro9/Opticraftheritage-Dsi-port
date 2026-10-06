@@ -15,6 +15,7 @@
 #if PLATFORM_DSI
 #include "dsi/DsiEarlyInit.h"
 #include "dsi/render/DsiGreedyMesh.h"
+#include <malloc.h>
 #endif
 
 #include <iostream>
@@ -1996,8 +1997,23 @@ void Minecraft::runTick()
                 // would mean every merge came out 1x1 -- the pass runs but
                 // never merges anything; greedyFaces clearly larger than
                 // greedyQuads is the real confirmation.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu\n",
+                // mallocUsed=/mallocFree= (mallinfo's uordblks/fordblks) added
+                // alongside heap= to answer a question heap= alone cannot: heap=
+                // is sbrk's break point, a high-water mark newlib's allocator
+                // never lowers on free() (the freed bytes go onto malloc's own
+                // free list for reuse, not back to this counter), so it climbing
+                // through a session does not by itself mean anything is actually
+                // still reachable. mallocUsed= is bytes genuinely allocated and
+                // not yet freed right now -- if it tracks chunks/entities up and
+                // down as the player moves while heap= only ever climbs, heap=
+                // was always just the harmless watermark; if mallocUsed= also
+                // only ever climbs, something reachable here really is growing
+                // unboundedly. Same mallinfo() already used for this exact
+                // purpose on PS2/Wii (Runtime_ps2.cpp/WiiEarlyMemory.cpp).
+                const struct mallinfo dsiMemTrendMi = mallinfo();
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB mallocUsed=%uKB mallocFree=%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
+                    (unsigned)(dsiMemTrendMi.uordblks / 1024), (unsigned)(dsiMemTrendMi.fordblks / 1024),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
                     (unsigned)theWorld->loadedEntityList.size(),

@@ -129,7 +129,8 @@ void LegacyOptionSlider::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
     // GuiSlider keeps the track on the unlit button frame so the knob reads as the
     // only raised part of the widget; the Legacy selection tint goes on top of it,
     // exactly as LegacyGuiButton layers it over a normal button.
-    renderBindTexture(mc->renderEngine->getTexture("/gui/gui.png"));
+    static CachedTextureId cachedButtonTextureId;
+    renderBindTexture(cachedButtonTextureId.get(mc->renderEngine, "/gui/gui.png"));
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     legacyDrawVanillaButtonBase(xPosition, yPosition, width, height, 0, zLevel);
 

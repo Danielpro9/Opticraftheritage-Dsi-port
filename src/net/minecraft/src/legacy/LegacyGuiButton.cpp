@@ -25,7 +25,13 @@ void LegacyGuiButton::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
 
     const LegacyGuiButtonBorderRects border = legacyGuiButtonBorderRects(xPosition, yPosition, width, height);
 
-    renderBindTexture(mc->renderEngine->getTexture("/gui/gui.png"));
+    // Cached rather than looked up fresh every frame -- this is the active
+    // button class for the Legacy UI, so every pause/options/world-list
+    // screen's buttons were each paying for a std::string temporary + hash-
+    // map lookup (RenderEngine::getTexture()), every frame, same as the
+    // GuiButton base class's own fix (GuiButton.cpp).
+    static CachedTextureId cachedButtonTextureId;
+    renderBindTexture(cachedButtonTextureId.get(mc->renderEngine, "/gui/gui.png"));
     const bool translucent = opacity < 0.999f;
     if (translucent)
     {

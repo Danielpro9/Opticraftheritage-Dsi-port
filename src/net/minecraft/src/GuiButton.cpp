@@ -41,7 +41,14 @@ void GuiButton::drawButton(Minecraft *mc, int_t mouseX, int_t mouseY)
 	if (!enabled2) return;
 
 	FontRenderer *fontrenderer = mc->fontRenderer;
-	renderBindTexture(mc->renderEngine->getTexture("/gui/gui.png"));
+	// Cached rather than looked up fresh every frame -- drawButton() runs once
+	// per visible button per frame, so a screen with several buttons (any
+	// pause/options screen) was paying for one std::string temporary + hash-
+	// map lookup (RenderEngine::getTexture()) per button, every frame. One
+	// static id here is correct across every GuiButton instance: they all
+	// bind this same texture.
+	static CachedTextureId cachedButtonTextureId;
+	renderBindTexture(cachedButtonTextureId.get(mc->renderEngine, "/gui/gui.png"));
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	bool hovered = keyboardSelected || (mouseX >= xPosition && mouseY >= yPosition
 	            && mouseX < xPosition + width && mouseY < yPosition + height);

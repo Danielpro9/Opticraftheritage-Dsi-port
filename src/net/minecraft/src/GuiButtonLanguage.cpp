@@ -14,7 +14,8 @@ void GuiButtonLanguage::drawButton(Minecraft *minecraft, int_t mouseX, int_t mou
     if (!enabled2)
         return;
 
-    renderBindTexture(minecraft->renderEngine->getTexture("/gui/gui.png"));
+    static CachedTextureId cachedButtonTextureId;
+    renderBindTexture(cachedButtonTextureId.get(minecraft->renderEngine, "/gui/gui.png"));
     renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     bool hovered = mouseX >= xPosition && mouseY >= yPosition
         && mouseX < xPosition + width && mouseY < yPosition + height;

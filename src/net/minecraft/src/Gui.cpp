@@ -52,12 +52,37 @@ void Gui::drawRect(int_t x1, int_t y1, int_t x2, int_t y2, int_t color)
 	renderEnable(RenderCapability::Blend);
 	renderDisable(RenderCapability::Texture2D);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
+#if PLATFORM_DSI
+	// Real-hardware report: Legacy UI's flat panel fills (LegacyOptionsPanel's
+	// solid background behind the world-list/debug-cheats/options screens --
+	// this is the function those panels draw with) render see-through on DSi,
+	// showing the world/panorama behind instead of a solid fill, sometimes
+	// flickering. This function was the one remaining flat-colour draw path
+	// still relying on renderColor4f() (RenderAPI_DSI.cpp: sets g_poly.alpha31
+	// as separate, external GL-style state, applied only when
+	// drawInterleavedMesh() next runs) instead of embedding the colour in the
+	// Tessellator buffer itself. drawGradientRect() right below already uses
+	// the embedded-colour path (tess->setColorRGBA_F() before each addVertex())
+	// and is confirmed working on real hardware (the pause-menu vignette,
+	// drawPanorama's cross-fade) -- switching this to the same proven
+	// mechanism sidesteps whatever about the separate-global-state path is
+	// losing this draw's alpha/colour, without needing to isolate the exact
+	// mechanism. DSi-only: the external-state path is untouched on every
+	// other platform, which has no report of this symptom.
+	tess->startDrawingQuads();
+	tess->setColorRGBA_F(r, g, b, a);
+	tess->addVertex(x1, y2, 0.0);
+	tess->addVertex(x2, y2, 0.0);
+	tess->addVertex(x2, y1, 0.0);
+	tess->addVertex(x1, y1, 0.0);
+#else
 	renderColor4f(r, g, b, a);
 	tess->startDrawingQuads();
 	tess->addVertex(x1, y2, 0.0);
 	tess->addVertex(x2, y2, 0.0);
 	tess->addVertex(x2, y1, 0.0);
 	tess->addVertex(x1, y1, 0.0);
+#endif
 	tess->draw();
 	renderEnable(RenderCapability::Texture2D);
 	renderDisable(RenderCapability::Blend);

@@ -1777,7 +1777,31 @@ bool ChunkProvider::unload100OldestChunks()
 	// unloadChunk()); called every tick regardless of whether this tick
 	// unloaded anything, so a backlog left over from an emergency burst
 	// keeps draining on the quiet ticks that follow it.
-	drainPendingSaves(retentionPolicy.maxUnloadsPerTick);
+	//
+	// Gated to real wall-clock time, not just "once per call", because this
+	// is called once per WORLD TICK and Minecraft.cpp's runTick() can run
+	// several of those back-to-back in a single rendered frame to catch up
+	// after a stall (timer->elapsedTicks > 1) -- exactly the kind of stall
+	// a slow world load or a burst of generation steps already causes on
+	// this platform. Real-hardware evidence (a debug.log taken right after
+	// a ~6.8s world-entry stall): three "deferred chunk save" lines back to
+	// back with no frame boundary between them, 148-504ms each, because all
+	// three catch-up ticks' worth of drainPendingSaves(1) landed in the one
+	// real frame that ran them. That defeats the entire point of deferring
+	// these saves in the first place -- the queue was still spreading them
+	// out one PER TICK, just not one per RENDERED FRAME, which is what
+	// actually matters for not freezing the display. Capping to roughly one
+	// drain per real tick interval (50ms, vanilla's 20 ticks/sec) means a
+	// catch-up burst still drains the backlog, just no faster than a single
+	// real frame could have anyway -- same total time to empty the queue,
+	// no multi-save pileup within one visible frame.
+	static long_t s_lastDrainMs = 0;
+	const long_t nowMs = System::currentTimeMillis();
+	if (nowMs - s_lastDrainMs >= 50)
+	{
+		drainPendingSaves(retentionPolicy.maxUnloadsPerTick);
+		s_lastDrainMs = nowMs;
+	}
 #endif
 	if (chunkLoader != nullptr)
 		chunkLoader->chunkTick();

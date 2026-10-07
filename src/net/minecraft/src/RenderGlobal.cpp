@@ -104,6 +104,14 @@
 
 namespace
 {
+#if PLATFORM_DSI
+// Diagnostic counter for clipRenderersByFrustrum()'s own comment: how many
+// of this platform's (up to 18) sections flipped from rejected to accepted
+// in frustum this single frame. Reset and logged there; not read anywhere
+// else.
+int_t g_dsiFrustumRevealsThisFrame = 0;
+#endif
+
 inline void applyPs2LegacyAtmosphereRgb(Minecraft *mc, float &red, float &green, float &blue)
 {
 #if PLATFORM_PS2
@@ -3550,6 +3558,9 @@ void RenderGlobal::playAuxSFX(EntityPlayer *entityplayer, int_t i, int_t j, int_
 
 void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 {
+#if PLATFORM_DSI
+	g_dsiFrustumRevealsThisFrame = 0;
+#endif
 	int_t total = renderChunksWide * renderChunksTall * renderChunksDeep;
 	for (int_t i = 0; i < total; i++)
 	{
@@ -3625,12 +3636,52 @@ void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 		// exactly while the camera is turning, the same case PS2's own comment
 		// singles out.
 		if (!worldRenderers[i]->skipAllRenderPasses())
+		{
+#if PLATFORM_DSI
+			// DIAGNOSTIC ONLY, no behavior change -- real-hardware report: the
+			// screen flashes white specifically while turning the camera or
+			// moving, essentially never while standing still. Hypothesis:
+			// turning can flip several of this platform's 3x2x3=18-section
+			// grid from rejected to accepted in the same frame (nothing caps
+			// that submission spike for DSi -- see this function's own PS2/Wii
+			// comments above), widening the window for Display_dsi.cpp's
+			// single-swiWaitForVBlank-per-frame CPU/GPU race. Not yet acted
+			// on: capping submission risked hiding sections that are
+			// legitimately in frustum during ordinary steady-state viewing
+			// (DSi's grid is small enough that a wrong guess at the cap would
+			// show as constant missing terrain, worse than an intermittent
+			// flash). This just counts the false->true transition and, below,
+			// logs the frames where that count is notably large, so a real-
+			// hardware log can confirm or rule out the correlation with the
+			// reported flash before anything about rendering itself changes.
+			const bool wasInFrustum = worldRenderers[i]->isInFrustum;
+#endif
 			worldRenderers[i]->updateInFrustrum(icamera);
+#if PLATFORM_DSI
+			if (!wasInFrustum && worldRenderers[i]->isInFrustum)
+				++g_dsiFrustumRevealsThisFrame;
+#endif
+		}
 #else
 		if (!worldRenderers[i]->skipAllRenderPasses() && (!worldRenderers[i]->isInFrustum || (i + frustrumCheckOffset & 0xf) == 0))
 			worldRenderers[i]->updateInFrustrum(icamera);
 #endif
 	}
+
+#if PLATFORM_DSI
+	// 3 is a first guess at "notable" (a sixth of the full 18-section grid
+	// becoming visible in one frame) -- not tuned against real data yet,
+	// this diagnostic exists to gather that data. t= lets a log line here be
+	// matched against the dsi.perf renderphase/frames= lines around it to
+	// see whether a reveal spike actually lines up with a render-time spike,
+	// which is the rest of this bug's hypothesis.
+	if (g_dsiFrustumRevealsThisFrame >= 3)
+	{
+		MC_LOG_INFO("dsi", "frustum reveals=%d t=%lluus\n",
+		    (int)g_dsiFrustumRevealsThisFrame,
+		    (unsigned long long)PlatformCompat::getMonotonicMicros());
+	}
+#endif
 
 	frustrumCheckOffset++;
 }

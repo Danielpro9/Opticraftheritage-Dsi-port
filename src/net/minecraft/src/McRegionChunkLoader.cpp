@@ -10,8 +10,10 @@
 #include "Chunk.h"
 #include "World.h"
 #include "WorldInfo.h"
+#include "java/System.h"
 #include <sstream>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 
 namespace
@@ -269,3 +271,192 @@ void McRegionChunkLoader::saveExtraData()
     // to prevent gameplay stutter; this keeps the durable sync point here.
     RegionFileCache::clearCache();
 }
+
+#if PLATFORM_DSI
+McRegionChunkLoader::~McRegionChunkLoader()
+{
+    // Defensive only: every normal path (continueSlicedSave() reaching
+    // Z_STREAM_END, cancelSlicedSave(), finishSlicedSaveNow()) already calls
+    // this. Only reached if the loader is torn down with a task mid-flight
+    // some other way.
+    endSlicedDeflateStream();
+}
+
+void McRegionChunkLoader::endSlicedDeflateStream()
+{
+    if (slicedSave.streamInitialized)
+    {
+        deflateEnd(&slicedSave.zs);
+        slicedSave.streamInitialized = false;
+    }
+}
+
+bool McRegionChunkLoader::beginSlicedSave(World *world, Chunk *chunk)
+{
+    if (slicedSave.active || world == nullptr || chunk == nullptr)
+        return false;
+
+    try
+    {
+        world->checkSessionLock();
+
+        std::unique_ptr<NBTTagCompound> nbttagcompound(new NBTTagCompound());
+        NBTTagCompound *nbttagcompound1 = new NBTTagCompound();
+        nbttagcompound->setTag("Level", nbttagcompound1);
+        ChunkLoader::storeChunkInCompound(chunk, world, nbttagcompound1);
+
+        // Raw (uncompressed) NBT, same as saveChunk()'s own writeScratch --
+        // this loader's own buffer is reused there, so a separate vector here
+        // instead of writeScratch avoids the two save paths fighting over the
+        // same scratch if they were ever both reachable at once.
+        VectorOutputStream os(slicedSave.rawNbt);
+        CompressedStreamTools::writeCompound(nbttagcompound.get(), os);
+        if (slicedSave.rawNbt.empty())
+            return false;
+
+        std::memset(&slicedSave.zs, 0, sizeof(slicedSave.zs));
+        // Same level choice as RegionFile::write()'s own compress2() call --
+        // see PLATFORM_FAST_REGION_COMPRESSION's comment there. MAX_WBITS
+        // (not 16+MAX_WBITS) matches compress2()'s zlib-wrapper format, which
+        // RegionFile::writeSector() already hardcodes as "version 2" on read.
+#if PLATFORM_FAST_REGION_COMPRESSION
+        const int compressionLevel = Z_BEST_SPEED;
+#else
+        const int compressionLevel = Z_DEFAULT_COMPRESSION;
+#endif
+        if (deflateInit2(&slicedSave.zs, compressionLevel, Z_DEFLATED, MAX_WBITS,
+                          8, Z_DEFAULT_STRATEGY) != Z_OK)
+            return false;
+
+        slicedSave.streamInitialized = true;
+        slicedSave.zs.next_in = reinterpret_cast<Bytef *>(slicedSave.rawNbt.data());
+        slicedSave.zs.avail_in = static_cast<uInt>(slicedSave.rawNbt.size());
+        slicedSave.compressedOut.clear();
+        slicedSave.compressedOut.reserve(slicedSave.rawNbt.size() / 2 + 64);
+        slicedSave.finished = false;
+        slicedSave.chunk = chunk;
+        slicedSave.world = world;
+        slicedSave.active = true;
+        return true;
+    }
+    catch (...)
+    {
+        endSlicedDeflateStream();
+        slicedSave.active = false;
+        slicedSave.finished = false;
+        slicedSave.chunk = nullptr;
+        slicedSave.world = nullptr;
+        return false;
+    }
+}
+
+bool McRegionChunkLoader::pumpSlicedDeflate(long_t budgetUs)
+{
+    const long_t startNs = System::nanoTime();
+    constexpr std::size_t kOutputChunk = 4096;
+    for (;;)
+    {
+        const std::size_t writePos = slicedSave.compressedOut.size();
+        slicedSave.compressedOut.resize(writePos + kOutputChunk);
+        slicedSave.zs.next_out = reinterpret_cast<Bytef *>(slicedSave.compressedOut.data() + writePos);
+        slicedSave.zs.avail_out = static_cast<uInt>(kOutputChunk);
+
+        const int flushMode = (slicedSave.zs.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
+        const int ret = deflate(&slicedSave.zs, flushMode);
+
+        const std::size_t produced = kOutputChunk - slicedSave.zs.avail_out;
+        slicedSave.compressedOut.resize(writePos + produced);
+
+        if (ret == Z_STREAM_END)
+            return true;
+        if (ret != Z_OK && ret != Z_BUF_ERROR)
+        {
+            // zlib error on well-formed input should not happen; abandon
+            // rather than risk writing a truncated/corrupt stream.
+            MC_LOG_ERROR("chunk", "McRegionChunkLoader sliced save: deflate error %d\n", ret);
+            slicedSave.compressedOut.clear();
+            return true;
+        }
+
+        if (budgetUs > 0 && (System::nanoTime() - startNs) / 1000 >= budgetUs)
+            return false;
+    }
+}
+
+bool McRegionChunkLoader::continueSlicedSave(long_t budgetUs)
+{
+    if (!slicedSave.active)
+        return false;
+    if (slicedSave.finished)
+        return true;
+
+    try
+    {
+        if (!pumpSlicedDeflate(budgetUs))
+            return false;
+
+        endSlicedDeflateStream();
+        if (!slicedSave.compressedOut.empty())
+        {
+            std::shared_ptr<RegionFile> rf = RegionFileCache::acquireRegionFile(
+                worldDir, slicedSave.chunk->xPosition, slicedSave.chunk->zPosition);
+            rf->writeAlreadyCompressed(slicedSave.chunk->xPosition & 0x1f,
+                                       slicedSave.chunk->zPosition & 0x1f,
+                                       slicedSave.compressedOut.data(),
+                                       slicedSave.compressedOut.size());
+            WorldInfo *worldinfo = slicedSave.world->getWorldInfo();
+            worldinfo->setSizeOnDisk(worldinfo->getSizeOnDisk() + (long_t)rf->getSizeDelta());
+        }
+    }
+    catch (...)
+    {
+        // silently catch, matching saveChunk()'s own behavior
+    }
+    slicedSave.finished = true;
+    return true;
+}
+
+bool McRegionChunkLoader::hasSlicedSaveTask() const
+{
+    return slicedSave.active;
+}
+
+Chunk *McRegionChunkLoader::slicedSaveChunk() const
+{
+    return slicedSave.active ? slicedSave.chunk : nullptr;
+}
+
+void McRegionChunkLoader::cancelSlicedSave()
+{
+    if (!slicedSave.active)
+        return;
+    endSlicedDeflateStream();
+    slicedSave.active = false;
+    slicedSave.finished = false;
+    slicedSave.chunk = nullptr;
+    slicedSave.world = nullptr;
+    slicedSave.rawNbt.clear();
+    slicedSave.compressedOut.clear();
+}
+
+void McRegionChunkLoader::finishSlicedSaveNow()
+{
+    if (!slicedSave.active || slicedSave.finished)
+        return;
+    continueSlicedSave(0); // budgetUs <= 0: unbounded, runs to completion
+}
+
+Chunk *McRegionChunkLoader::takeSlicedSaveChunk()
+{
+    if (!slicedSave.active || !slicedSave.finished)
+        return nullptr;
+    Chunk *chunk = slicedSave.chunk;
+    slicedSave.active = false;
+    slicedSave.finished = false;
+    slicedSave.chunk = nullptr;
+    slicedSave.world = nullptr;
+    slicedSave.rawNbt.clear();
+    slicedSave.compressedOut.clear();
+    return chunk;
+}
+#endif

@@ -503,10 +503,51 @@ void RegionFile::write(int_t x, int_t z, const byte_t *rawData, int_t rawLength)
 
         if (compLen > static_cast<uLongf>(std::numeric_limits<std::size_t>::max()))
             return;
-        const std::size_t compressedBytes = static_cast<std::size_t>(compLen);
+        ioScratch.resize(static_cast<std::size_t>(compLen));
+        writeCompressedSectorsLocked(x, z, ioScratch.data(), ioScratch.size());
+    }
+    catch (...)
+    {
+        // Keep the previous header/allocation whenever possible.  Most writes
+        // above are copy-on-write specifically so an exception does not free the
+        // only known-good sector run.
+    }
+}
+
+void RegionFile::writeAlreadyCompressed(int_t x, int_t z, const byte_t *compressedData,
+                                         std::size_t compressedLength)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    if (readOnly)
+        return;
+
+    try
+    {
+        if (outOfBounds(x, z) || compressedData == nullptr || compressedLength == 0)
+            return;
+        // Caller (ChunkProvider's sliced save path) already ran deflate() to
+        // completion itself, in budget-sized slices across several real ticks
+        // instead of one compress2() call blocking a single tick for the
+        // whole thing. From here on this is exactly write()'s own sector
+        // allocation and file write, unchanged -- that part was never the
+        // slow one (it is a single buffered write, not a CPU-bound loop) and
+        // stays a single atomic step same as before.
+        writeCompressedSectorsLocked(x, z, compressedData, compressedLength);
+    }
+    catch (...)
+    {
+        // Same reasoning as write()'s own catch: copy-on-write below means an
+        // exception here leaves the previous header/allocation intact.
+    }
+}
+
+void RegionFile::writeCompressedSectorsLocked(int_t x, int_t z, const byte_t *compressedData,
+                                                std::size_t compressedBytes)
+{
+    try
+    {
         if (compressedBytes > std::numeric_limits<std::size_t>::max() - 5u)
             return;
-        ioScratch.resize(compressedBytes);
 
         const std::size_t sectorNeededSize = (compressedBytes + 5u) / 4096u + 1u;
         if (sectorNeededSize >= 256u)
@@ -553,7 +594,7 @@ void RegionFile::write(int_t x, int_t z, const byte_t *rawData, int_t rawLength)
         if (existingOwned && existingLength == sectorNeeded)
         {
             // Same-size rewrite is safe in place because ownership is proven.
-            writeSector(existingSector, ioScratch.data(), (int_t)ioScratch.size());
+            writeSector(existingSector, compressedData, (int_t)compressedBytes);
         }
         else
         {
@@ -598,7 +639,7 @@ void RegionFile::write(int_t x, int_t z, const byte_t *rawData, int_t rawLength)
             }
 
             // Write the replacement before changing the on-disk header.
-            writeSector(runStart, ioScratch.data(), (int_t)ioScratch.size());
+            writeSector(runStart, compressedData, (int_t)compressedBytes);
             if (!dataFile)
             {
                 // The old allocation is still untouched/published.  For a grown

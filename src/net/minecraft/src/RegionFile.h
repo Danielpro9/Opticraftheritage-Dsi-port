@@ -45,6 +45,13 @@ public:
                       ReadStatus *status = nullptr);
     std::vector<byte_t> getChunkDataForWrite(int_t x, int_t z);
     void write(int_t x, int_t z, const byte_t *data, int_t length);
+    // Entry point for a caller that already ran deflate() to completion
+    // itself (ChunkProvider's sliced chunk-save path -- see its own comment).
+    // Does the same sector-allocation and file write write() does after its
+    // own compress2() call, just skipping that call since compressedData is
+    // already a finished zlib stream.
+    void writeAlreadyCompressed(int_t x, int_t z, const byte_t *compressedData,
+                                std::size_t compressedLength);
     void close();
     bool hasChunk(int_t x, int_t z);
 
@@ -57,6 +64,11 @@ private:
     void setOffset(int_t x, int_t z, int_t value);
     void setTimestamp(int_t x, int_t z, int_t value);
     void writeSector(int_t sectorNum, const byte_t *data, int_t length);
+    // Shared tail of write()/writeAlreadyCompressed(): sector allocation and
+    // the actual file write, given an already-compressed buffer. Caller must
+    // hold mtx.
+    void writeCompressedSectorsLocked(int_t x, int_t z, const byte_t *compressedData,
+                                       std::size_t compressedBytes);
 
 #if PLATFORM_REGION_WHOLE_FILE_BUFFER
 #  if PLATFORM_REGION_RANDOM_ACCESS

@@ -1199,20 +1199,72 @@ void ChunkProvider::unloadChunk(std::uint64_t key, Chunk *chunk)
 // an emergency burst keeps draining on quiet ticks too.
 void ChunkProvider::drainPendingSaves(int_t budget)
 {
-	for (int_t i = 0; i < budget && !pendingSaveQueue.empty(); ++i)
+	// Sliced path: McRegionChunkLoader::beginSlicedSave()/continueSlicedSave()
+	// spread one chunk's zlib deflate across however many of these calls it
+	// takes (each already gated to roughly once per real 50ms by the caller
+	// below), instead of the single atomic saveChunkToFile() call measured
+	// 100-700ms+ for one chunk on real hardware. See that method's own
+	// comment for why only the compression loop needs slicing -- NBT
+	// building and the final sector write both stay single atomic steps.
+	McRegionChunkLoader *mcLoader = dynamic_cast<McRegionChunkLoader *>(chunkLoader);
+	if (mcLoader == nullptr)
 	{
+		// Not McRegion (shouldn't happen on this platform -- defensive only):
+		// fall back to the old whole-chunk save rather than do nothing.
+		for (int_t i = 0; i < budget && !pendingSaveQueue.empty(); ++i)
+		{
+			Chunk *chunk = pendingSaveQueue.front();
+			pendingSaveQueue.pop_front();
+			saveChunkToFile(chunk);
+			chunk->isModified = false;
+			chunk->clearRuntimeSaveRequired();
+			saveExtraChunkData(chunk);
+			chunk->onChunkUnload();
+			delete chunk;
+		}
+		return;
+	}
+
+	static long_t s_sliceStartNs = 0;
+	static int_t s_sliceCalls = 0;
+	if (!mcLoader->hasSlicedSaveTask())
+	{
+		if (pendingSaveQueue.empty())
+			return;
 		Chunk *chunk = pendingSaveQueue.front();
 		pendingSaveQueue.pop_front();
-		const long_t startNs = System::nanoTime();
-		saveChunkToFile(chunk);
-		chunk->isModified = false;
-		chunk->clearRuntimeSaveRequired();
-		saveExtraChunkData(chunk);
-		MC_LOG_INFO("dsi", "deferred chunk save took %lldus (queue depth now %u)\n",
-			(long long)((System::nanoTime() - startNs) / 1000), (unsigned)pendingSaveQueue.size());
-		chunk->onChunkUnload();
-		delete chunk;
+		if (!mcLoader->beginSlicedSave(worldObj, chunk))
+		{
+			// NBT build/serialize itself failed (not compression) -- fall
+			// back to the old whole-chunk path for just this one chunk
+			// rather than lose the edit.
+			saveChunkToFile(chunk);
+			chunk->isModified = false;
+			chunk->clearRuntimeSaveRequired();
+			saveExtraChunkData(chunk);
+			chunk->onChunkUnload();
+			delete chunk;
+			return;
+		}
+		s_sliceStartNs = System::nanoTime();
+		s_sliceCalls = 0;
 	}
+
+	++s_sliceCalls;
+	if (!mcLoader->continueSlicedSave(PLATFORM_CHUNK_SAVE_SLICE_US))
+		return; // more compression left; next gated call picks up where this left off
+
+	Chunk *chunk = mcLoader->takeSlicedSaveChunk();
+	if (chunk == nullptr)
+		return;
+	chunk->isModified = false;
+	chunk->clearRuntimeSaveRequired();
+	saveExtraChunkData(chunk);
+	MC_LOG_INFO("dsi", "deferred chunk save took %lldus over %d slice(s) (queue depth now %u)\n",
+		(long long)((System::nanoTime() - s_sliceStartNs) / 1000), (int)s_sliceCalls,
+		(unsigned)pendingSaveQueue.size());
+	chunk->onChunkUnload();
+	delete chunk;
 }
 
 // Full/exit saves (World::saveChunks(true, ...), the "Saving world" screen)
@@ -1224,6 +1276,24 @@ void ChunkProvider::drainPendingSaves(int_t budget)
 // if the provider is torn down some other way.
 void ChunkProvider::flushPendingSaves()
 {
+	// Finish an in-flight sliced save right now rather than lose it or leave
+	// a half-written deflate stream hanging -- "done right now" is already
+	// the expected cost of a full/exit save (the "Saving world" screen).
+	if (McRegionChunkLoader *mcLoader = dynamic_cast<McRegionChunkLoader *>(chunkLoader))
+	{
+		if (mcLoader->hasSlicedSaveTask())
+		{
+			mcLoader->finishSlicedSaveNow();
+			if (Chunk *chunk = mcLoader->takeSlicedSaveChunk())
+			{
+				chunk->isModified = false;
+				chunk->clearRuntimeSaveRequired();
+				saveExtraChunkData(chunk);
+				chunk->onChunkUnload();
+				delete chunk;
+			}
+		}
+	}
 	while (!pendingSaveQueue.empty())
 	{
 		Chunk *chunk = pendingSaveQueue.front();
@@ -1248,6 +1318,27 @@ void ChunkProvider::flushPendingSaves()
 // replaces.
 Chunk *ChunkProvider::reclaimPendingSave(std::uint64_t key)
 {
+	// The chunk mid-sliced-save is not in pendingSaveQueue any more (it was
+	// popped when beginSlicedSave() started), but it is exactly as reclaimable
+	// as one still sitting in the queue: same live, up-to-date object, just
+	// not written to the SD card yet. Abandon the in-flight compression (no
+	// partial data was ever written -- see continueSlicedSave()'s own
+	// comment) and hand it back; it re-queues normally next time it unloads,
+	// if still dirty then.
+	if (McRegionChunkLoader *mcLoader = dynamic_cast<McRegionChunkLoader *>(chunkLoader))
+	{
+		if (Chunk *active = mcLoader->slicedSaveChunk())
+		{
+			if (chunkKey(active->xPosition, active->zPosition) == key)
+			{
+				mcLoader->cancelSlicedSave();
+				chunkMap[key] = active;
+				chunkList.push_back(active);
+				markChunkTopologyChanged();
+				return active;
+			}
+		}
+	}
 	for (auto it = pendingSaveQueue.begin(); it != pendingSaveQueue.end(); ++it)
 	{
 		Chunk *chunk = *it;

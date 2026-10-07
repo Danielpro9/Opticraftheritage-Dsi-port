@@ -205,6 +205,20 @@
 #undef  PLATFORM_SMALL_REGION_SCRATCH
 #define PLATFORM_SMALL_REGION_SCRATCH             1
 
+// PLATFORM_CHUNK_SAVE_SLICE_US: per-call CPU budget for
+// McRegionChunkLoader::continueSlicedSave()'s deflate loop (ChunkProvider.cpp's
+// drainPendingSaves()). Real-hardware evidence: the single compress2() call
+// this replaces measured 100-700ms+ for one chunk, all of it this same
+// deflate work done in one uninterruptible call instead of several of these
+// slices. 3000us matches PLATFORM_CHUNK_BUILD_STEP_US's own reasoning (this
+// file's mesh-build-step budget) -- same weak, FPU-less ARM9, same "a few ms
+// is cheap enough not to be its own visible hitch, however many of these a
+// save needs" logic. Gated by PLATFORM_DSI at the call site, not a generic
+// cross-platform knob: PS2/Wii use AnvilChunkLoader's real threaded worker
+// for this (ThreadedFileIOBase), so they never reach this code path at all.
+#undef  PLATFORM_CHUNK_SAVE_SLICE_US
+#define PLATFORM_CHUNK_SAVE_SLICE_US              3000
+
 // A third PS2-only knob found in the same sweep, this time a genuine
 // unbounded-growth bug rather than an unmeasured trade-off: RenderEngine.cpp's
 // shouldCacheDecodedTexturePixels() defaults (its #else branch, active

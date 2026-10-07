@@ -1660,9 +1660,28 @@ bool ChunkProvider::unload100OldestChunks()
 #if PLATFORM_PROFILE_STREAMING
 		const long_t populateStartNs = System::nanoTime();
 #endif
+#if PLATFORM_DSI
+		// Diagnostic only, not a fix: with the catch-up-tick generation drain
+		// now gated (see unload100OldestChunks()'s own drainPendingGeneration
+		// call above), a real-hardware log still showed a single tick costing
+		// ~7s with no "generation step" line anywhere nearby. drainPendingPopulate()
+		// is the other unsliced-feeling per-tick drain this function runs --
+		// structures/lakes/dungeons/springs/animal groups via populateDeferredBatch()
+		// -- and has zero DSi timing instrumentation today, unlike generation.
+		// Same nanoTime() pair and 20ms threshold as that diagnostic, to find out
+		// whether this is where the still-unexplained time goes.
+		const long_t dsiPopulateStartNs = System::nanoTime();
+#endif
 		// A budget of 0 returns immediately, which is what the platforms that
 		// keep PLATFORM_POPULATE_STEPS_AFTER_PUBLISH at 0 rely on.
 		drainPendingPopulate(populateSteps);
+#if PLATFORM_DSI
+		{
+			const long_t dsiPopulateUs = (System::nanoTime() - dsiPopulateStartNs) / 1000;
+			if (dsiPopulateUs >= 20000)
+				MC_LOG_INFO("dsi", "populate drain took %lldus\n", (long long)dsiPopulateUs);
+		}
+#endif
 #if PLATFORM_PROFILE_STREAMING
 		platformProfilePopulate(System::nanoTime() - populateStartNs);
 #endif

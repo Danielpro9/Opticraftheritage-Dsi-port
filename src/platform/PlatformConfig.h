@@ -230,8 +230,18 @@
 #  define PLATFORM_HAS_VIRTUAL_KEYBOARD (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI)
 #endif
 
+// PC path (the #else below) depth-peels fancy water: a full extra pass over
+// every translucent face with color writes off just to prime the depth
+// buffer, then the real pass on top -- 2x the vertex/triangle submission for
+// any frame with visible water/ice/glass. Off by default on DSi (fancyGraphics
+// defaults false for PLATFORM_CONSOLE_LOW -- see GameDefaults.cpp), but still
+// reachable the moment a player turns Fancy Water on in options, with no
+// indication it costs double on this hardware. DSi already implements the
+// generic RenderTerrainAPI this simple path uses (RenderTerrainAPI_DSI.cpp's
+// renderTerrainBeginPass()/EndPass()), so this needs no new platform code,
+// just the same single alpha-blended pass PS2 already ships with.
 #ifndef PLATFORM_SIMPLE_TRANSPARENT_TERRAIN
-#  define PLATFORM_SIMPLE_TRANSPARENT_TERRAIN PLATFORM_PS2
+#  define PLATFORM_SIMPLE_TRANSPARENT_TERRAIN (PLATFORM_PS2 || PLATFORM_DSI)
 #endif
 
 #ifndef PLATFORM_GUI_FORCE_DEPTH_DISABLED

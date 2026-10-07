@@ -1021,7 +1021,34 @@ Chunk *ChunkProvider::provideChunk(int_t i, int_t j)
 			genChunksThisTick++;
 		}
 #endif
-		return prepareChunk(i, j);
+#if PLATFORM_DSI
+		// Diagnostic only, not a fix: this is the synchronous, atomic, non-
+		// incremental fallback -- prepareChunk() can run a whole chunk's
+		// generation (or disk load) in one uninterruptible call, same cost
+		// class as the pre-incremental-generation code path, completely
+		// outside the generationTask/drainPendingGeneration budget that the
+		// catch-up-tick throttle (unload100OldestChunks()'s own comment)
+		// already covers. Reached whenever the caller needs this chunk RIGHT
+		// NOW -- PLATFORM_GENERATE_SYNC_RADIUS's "critical" exemption above
+		// for the player's own chunk, or (PLATFORM_BOUNDED_WORLD off, or
+		// PLATFORM_INCREMENTAL_CHUNK_GENERATION's own branch not taken) a
+		// platform/config combination that never defers at all. Suspected
+		// contributor to multi-second stalls right after a fresh world load
+		// that the generation-step diagnostic doesn't explain (no matching
+		// "generation step" line nearby) -- this measures whether that
+		// suspicion is correct and how expensive it actually is.
+		const long_t dsiSyncProvideStartNs = System::nanoTime();
+#endif
+		Chunk *dsiSyncProvideResult = prepareChunk(i, j);
+#if PLATFORM_DSI
+		{
+			const long_t dsiSyncProvideUs = (System::nanoTime() - dsiSyncProvideStartNs) / 1000;
+			if (dsiSyncProvideUs >= 20000)
+				MC_LOG_INFO("dsi", "synchronous provideChunk at %d,%d took %lldus\n",
+					(int)i, (int)j, (long long)dsiSyncProvideUs);
+		}
+#endif
+		return dsiSyncProvideResult;
 	}
 
 	if (it->second != nullptr)

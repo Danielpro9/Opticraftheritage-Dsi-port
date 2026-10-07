@@ -882,6 +882,10 @@ bool ChunkProvider::drainPendingGeneration(int_t stepBudget, long_t budgetNs, bo
 		// unit says definitively whether this is where the spike's time
 		// goes, and roughly how much of it, without guessing further.
 		const long_t dsiStepStartNs = System::nanoTime();
+		// Captured before advanceGenerationTask() runs: the task's stage field
+		// is advanced to the NEXT stage once the current one finishes, so this
+		// is "which stage just ran", not "which stage runs next".
+		const char *dsiStepStageName = generator->generationTaskStageName();
 #endif
 		if (!generator->advanceGenerationTask())
 			break;
@@ -889,8 +893,8 @@ bool ChunkProvider::drainPendingGeneration(int_t stepBudget, long_t budgetNs, bo
 		{
 			const long_t dsiStepUs = (System::nanoTime() - dsiStepStartNs) / 1000;
 			if (dsiStepUs >= 20000)
-				MC_LOG_INFO("dsi", "generation step at %d,%d took %lldus\n",
-					(int)taskX, (int)taskZ, (long long)dsiStepUs);
+				MC_LOG_INFO("dsi", "generation step (%s) at %d,%d took %lldus\n",
+					dsiStepStageName, (int)taskX, (int)taskZ, (long long)dsiStepUs);
 		}
 #endif
 		didWork = true;
@@ -1568,8 +1572,36 @@ bool ChunkProvider::unload100OldestChunks()
 	const long_t generationStartNs = System::nanoTime();
 #endif
 	bool incrementalPublishedChunk = false;
+#if PLATFORM_DSI
+	// This function runs once per WORLD TICK, and Minecraft.cpp's runTick() can
+	// run up to 10 of those back-to-back in one rendered frame to catch up after
+	// a stall (Timer.cpp clamps elapsedTicks to 10) -- the same situation
+	// drainPendingSaves() below already guards against for chunk saves. Without
+	// this gate, each catch-up tick calls drainPendingGeneration() in turn, and
+	// PlatformStreamingFrameBudget's clampUs() guarantees at least one step per
+	// call even once the shared per-frame allowance is exhausted (see its own
+	// comment) -- so a burst of catch-up ticks forces one atomic generation step
+	// per tick regardless of budget. A single atomic step (BaseTerrain, Decorate
+	// or Skylight; see ChunkProviderGenerate::advanceGenerationTask) measured
+	// 20-143ms on real hardware, so 10 of those forced into one rendered frame
+	// is 0.2-1.4s on its own, on top of whatever the stall that caused the
+	// catch-up already cost. Real-hardware evidence: a debug.log frame of
+	// tick=358/6506ms right after a preloadWorld() warmup cap left 17/18
+	// sections unbuilt and dumped them into the first post-load catch-up burst.
+	// Capping to roughly one drain per real tick interval (50ms) means a
+	// catch-up burst still drains the generation queue, just no faster than a
+	// single real frame could have anyway -- same shape as drainPendingSaves().
+	static long_t s_lastGenDrainMs = 0;
+	const long_t genNowMs = System::currentTimeMillis();
+	const bool allowGenerationDrainThisTick = genNowMs - s_lastGenDrainMs >= 50;
+	if (allowGenerationDrainThisTick)
+		s_lastGenDrainMs = genNowMs;
+	const bool incrementalGenerationWorked = allowGenerationDrainThisTick &&
+		drainPendingGeneration(PLATFORM_GENERATION_STEPS_PER_TICK, incrementalPublishedChunk);
+#else
 	const bool incrementalGenerationWorked =
 		drainPendingGeneration(PLATFORM_GENERATION_STEPS_PER_TICK, incrementalPublishedChunk);
+#endif
 #if PLATFORM_PROFILE_STREAMING
 	if (incrementalGenerationWorked)
 		platformProfileGenerate(System::nanoTime() - generationStartNs);

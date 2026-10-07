@@ -707,6 +707,24 @@ int_t ChunkProviderGenerate::generationTaskZ() const
 	return generationTask.chunkZ;
 }
 
+const char *ChunkProviderGenerate::generationTaskStageName() const
+{
+	switch (generationTask.stage)
+	{
+	case GenerationStage::BaseTerrain: return "BaseTerrain";
+	case GenerationStage::Caves:       return "Caves";
+	case GenerationStage::Ravines:     return "Ravines";
+	case GenerationStage::Structures:  return "Structures";
+#if PLATFORM_CHUNK_LOCAL_DECORATION
+	case GenerationStage::Decorate:    return "Decorate";
+#endif
+	case GenerationStage::BuildChunk:  return "BuildChunk";
+	case GenerationStage::Skylight:    return "Skylight";
+	case GenerationStage::Done:        return "Done";
+	}
+	return "?";
+}
+
 Chunk *ChunkProviderGenerate::takeGeneratedChunk()
 {
 	if (!generationTask.active || generationTask.stage != GenerationStage::Done)

@@ -71,6 +71,10 @@ public:
 	bool hasGenerationTask() const;
 	int_t generationTaskX() const;
 	int_t generationTaskZ() const;
+	// Name of the stage advanceGenerationTask() is about to run (not the one it
+	// just finished); diagnostic only, for attributing per-stage cost in the
+	// DSi "generation step" log.
+	const char *generationTaskStageName() const;
 	Chunk *takeGeneratedChunk();
 #endif
 

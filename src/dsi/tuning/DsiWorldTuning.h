@@ -708,6 +708,28 @@
 #undef  PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES
 #define PLATFORM_LIGHTING_DIRTY_FLUSH_INTERVAL_FRAMES 16
 
+// The next knob named above: PLATFORM_LIGHTING_UPDATES_PER_FRAME (128) and
+// PLATFORM_LIGHTING_BUDGET_US (2500) are both still PS2's own values
+// (PlatformGameTuning.h aliases DSi to them), and PS2 has a real FPU --
+// neither was ever re-measured for DSi specifically. World::updatingLighting()
+// (World.cpp) drains lightingToUpdate until EITHER the job count above or
+// this wall-clock budget is hit, whichever comes first, so whichever of the
+// two is actually the binding constraint on DSi's slower CPU is unverified:
+// if 128 jobs already take longer than 2500us here, the count is irrelevant
+// dead weight and only the budget matters; if 128 jobs finish well under
+// 2500us, the reverse is true. Doubling both together covers either case
+// without needing to profile which one binds first, at a cost
+// (PLATFORM_LIGHTING_BUDGET_US's new 4000us ceiling) that is still a small
+// fraction of a frame even at this platform's own worst-case flood frame
+// times (70-140ms, per the flush-interval comments above) -- PENDING
+// real-hardware confirmation via a debug.log showing whether rebuilds= now
+// climbs much more slowly relative to getLoadedChunkCount() staying flat,
+// same signal the flush-interval tuning above was judged against.
+#undef  PLATFORM_LIGHTING_UPDATES_PER_FRAME
+#define PLATFORM_LIGHTING_UPDATES_PER_FRAME     256
+#undef  PLATFORM_LIGHTING_BUDGET_US
+#define PLATFORM_LIGHTING_BUDGET_US             4000
+
 // CORRECTNESS FIX, not a performance tuning value: PLATFORM_SAVE_RUNTIME_
 // CHUNK_EDITS_ON_UNLOAD defaults to PLATFORM_PS2 only (PlatformConfig.h), and
 // ChunkProviderLoadOrGenerate::unloadChunk()/ChunkProvider::unloadChunk()'s

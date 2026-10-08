@@ -33,9 +33,12 @@
 //                     ContainerSlotNavigator.cpp
 //   A                 jump         (keyBindJump)
 //   X                 inventory    (keyBindInventory)
-//   Y                 chat         (keyBindChat -- multiplayer only, see
-//                     dsiPushGameplayKeyEvents()'s own comment)
+//   Y                 F3 debug overlay (see dsiPushGameplayKeyEvents()'s own
+//                     comment on why Y doesn't go to chat instead)
 //   B + D-pad Left/Right   step the hotbar selection
+//   B + D-pad Up           chat (keyBindChat's default key T) -- now that
+//                     multiplayer is live (see NetworkManager.h's own
+//                     DSI_PLATFORM comment), chat has somewhere to open
 //   START             pause/menu (synthesizes Escape -- see
 //                     dsiPushGameplayKeyEvents()'s own comment and
 //                     Display_dsi.cpp's header comment for why this replaced
@@ -382,11 +385,12 @@ void dsiPushGameplayKeyEvents(bool inMenu)
 	// when one is, so this needs no DSi-specific menu handling at all.
 	if (changed & KEY_START)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (held & KEY_START) != 0);
-	// Y: temporarily mapped to F3 (toggles Minecraft.cpp's showDebugInfo
-	// overlay) on request -- chat (its original binding, keyBindChat's
-	// default KEY_T) only opens in a multiplayer world, which this
-	// NO_NETWORK build can never have, so Y was doing nothing. Revisit if
-	// chat ever becomes reachable and Y needs to go back to it.
+	// Y: mapped to F3 (toggles Minecraft.cpp's showDebugInfo overlay) rather
+	// than back to chat now that multiplayer is live -- B+Up (below) is the
+	// dedicated chat chord instead, the same reasoning that put hotbar
+	// stepping on a B chord rather than its own button: there is no spare
+	// single button left, and chat is not needed often enough to deserve
+	// one of the few there are.
 	if (changed & KEY_Y)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F3, (held & KEY_Y) != 0);
 
@@ -407,12 +411,27 @@ void dsiPushGameplayKeyEvents(bool inMenu)
 	// R1/L1 mapping (pushWheel(-1) for the right-side button, pushWheel(1)
 	// for the left) has the correct sign for each direction; swapped to
 	// match it.
+	//
+	// B + Up: open chat (keyBindChat's default key T), added on request the
+	// same way as the hotbar chord above -- B has no meaning of its own in
+	// gameplay, so pairing it with a D-pad direction costs no existing
+	// binding. Pushed as an immediate down+up tap rather than tracked with
+	// `changed` like A/X/Y above: those three are keys Minecraft expects to
+	// see genuinely held (space for repeated jumping, E/F3 toggles checked
+	// on their own down edge), but a synthesized T only needs to exist for
+	// the one instant that opens GuiChat -- once that screen is up, further
+	// typing comes from the on-screen keyboard, not from T staying "held".
 	if (held & KEY_B)
 	{
 		if (pressedEdge & KEY_LEFT)
 			lwjgl::Mouse::detail::pushWheel(1, 0, 0);
 		if (pressedEdge & KEY_RIGHT)
 			lwjgl::Mouse::detail::pushWheel(-1, 0, 0);
+		if (pressedEdge & KEY_UP)
+		{
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
+		}
 	}
 
 	g_prevActionButtons = held;
@@ -432,15 +451,18 @@ PlatformGamepadSnapshot platformGamepadSnapshot(int)
 	// Real-hardware report: holding B to step the hotbar (dsiPushGameplayKeyEvents()'s
 	// own B+Left/Right chord above) also strafed the player, because this
 	// function read Left/Right unconditionally into leftX with no knowledge
-	// of what B was doing with the same two buttons. While B is held, Left/
-	// Right belong to the hotbar chord instead -- suppress them here so the
-	// player holds still during hotbar selection, matching the "the two
-	// never conflict" assumption the B+Left/Right comment above already
-	// states (menu navigation's mouseWheel path has no such conflict either,
-	// since it is never live at the same time as gameplay movement).
-	const bool hotbarChordActive = (held & KEY_B) != 0;
-	out.leftX = hotbarChordActive ? 0.0f : (held & KEY_LEFT) ? -1.0f : (held & KEY_RIGHT) ? 1.0f : 0.0f;
-	out.leftY = (held & KEY_UP)   ? -1.0f : (held & KEY_DOWN)  ? 1.0f : 0.0f;
+	// of what B was doing with the same two buttons. While B is held, the
+	// whole D-pad belongs to B's chords instead (Left/Right = hotbar, Up =
+	// chat) -- suppress all four here so the player holds still during any
+	// of them, matching the "the two never conflict" assumption the
+	// B+Left/Right comment above already states (menu navigation's
+	// mouseWheel path has no such conflict either, since it is never live
+	// at the same time as gameplay movement). Down has no chord of its own
+	// yet, but gets held to the same "B means stand still" rule rather than
+	// left as a special case that only some directions follow.
+	const bool bChordActive = (held & KEY_B) != 0;
+	out.leftX = bChordActive ? 0.0f : (held & KEY_LEFT) ? -1.0f : (held & KEY_RIGHT) ? 1.0f : 0.0f;
+	out.leftY = bChordActive ? 0.0f : (held & KEY_UP)   ? -1.0f : (held & KEY_DOWN)  ? 1.0f : 0.0f;
 
 	// The touch screen no longer reports as a stick deflection here --
 	// PlatformInputTuning.h now routes DSi's camera through EntityRenderer.cpp's

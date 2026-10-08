@@ -1,5 +1,6 @@
 #include "DsiNetworkSocket.h"
 
+#include "dsi/net/DsiSrvLookup.h"
 #include "platform/Log.h"
 
 #include <cerrno>
@@ -103,10 +104,29 @@ bool DsiNetworkSocket::connect(const std::string &host, int port)
     if (!ensureWifiReady())
         return false;
 
-    hostent *resolved = gethostbyname(host.c_str());
+    // Real-hardware report: a server confirmed reachable from another
+    // device (same hostname, same port) always got an active TCP refusal
+    // from the DSi. Root cause: that server is hosted on a shared/budget
+    // provider (HolyHosting) that only exposes a non-default port through
+    // an SRV record, not at the literal typed host:port -- the real
+    // client-side behavior this port's Beta 1.2.5 base predates entirely
+    // (see DsiSrvLookup.h's own comment). Best-effort: a server that
+    // never needed this is unaffected beyond one extra bounded UDP round
+    // trip before falling through to the host:port exactly as typed.
+    std::string connectHost = host;
+    int connectPort = port;
+    std::string srvHost;
+    int srvPort = 0;
+    if (dsiResolveMinecraftSrv(host, srvHost, srvPort))
+    {
+        connectHost = srvHost;
+        connectPort = srvPort;
+    }
+
+    hostent *resolved = gethostbyname(connectHost.c_str());
     if (resolved == nullptr || resolved->h_addr_list == nullptr || resolved->h_addr_list[0] == nullptr)
     {
-        MC_LOG_ERROR("network", "DSi: gethostbyname(%s) failed\n", host.c_str());
+        MC_LOG_ERROR("network", "DSi: gethostbyname(%s) failed\n", connectHost.c_str());
         return false;
     }
 
@@ -117,7 +137,7 @@ bool DsiNetworkSocket::connect(const std::string &host, int port)
     sockaddr_in target;
     std::memset(&target, 0, sizeof(target));
     target.sin_family = AF_INET;
-    target.sin_port = htons(static_cast<unsigned short>(port));
+    target.sin_port = htons(static_cast<unsigned short>(connectPort));
     std::memcpy(&target.sin_addr, resolved->h_addr_list[0], sizeof(target.sin_addr));
 
     // Real-hardware report: a server confirmed reachable (same address,
@@ -141,7 +161,7 @@ bool DsiNetworkSocket::connect(const std::string &host, int port)
     char resolvedIp[16];
     std::snprintf(resolvedIp, sizeof(resolvedIp), "%u.%u.%u.%u",
         addrBytes[0], addrBytes[1], addrBytes[2], addrBytes[3]);
-    MC_LOG_INFO("network", "DSi: %s resolved to %s\n", host.c_str(), resolvedIp);
+    MC_LOG_INFO("network", "DSi: %s resolved to %s\n", connectHost.c_str(), resolvedIp);
 
     // Deliberately still blocking for this one call -- matches every other
     // platform's NetworkManager constructor (a synchronous connect(), the
@@ -150,7 +170,7 @@ bool DsiNetworkSocket::connect(const std::string &host, int port)
     if (::connect(socketFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
     {
         MC_LOG_ERROR("network", "DSi: connect(%s [%s]:%d) failed: %s\n",
-            host.c_str(), resolvedIp, port, strerror(errno));
+            connectHost.c_str(), resolvedIp, connectPort, strerror(errno));
         ::closesocket(socketFd);
         return false;
     }

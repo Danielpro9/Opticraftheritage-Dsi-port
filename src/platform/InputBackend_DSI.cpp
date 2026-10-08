@@ -185,7 +185,24 @@ std::uint32_t mapTextButtons(std::uint32_t bits)
 	// the held stack (L) or drop the whole held stack (R), independent of
 	// whichever slot A/B's existing primary/secondary click targets.
 	if (bits & KEY_L)     value |= PLATFORM_TEXT_SECONDARY;
-	if (bits & KEY_R)     value |= PLATFORM_TEXT_DROP;
+	// R also doubles as VirtualKeyboard's "clear the whole field" action
+	// (PLATFORM_TEXT_CLEAR, added on request -- B's existing backspace only
+	// erases one character at a time, which got tedious clearing a long
+	// value like a server IP). No conflict with DROP above: a text field
+	// being focused and a container screen driving slot navigation never
+	// happen at the same time, so only one of the two consumers is ever
+	// actually reading the bit it cares about on a given press.
+	if (bits & KEY_R)     value |= PLATFORM_TEXT_DROP | PLATFORM_TEXT_CLEAR;
+	// X/Y/START were never mapped to anything here at all -- space, shift
+	// (caps), and enter (submit) were simply unreachable from DSi's virtual
+	// keyboard before this, found while wiring up R's clear action above.
+	// Free to use during text input: dsiPushGameplayKeyEvents() already
+	// stops synthesizing its own X=inventory/Y=F3/START=pause events while
+	// platformTextInputExclusive() is set, the same guard that made A/B
+	// stop double-firing into gameplay (see that function's own comment).
+	if (bits & KEY_X)     value |= PLATFORM_TEXT_SPACE;
+	if (bits & KEY_Y)     value |= PLATFORM_TEXT_SHIFT;
+	if (bits & KEY_START) value |= PLATFORM_TEXT_ENTER;
 	return value;
 }
 }
@@ -527,7 +544,10 @@ void platformSetMenuCursor(int, int)
 
 const PlatformKeyboardHints& platformKeyboardHints()
 {
-	static const PlatformKeyboardHints hints{};
+	static const PlatformKeyboardHints hints = {
+		{ "A:type B:del X:space Y:shift",
+		  "Start:ok R:clear B:close", nullptr }, 2
+	};
 	return hints;
 }
 

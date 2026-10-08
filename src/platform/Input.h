@@ -24,6 +24,13 @@ enum PlatformTextAction : std::uint32_t
     // never set them, so this is purely additive and changes nothing there.
     PLATFORM_TEXT_SECONDARY = 1u << 10,
     PLATFORM_TEXT_DROP      = 1u << 11,
+    // VirtualKeyboard-only: erase the whole focused field in one press,
+    // rather than backspacing one character at a time (added on request --
+    // see InputBackend_DSI.cpp's mapTextButtons(), the only platform that
+    // sets this today). Shares DSi's R button with PLATFORM_TEXT_DROP
+    // above; safe to double up, since a text field and a container screen
+    // are never both the active input target at once.
+    PLATFORM_TEXT_CLEAR     = 1u << 12,
 };
 
 struct PlatformTextInputSnapshot

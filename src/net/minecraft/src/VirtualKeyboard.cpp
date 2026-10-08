@@ -110,6 +110,7 @@ void VirtualKeyboard::tick()
 	const unsigned int keyType = PLATFORM_TEXT_TYPE, keyBack = PLATFORM_TEXT_BACK;
 	const unsigned int keySpace = PLATFORM_TEXT_SPACE, keyShift = PLATFORM_TEXT_SHIFT;
 	const unsigned int keyEnter = PLATFORM_TEXT_ENTER, keyClose = PLATFORM_TEXT_CLOSE;
+	const unsigned int keyClear = PLATFORM_TEXT_CLEAR;
 	if (pressed & keyLeft)  moveX = -1;
 	if (pressed & keyRight) moveX = 1;
 	if (pressed & keyUp)    moveY = -1;
@@ -169,6 +170,16 @@ void VirtualKeyboard::tick()
 	{
 		if (focusedField)
 			focusedField->setFocused(false); // -> notifyFocus(this, false)
+	}
+	// R (DSi only -- see mapTextButtons()): erase the whole field in one
+	// press, added on request as a faster alternative to repeatedly
+	// backspacing a long value (a server IP, for instance) one character at
+	// a time. setText() already resets the cursor to the (now zero) end of
+	// the field itself, same as typing normally would.
+	if (pressed & keyClear)
+	{
+		if (focusedField)
+			focusedField->setText("");
 	}
 }
 

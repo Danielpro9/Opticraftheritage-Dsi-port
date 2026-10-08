@@ -58,4 +58,15 @@ struct RenderCapturedMesh;
 bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, int vertexBudget,
 	int& stage, int& cursor);
 
+// The GL texture name RenderAPI_DSI.cpp's own renderBindTexture() most
+// recently bound (0 if none yet). Added for callers like GuiIngame.cpp's
+// HUD caches that want to repack a just-compiled static mesh against
+// "whatever texture the caller already bound before compiling it" instead
+// of threading an explicit texture id through their own call chain --
+// correct precisely because none of those call sites rebind a texture
+// between binding it and compiling the mesh that draws against it, the
+// same invariant dsiRepackCapturedMeshStep()'s own terrainTextureId
+// parameter already relies on for WorldRendererDsi.cpp's terrain meshes.
+int dsiGetBoundTexture();
+
 #endif // DSI_PLATFORM

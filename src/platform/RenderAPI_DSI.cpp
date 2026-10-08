@@ -887,20 +887,28 @@ std::size_t dsiTextureVramBytes(int name)
 	return tex ? textureVramBytes(*tex) : 0;
 }
 
+// See DsiCapturedMeshRepack.h's own comment for who this is for and why.
+int dsiGetBoundTexture()
+{
+	return g_boundTexture;
+}
+
 // -----------------------------------------------------------------------------
 // Static / captured mesh replay -- VERIFIED per-call mapping (glBegin/
-// glVertex3f/glTexCoord2f/glColor3b), APPROXIMATED overall performance: this
-// still re-issues one GL call per vertex per frame instead of compiling to a
-// native GPU command list (glCallList() takes a pre-packed FIFO buffer this
-// engine does not build -- that would be the next step up, replaying a whole
-// section with one async DMA'd call instead of N immediate-mode ones), the
-// same limitation PS2's non-native-terrain-pipeline path has (see
-// PLATFORM_NATIVE_TERRAIN_PIPELINE in PlatformConfig.h, left off for DSi).
-// What IS precomputed now: a captured mesh's position data is converted to
-// the GPU's native v16 fixed-point format once, when the mesh is captured
-// (a chunk build), not on every one of the frames it is replayed across
-// before the next rebuild -- see renderCaptureInterleaved()/
-// drawCapturedMeshFast() below for why and the exact split.
+// glVertex3f/glTexCoord2f/glColor3b), still true for drawInterleavedMesh()
+// immediately below this banner: that path is for ONE-SHOT/dynamic meshes
+// (GUI, particles, anything rebuilt most frames anyway), which re-issues one
+// GL call per vertex every time by necessity -- there is nothing to
+// precompile for geometry that is different every frame.
+//
+// The captured/static path (dsiRepackCapturedMeshStep()/drawCapturedMeshFast()
+// further below, for chunk section meshes that replay unchanged across many
+// frames between rebuilds) is NOT limited this way any more: it compiles a
+// native GX FIFO command list once per section build and replays the whole
+// section with a single async DMA'd call instead of N immediate-mode ones --
+// see dsiRepackCapturedMeshStep()'s own banner (the "next step up" this
+// comment used to describe as still missing) for the full design and the
+// real-hardware/ClassiCube validation behind it.
 // -----------------------------------------------------------------------------
 namespace
 {

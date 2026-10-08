@@ -34,7 +34,28 @@ NetworkManager::NetworkManager(const std::string &host, int_t port, const std::s
 	, sendQueueByteLength(0)
 	, readQueueByteLength(0)
 	, field_20100_w(50)
+#ifdef DSI_PLATFORM
+	, dsiSendStreamBuf(dsiPendingSend)
+#endif
 {
+#ifdef DSI_PLATFORM
+	// JavaNetwork::createSocket() above is always nullptr on this platform
+	// (see JavaNetwork.cpp's own DSI_PLATFORM stub) -- DsiNetworkSocket is
+	// owned directly instead, since it needs non-blocking reads/writes
+	// polled once per tick (dsiPumpNetwork(), called from
+	// processReadPackets() below) rather than the blocking-on-a-background-
+	// thread shape every other platform's socket uses. See this class's own
+	// DSI_PLATFORM members for why.
+	if (!dsiSocket.connect(host, port))
+		throw std::runtime_error("Connection refused: " + host + ":" + std::to_string(port));
+
+	remoteSocketAddress = dsiSocket.remoteAddress();
+	socketInputStream = std::make_unique<std::istream>(&dsiRecvStreamBuf);
+	socketOutputStream = std::make_unique<std::ostream>(&dsiSendStreamBuf);
+	socketOutputStream->exceptions(std::ios::badbit | std::ios::failbit);
+	// No read/write threads to start: dsiPumpNetwork() drives both sides
+	// from the main loop instead.
+#else
 	if (networkSocket == nullptr || !networkSocket->connect(host, port))
 		throw std::runtime_error("Connection refused: " + host + ":" + std::to_string(port));
 
@@ -73,6 +94,7 @@ NetworkManager::NetworkManager(const std::string &host, int_t port, const std::s
 			readThread.join();
 		throw;
 	}
+#endif
 #endif
 	(void)s;
 }
@@ -174,6 +196,19 @@ bool NetworkManager::readPacket()
 	#ifdef WII_PLATFORM
 	constexpr std::size_t MAX_READ_QUEUE_BYTES = 4 * 1024 * 1024;
 	constexpr std::size_t MAX_READ_QUEUE_PACKETS = 2048;
+	#elif defined(DSI_PLATFORM)
+	// Far smaller than Wii's own already-reduced cap: this session's other
+	// DSi tuning work measured the committed heap ceiling around 13.5MB
+	// total, not 4MB of headroom for one queue alone. Must still clear
+	// Packet51MapChunk's own 256KB kMaxCompressedChunkBytes cap by a
+	// comfortable margin -- a single legitimate maximum-size chunk packet
+	// has to fit under this on its own, or the very first large chunk
+	// packet would overflow it immediately with the queue otherwise empty.
+	// Generous enough for the login/handshake burst and that one packet,
+	// nowhere near what a real play session streaming chunks continuously
+	// would need -- revisit once that is the thing being tested.
+	constexpr std::size_t MAX_READ_QUEUE_BYTES = 384 * 1024;
+	constexpr std::size_t MAX_READ_QUEUE_PACKETS = 256;
 	#else
 	constexpr std::size_t MAX_READ_QUEUE_BYTES = 32 * 1024 * 1024;
 	constexpr std::size_t MAX_READ_QUEUE_PACKETS = 8192;
@@ -206,6 +241,17 @@ bool NetworkManager::readPacket()
 			networkShutdown("disconnect.endOfStream", std::vector<std::string>());
 		}
 	}
+#ifdef DSI_PLATFORM
+	catch (const DsiPacketIncomplete &)
+	{
+		// Not enough bytes buffered yet to finish this packet -- see
+		// DsiPacketStream.h's own comment. dsiRecvBuffer is untouched (this
+		// streambuf never mutates it), so there is nothing to undo; the
+		// next poll just tries the whole packet again once more bytes have
+		// arrived.
+		return false;
+	}
+#endif
 	catch (std::exception &exception)
 	{
 		if (!terminating)
@@ -239,10 +285,25 @@ void NetworkManager::networkShutdown(const std::string &s, const std::vector<std
 	// They are released in the destructor, after both threads have been joined.
 	if (networkSocket != nullptr)
 		networkSocket->close();
+#ifdef DSI_PLATFORM
+	// networkSocket is always null on this platform (see the constructor's
+	// own DSI_PLATFORM branch) -- dsiSocket is what actually owns the fd.
+	// Safe to call unconditionally: closing an already-closed
+	// DsiNetworkSocket is a no-op (checks fd >= 0 itself).
+	dsiSocket.close();
+#endif
 }
 
 void NetworkManager::processReadPackets()
 {
+#ifdef DSI_PLATFORM
+	// Every caller of this function (WorldClient::tick(), GuiConnecting,
+	// NetClientHandler) already calls it once per tick regardless of
+	// platform -- the one thing DSi needs that the others don't is for
+	// something to actually pump the socket, since there is no background
+	// read/write thread doing that here. See dsiPumpNetwork()'s own comment.
+	dsiPumpNetwork();
+#endif
 	bool sendQueueOverflow;
 	{
 		std::lock_guard<std::mutex> guard(sendQueueLock);
@@ -360,6 +421,14 @@ void NetworkManager::closeConnection()
 #ifdef WII_PLATFORM
 	// The writer closes the connection after the queued disconnect packet has
 	// been flushed. interruptRead() only shuts down the receive side on Wii.
+#elif defined(DSI_PLATFORM)
+	// Same timing as Wii above (wait for the queued disconnect packet to
+	// flush before actually closing) -- dsiPumpNetwork() checks
+	// serverTerminating plus an empty send queue itself every tick, the
+	// same condition writeThreadRun() checks on every other platform. No
+	// background thread exists to spawn one on, and none is needed: the
+	// per-tick poll this platform already relies on for everything else
+	// covers this too.
 #else
 	// Java can detach this helper safely because the NetworkManager remains GC-reachable.
 	// In C++, keep the delayed closer owned by the manager so it cannot outlive `this`.
@@ -379,6 +448,87 @@ void NetworkManager::closeConnection()
 	}
 #endif
 }
+
+#ifdef DSI_PLATFORM
+// The whole read+write pump for this platform, called once per tick from
+// processReadPackets() -- see this file's own DSI_PLATFORM notes (the
+// constructor's, and NetworkManager.h's) for why no background thread
+// exists to put a blocking recv()/send() on instead. Mirrors what
+// readThreadRun()/writeThreadRun() do on every other platform, just all in
+// one non-blocking pass instead of two threads each looping until starved.
+void NetworkManager::dsiPumpNetwork()
+{
+	if (!dsiSocket.isOpen())
+		return;
+
+	if (!dsiSocket.recvAvailable(dsiRecvBuffer))
+	{
+		networkShutdown("disconnect.closed", std::vector<std::string>());
+		return;
+	}
+
+	// Same cap family as MAX_READ_QUEUE_BYTES in readPacket() above, for the
+	// same reason: this is the buffer a starved parse attempt leaves
+	// untouched while waiting for the rest of one packet, and a server that
+	// never sends a complete packet (or a genuine protocol desync) must not
+	// be allowed to grow it forever. Must stay above the single largest
+	// packet the protocol allows, not just "generous": Packet51MapChunk's
+	// own kMaxCompressedChunkBytes caps one map-chunk packet at 256KB, and a
+	// legitimate packet right at that cap has to fit here in full while it
+	// is still arriving, or this would wrongly disconnect on a valid packet
+	// before DsiRecvStreamBuf ever gets a chance to parse it.
+	constexpr std::size_t MAX_DSI_RECV_BUFFER_BYTES = 320 * 1024;
+	if (dsiRecvBuffer.size() > MAX_DSI_RECV_BUFFER_BYTES)
+	{
+		networkShutdown("disconnect.overflow", std::vector<std::string>());
+		return;
+	}
+
+	if (!dsiRecvBuffer.empty())
+	{
+		dsiRecvStreamBuf.rebind(dsiRecvBuffer.data(), dsiRecvBuffer.size());
+		if (socketInputStream != nullptr)
+			socketInputStream->clear();
+
+		// At most one packet per poll, not a loop-until-starved: a server
+		// streaming chunk data as fast as it can otherwise lets this one
+		// tick-bound call do an unbounded amount of parsing work, the same
+		// per-call-budget reasoning this session's chunk-load/save slicing
+		// already applies elsewhere. readPackets' own MAX_READ_QUEUE_*
+		// caps in readPacket() guard the queue depth regardless; this
+		// guards this call's own cost.
+		if (readPacket() && socketInputStream != nullptr)
+		{
+			const std::streamoff consumed = socketInputStream->tellg();
+			if (consumed > 0 && static_cast<std::size_t>(consumed) <= dsiRecvBuffer.size())
+				dsiRecvBuffer.erase(dsiRecvBuffer.begin(), dsiRecvBuffer.begin() + consumed);
+		}
+	}
+
+	sendPacket();
+
+	if (!dsiSendStreamBuf.sendPending(dsiSocket.rawFd()))
+	{
+		networkShutdown("disconnect.closed", std::vector<std::string>());
+		return;
+	}
+
+	// closeConnection() sets serverTerminating and relies on whatever pumps
+	// this connection to notice the send queue has drained and finish the
+	// shutdown -- the same check writeThreadRun() makes on every other
+	// platform (see closeConnection()'s own DSI_PLATFORM comment above).
+	if (serverTerminating && running)
+	{
+		bool queueEmpty;
+		{
+			std::lock_guard<std::mutex> guard(sendQueueLock);
+			queueEmpty = dataPackets.empty() && chunkDataPackets.empty();
+		}
+		if (queueEmpty)
+			networkShutdown("disconnect.closed", std::vector<std::string>());
+	}
+}
+#endif
 
 #ifdef WII_PLATFORM
 void *NetworkManager::wiiReadThreadEntry(void *argument)

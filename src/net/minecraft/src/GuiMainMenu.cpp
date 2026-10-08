@@ -433,7 +433,7 @@ void GuiMainMenu::initGui()
     }
 
     controlList.push_back(new GuiButtonLanguage(5, width / 2 - 124, row5Y));
-#if !PLATFORM_PS2
+#if !PLATFORM_PS2 && !PLATFORM_DSI
     if (mc->session == nullptr)
         multiplayerButton->enabled = false;
 #endif

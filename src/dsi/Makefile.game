@@ -46,8 +46,10 @@ GAME_ICON	:= icon.bmp
 # "compat" is here for dsi_atomic_fallback.c (see that file), not for the
 # shadow headers -- mutex/thread/condition_variable have no extension, so
 # find -name "*.c"/"*.cpp" below never matches them; they still only feed
-# INCLUDEDIRS as before.
-SOURCEDIRS	:= ../client ../java ../net ../util ../platform ../external system lwjgl java minecraft render compat
+# INCLUDEDIRS as before. "net" (this project's own src/dsi/net/, not the
+# shared "../net" = src/net/ a few entries over) holds DsiNetworkSocket.cpp/
+# DsiPacketStream.cpp -- see NetworkManager.h's own DSI_PLATFORM comment.
+SOURCEDIRS	:= ../client ../java ../net ../util ../platform ../external system lwjgl java minecraft render compat net
 # "compat" first: for #include <...>, -I directories are searched in the
 # order given, before the compiler's own built-in system headers either way,
 # but listing it first here keeps that precedence obvious at a glance.
@@ -80,8 +82,8 @@ ARM7ELF		:= arm7/build/dsi_arm7.elf
 # multilib does not ship one. compat/dsi_atomic_fallback.c provides the two
 # confirmed-needed symbols directly instead (compiled in via SOURCEDIRS
 # picking up "compat", see below).
-LIBS		:= -lnds9
-LIBDIRS		:= $(BLOCKSDS)/libs/libnds
+LIBS		:= -lnds9 -ldswifi9
+LIBDIRS		:= $(BLOCKSDS)/libs/libnds $(BLOCKSDS)/libs/dswifi
 
 BUILDDIR	:= build/$(NAME)
 ELF		:= build/$(NAME).elf
@@ -167,10 +169,15 @@ SOURCES_CPP	:= $(shell echo "$(_ALL_CPP)" | tr ' ' '\n' \
 # so it does not also sweep up tools/ and probe/ next to it).
 SOURCES_CPP	+= main_dsi.cpp
 
-# NO_NETWORK: no DSWiFi wired up yet (see the ARM7ELF comment above), and it
-# is what already flips the existing PLATFORM_LOCAL_RESOURCES_ONLY knob (see
-# PlatformConfig.h) so ThreadDownloadResources scans resources synchronously
-# instead of spinning up a std::thread this toolchain cannot actually run.
+# NO_NETWORK is gone now that DSWiFi is wired up (see the ARM7ELF comment
+# above and NetworkManager.h's own DSI_PLATFORM notes) -- GuiMultiplayer's
+# #ifndef NO_NETWORK code is live from here on. PLATFORM_LOCAL_RESOURCES_ONLY
+# is pinned to 1 explicitly below instead of being left to default off of
+# NO_NETWORK's own absence: that knob exists so ThreadDownloadResources scans
+# resources synchronously rather than spinning up a std::thread this
+# toolchain cannot actually run (see PlatformConfig.h), which is a completely
+# separate concern from Minecraft's own multiplayer socket code above and
+# must not silently flip just because NO_NETWORK did.
 #
 # MC_LOG_LEVEL=1: on real hardware there is no debugger and no serial console
 # -- platform/Log.h's McLog already writes to sd:/OptiCraft/debug.log
@@ -186,7 +193,8 @@ SOURCES_CPP	+= main_dsi.cpp
 # volume could by itself slow the game down enough to look like a hang --
 # exactly the ambiguity this exists to remove. Revisit once level 1's output
 # says which area needs level-2 detail.
-DEFINES		+= -D__NDS__ -D__BLOCKSDS__ -DARM9 -DNO_SOUND -DNO_NETWORK -DMC_LOG_LEVEL=1
+DEFINES		+= -D__NDS__ -D__BLOCKSDS__ -DARM9 -DNO_SOUND -DMC_LOG_LEVEL=1 \
+		   -DPLATFORM_LOCAL_RESOURCES_ONLY=1
 
 ARCH		:= -mthumb -mcpu=arm946e-s+nofp
 

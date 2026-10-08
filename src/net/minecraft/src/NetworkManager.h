@@ -15,6 +15,11 @@
 
 #include "java/Type.h"
 
+#ifdef DSI_PLATFORM
+#include "dsi/net/DsiNetworkSocket.h"
+#include "dsi/net/DsiPacketStream.h"
+#endif
+
 namespace JavaNetwork
 {
 class Socket;
@@ -75,6 +80,14 @@ private:
 	static void *wiiReadThreadEntry(void *argument);
 	static void *wiiWriteThreadEntry(void *argument);
 #endif
+#ifdef DSI_PLATFORM
+	// Drives the socket once per tick instead of on a background thread --
+	// see this header's own DSI_PLATFORM comment below on why none exists.
+	// Called from processReadPackets(), which every caller (WorldClient::
+	// tick(), GuiConnecting, NetClientHandler) already invokes every tick
+	// regardless of platform, so no new call site is needed anywhere else.
+	void dsiPumpNetwork();
+#endif
 
 	std::mutex sendQueueLock;
 	std::mutex readQueueLock;
@@ -108,4 +121,20 @@ private:
 	int_t sendQueueByteLength;
 	std::size_t readQueueByteLength;
 	int_t field_20100_w;
+
+#ifdef DSI_PLATFORM
+	// See this file's own DSI_PLATFORM comment (dsiPumpNetwork()) for why
+	// these exist instead of just using networkSocket/JavaNetwork::Socket
+	// like every other platform: JavaNetwork.cpp's own DSI_PLATFORM stub
+	// returns nullptr from createSocket() (no std::thread backend to put a
+	// blocking recv()/send() on), so DSi owns its connection directly.
+	DsiNetworkSocket dsiSocket;
+	std::vector<byte_t> dsiRecvBuffer;
+	DsiRecvStreamBuf dsiRecvStreamBuf;
+	// Declared after dsiPendingSend: DsiSendStreamBuf's constructor binds a
+	// reference to it, and member initializer lists run in declaration
+	// order regardless of the order written in the constructor itself.
+	std::vector<byte_t> dsiPendingSend;
+	DsiSendStreamBuf dsiSendStreamBuf;
+#endif
 };

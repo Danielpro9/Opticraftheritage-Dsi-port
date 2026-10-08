@@ -2191,8 +2191,15 @@ void RenderEngine::registerTextureFX(TextureFX *texturefx, bool takeOwnership)
 
 void RenderEngine::updateDynamicTextures()
 {
-	const int_t terrainTexture = getTexture("/terrain.png");
-	const int_t itemsTexture = getTexture("/gui/items.png");
+	// Same class of fix as this session's other CachedTextureId sites: these
+	// two never change id between calls except when textureEpoch() bumps (an
+	// eviction/reload), but getTexture(const char*) was doing a full by-name
+	// lookup unconditionally every single tick this runs (20/sec whenever a
+	// world is loaded), not just once per epoch.
+	static CachedTextureId cachedTerrainTexture;
+	static CachedTextureId cachedItemsTexture;
+	const int_t terrainTexture = cachedTerrainTexture.get(this, "/terrain.png");
+	const int_t itemsTexture = cachedItemsTexture.get(this, "/gui/items.png");
 	syncCustomAnimationTileWidths();
 	++dynamicTextureTickCounter;
 

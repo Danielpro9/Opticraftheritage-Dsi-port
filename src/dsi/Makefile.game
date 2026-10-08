@@ -63,9 +63,14 @@ INCLUDEDIRS	:= compat .. ../../external/zlib ../../external/stb build/$(NAME)/zc
 
 DEFINES		:= -DDSI_PLATFORM=1
 
-# No custom ARM7 code and no DSWiFi/audio yet, so the prebuilt "libnds only"
-# core is enough. Swap to arm7_dswifi_maxmod.elf once networking/audio land.
-ARM7ELF		:= $(BLOCKSDS)/sys/arm7/main_core/arm7_minimal.elf
+# This project's first custom ARM7 core (arm7/main_arm7.c): the prebuilt
+# "libnds only" core used before has no DSWiFi support, and only the ARM7
+# CPU can talk to the WiFi chip -- multiplayer needs this built and linked
+# in regardless of what the ARM9 side does. Built by its own sub-make
+# (arm7/Makefile), the same two-separate-builds-joined-by-ndstool shape
+# BlocksDS's own project templates use for ARM7+ARM9, since the two target
+# different CPUs with different specs/crt0/linker scripts.
+ARM7ELF		:= arm7/build/dsi_arm7.elf
 
 # NOT -latomic: tried that first (the ARM946E-S/ARMv5TE has no LDREXD/STREXD,
 # so GCC emits __atomic_load_8/__atomic_exchange_4 calls for some std::atomic
@@ -271,7 +276,12 @@ all: $(ROM)
 sources:
 	@echo "$(SOURCES_CPP)" | tr ' ' '\n'
 
-$(ROM): $(ELF) $(GAME_ICON)
+.PHONY: $(ARM7ELF)
+$(ARM7ELF):
+	@echo "  MAKE    arm7"
+	$(V)$(MAKE) -C arm7
+
+$(ROM): $(ELF) $(ARM7ELF) $(GAME_ICON)
 	@echo "  NDSTOOL $@"
 	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
 		-7 $(ARM7ELF) -9 $(ELF) \
@@ -290,6 +300,7 @@ dump: $(DUMP)
 clean:
 	@echo "  CLEAN"
 	$(V)$(RM) $(ROM) $(DUMP) build compile_commands.json
+	$(V)$(MAKE) -C arm7 clean
 
 $(BUILDDIR)/%.s.o : %.s
 	@echo "  AS      $<"

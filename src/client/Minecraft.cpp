@@ -923,6 +923,24 @@ void Minecraft::run()
                 for (int_t j = 0; j < timer->elapsedTicks; j++)
                 {
                     ticksRan++;
+#if PLATFORM_DSI
+                    // Diagnostic only, not a fix: Timer.cpp clamps elapsedTicks to 10,
+                    // so a stall (a slow world load, a hitch) can run up to 10 of these
+                    // runTick() calls back to back in one rendered frame. Earlier fixes
+                    // this session (the catch-up-tick generation throttle, the stage-
+                    // tagged generation-step diagnostic, the synchronous-provideChunk
+                    // timer) still leave several real-hardware frames with several
+                    // seconds of "tick=" time unaccounted for by any of them combined --
+                    // this times each individual runTick() call in the burst to find
+                    // out whether the cost is one specific tick (and if so, which j) or
+                    // spread evenly across all of them, which the aggregate "tick="
+                    // figure alone cannot distinguish. Timed around the whole try/catch
+                    // below (not with its own catch clause) so a MinecraftException still
+                    // reaches the one catch that already handles it -- a second catch(...)
+                    // here would intercept it first and, even rethrown, bypass that handler
+                    // instead of falling through to it.
+                    const long_t dsiTickStartNs = System::nanoTime();
+#endif
                     try
                     {
                         runTick();
@@ -940,6 +958,14 @@ void Minecraft::run()
                         delete leakedWorld;
                         displayGuiScreen(new GuiConflictWarning());
                     }
+#if PLATFORM_DSI
+                    {
+                        const long_t dsiTickUs = (System::nanoTime() - dsiTickStartNs) / 1000;
+                        if (dsiTickUs >= 20000)
+                            MC_LOG_INFO("dsi", "runTick %d/%d took %lldus\n",
+                                (int)j, (int)clientTicksThisFrame, (long long)dsiTickUs);
+                    }
+#endif
                 }
                 long_t l2 = System::nanoTime() - l1;
                 ClientProfiler::ticks(l2, clientTicksThisFrame);

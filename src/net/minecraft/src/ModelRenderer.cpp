@@ -174,6 +174,8 @@ void ModelRenderer::drawGeometry(float scale)
     // invoked at a scale other than the one it was compiled at, or with no
     // cached mesh at all (a pure pivot box with only child boxes), falls
     // back to rebuilding its vertices immediately.
+    if (scale == compiledScale)
+        dsiAdvanceMeshRepack(immediateMeshRepack, immediateMesh, false);
     if (scale != compiledScale || !renderStaticMeshDraw(immediateMesh))
         renderImmediate(scale);
 #else
@@ -313,6 +315,7 @@ void ModelRenderer::compileDisplayList(float scale)
     // own comment (ModelRenderer.h) for why no per-frame-varying state (the
     // caller's matrix transform, tint, lightmap) ends up baked into it.
     renderStaticMeshDestroy(immediateMesh);
+    bool meshCompiled = false;
     if (!cubeList.empty())
     {
         Tessellator* tessellator = &Tessellator::instance;
@@ -322,9 +325,16 @@ void ModelRenderer::compileDisplayList(float scale)
             if (box != nullptr)
                 box->emitInto(tessellator, scale);
         }
-        if (!tessellator->finishStaticMesh(immediateMesh))
+        meshCompiled = tessellator->finishStaticMesh(immediateMesh);
+        if (!meshCompiled)
             tessellator->cancelDrawing();
     }
+    // Kicks off the v16/t16 + compiled GX FIFO command list repack this same
+    // body part's own drawGeometry() continues across the next few frames --
+    // see dsiAdvanceMeshRepack()'s own comment (DsiCapturedMeshRepack.h) for
+    // why a one-shot call here cannot finish it alone.
+    if (meshCompiled)
+        dsiAdvanceMeshRepack(immediateMeshRepack, immediateMesh, true);
     compiledScale = scale;
     compiled = true;
 #else

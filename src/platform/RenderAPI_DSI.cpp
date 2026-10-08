@@ -893,6 +893,37 @@ int dsiGetBoundTexture()
 	return g_boundTexture;
 }
 
+void dsiAdvanceMeshRepack(DsiMeshRepackState &state, RenderStaticMesh &live, bool recompiled)
+{
+	if (recompiled)
+	{
+		// live.captured is the freshly-compiled, not-yet-repacked mesh --
+		// mirror it into staging to repack there, leaving `live` itself
+		// alone (and still correctly drawable via the ordinary float path)
+		// until the repack finishes.
+		state.staging.captured = live.captured;
+		state.stage = 0;
+		state.cursor = 0;
+	}
+
+	if (state.stage >= 2)
+		return;
+
+	// vertexBudget 0 -> dsiRepackCapturedMeshStep() covers the whole mesh in
+	// one call for whichever stage runs this frame. Fine for the small
+	// meshes this is meant for (a HUD element's few dozen vertices, one
+	// entity model part's handful of cube faces) -- nowhere near the
+	// several-thousand-vertex terrain sections that motivated that
+	// function's own per-call budget in the first place, so there is no
+	// spike to budget against here. Still always at least 2 frames end to
+	// end -- the function itself yields once between stages by design.
+	if (dsiRepackCapturedMeshStep(state.staging.captured, dsiGetBoundTexture(), 0, state.stage, state.cursor))
+	{
+		// Fully repacked: this is now what every later frame actually draws.
+		live.captured = state.staging.captured;
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Static / captured mesh replay -- VERIFIED per-call mapping (glBegin/
 // glVertex3f/glTexCoord2f/glColor3b), still true for drawInterleavedMesh()
@@ -1439,10 +1470,10 @@ bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, i
 	}
 
 	// stage == 1: compile the GX FIFO command stream. Anything that fails
-	// this eligibility guard (normals, non-quad primitive, texture never came
+	// this eligibility guard (non-quad primitive, texture never came
 	// resident above) has nothing left to do and falls back to the ordinary
 	// per-vertex draw path forever for this build.
-	if (mesh.hasNormals || mesh.primitive != RenderPrimitive::Quads || !mesh.positionIsV16 || !mesh.texCoordIsT16)
+	if (mesh.primitive != RenderPrimitive::Quads || !mesh.positionIsV16 || !mesh.texCoordIsT16)
 	{
 		mesh.compiledCommands.clear();
 		stage = 2;
@@ -1450,12 +1481,27 @@ bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, i
 		return true;
 	}
 
-	if (cursor == 0)
-		mesh.compiledCommands.assign((std::size_t)mesh.vertexCount * 5, 0u);
-
-	const std::uint32_t kHeader = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
+	// Entity/mob model meshes (ModelRenderer's cube-based ModelBox/TexturedQuad
+	// geometry, cached the same "replay this many frames unchanged" way
+	// terrain sections and the HUD caches are -- see ModelRenderer.cpp's own
+	// PLATFORM_MODEL_IMMEDIATE comment) carry per-vertex normals; terrain
+	// never does (block faces get their shading from hasBrightness/hasColor
+	// instead, never from a GL normal -- confirmed by RenderBlocks.cpp never
+	// calling setNormal()), so this branch is unreached for every terrain
+	// mesh today and changes nothing about that already-shipped path. Six
+	// words/vertex instead of five: NORMAL joins COLOR/TEX_COORD/VERTEX16 as
+	// a fourth real packed command (replacing the no-normal record's FIFO_NOP
+	// pad), still exactly filling FIFO_COMMAND_PACK's 4-command header, plus
+	// its own one parameter word.
+	const std::size_t wordsPerVertex = mesh.hasNormals ? 6 : 5;
+	const std::uint32_t kHeader = mesh.hasNormals
+		? FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_NORMAL, FIFO_VERTEX16)
+		: FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
 	const int endVertex = std::min(mesh.vertexCount, cursor + vertexBudget);
-	std::uint32_t* out = mesh.compiledCommands.data() + (std::size_t)cursor * 5;
+
+	if (cursor == 0)
+		mesh.compiledCommands.assign((std::size_t)mesh.vertexCount * wordsPerVertex, 0u);
+	std::uint32_t* out = mesh.compiledCommands.data() + (std::size_t)cursor * wordsPerVertex;
 
 	for (int i = cursor; i < endVertex; ++i)
 	{
@@ -1500,10 +1546,26 @@ bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, i
 		out[0] = kHeader;
 		out[1] = static_cast<std::uint32_t>(RGB15(r >> 3, g >> 3, b >> 3));
 		out[2] = static_cast<std::uint32_t>(TEXTURE_PACK(static_cast<t16>(uvT16[0]), static_cast<t16>(uvT16[1])));
-		out[3] = (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[1])) << 16)
+		int outIdx = 3;
+		if (mesh.hasNormals)
+		{
+			// Same int8 -> float -> v10 path glNormal3f() does at draw time
+			// in the per-vertex fallback below (and in drawInterleavedMesh()
+			// above) -- matched here bit-for-bit (not a shortcut from int8
+			// straight to v10) so a mesh that becomes eligible for this fast
+			// path shades identically to one that does not.
+			constexpr float kInvNormalScale = 1.0f / 127.0f;
+			std::int8_t normal[3];
+			std::memcpy(normal, vertex + mesh.normalOffset, sizeof(normal));
+			out[outIdx++] = static_cast<std::uint32_t>(NORMAL_PACK(
+				floattov10(normal[0] * kInvNormalScale),
+				floattov10(normal[1] * kInvNormalScale),
+				floattov10(normal[2] * kInvNormalScale)));
+		}
+		out[outIdx++] = (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[1])) << 16)
 		       | (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[0])) & 0xFFFFu);
-		out[4] = static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[2]));
-		out += 5;
+		out[outIdx++] = static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[2]));
+		out += wordsPerVertex;
 	}
 	cursor = endVertex;
 	if (cursor < mesh.vertexCount)

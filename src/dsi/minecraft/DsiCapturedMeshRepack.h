@@ -1,6 +1,8 @@
 #pragma once
 #ifdef DSI_PLATFORM
 
+#include "platform/RenderAPI.h"
+
 struct RenderCapturedMesh;
 
 // Converts a finished captured mesh's position field from float3 to the GPU's
@@ -68,5 +70,34 @@ bool dsiRepackCapturedMeshStep(RenderCapturedMesh& mesh, int terrainTextureId, i
 // same invariant dsiRepackCapturedMeshStep()'s own terrainTextureId
 // parameter already relies on for WorldRendererDsi.cpp's terrain meshes.
 int dsiGetBoundTexture();
+
+// Shared by every caller that wants a static mesh already being drawn every
+// frame (GuiIngame.cpp's hotbar/crosshair/status HUD caches, ModelRenderer.cpp's
+// per-body-part entity/mob geometry) to pick up dsiRepackCapturedMeshStep()'s
+// v16/t16 + compiled GX FIFO command list without ever drawing a partially
+// repacked mesh. `staging` is a hidden, never-drawn copy that the repack
+// actually mutates; `live` (whatever the caller's own RenderStaticMesh field
+// is) is only overwritten once the whole mesh is done -- see
+// dsiRepackCapturedMeshStep()'s own comment for why a mesh mid-repack cannot
+// safely be the one anything draws.
+struct DsiMeshRepackState
+{
+	RenderStaticMesh staging;
+	int stage = 2; // 2 == nothing in progress / nothing to do
+	int cursor = 0;
+};
+
+// Advances `state` by at most one dsiRepackCapturedMeshStep() stage this call
+// -- that function always yields once between its position/texcoord stage
+// and its command-compile stage by design, so a mesh needs at least two
+// calls to finish regardless of size. Safe to call every frame regardless of
+// progress: state.stage stays at 2 once done, and the
+// dsiRepackCapturedMeshStep() call this makes is then a cheap no-op check.
+//
+// `recompiled`: true the one frame `live` was just rebuilt from scratch
+// (mirrors live.captured into state.staging and restarts the repack against
+// it); false on every later frame (continues an in-progress repack, or
+// no-ops once finished).
+void dsiAdvanceMeshRepack(DsiMeshRepackState &state, RenderStaticMesh &live, bool recompiled);
 
 #endif // DSI_PLATFORM

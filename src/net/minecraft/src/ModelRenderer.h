@@ -7,6 +7,7 @@
 #include "platform/PlatformConfig.h"
 #if PLATFORM_MODEL_IMMEDIATE
 #include "platform/RenderAPI.h"
+#include "dsi/minecraft/DsiCapturedMeshRepack.h"
 #endif
 
 class ModelBase;
@@ -64,6 +65,14 @@ private:
     // matrix transform applied around drawGeometry(), which this mesh never
     // captures. See compileDisplayList()/drawGeometry()'s own comments.
     RenderStaticMesh immediateMesh;
+    // Drives immediateMesh's v16/t16 + compiled GX FIFO command list repack
+    // across several frames after a (re)compile -- see
+    // dsiAdvanceMeshRepack()'s own comment (DsiCapturedMeshRepack.h, shared
+    // with GuiIngame.cpp's HUD caches) for the full why. Entity model parts
+    // carry per-vertex normals (TexturedQuad::emitInto() always calls
+    // setNormal()), which dsiRepackCapturedMeshStep() only recently learned
+    // to pack -- see that function's own comment on the format this adds.
+    DsiMeshRepackState immediateMeshRepack;
 #endif
 
 public:

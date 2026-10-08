@@ -208,25 +208,21 @@ struct Ps2HudCache
 // status row's 30-40->1), which is why they were left for a later pass when
 // the status row was first ported -- ported now since any draw-call cut
 // still counts on this platform's own established bottleneck.
-// One cache entry's repack-in-progress state: a second, hidden copy of the
-// mesh that dsiAdvanceHudRepack() (below) incrementally converts to v16/t16
-// + a compiled GX FIFO command list across a few frames, swapped into the
-// real (drawn-every-frame) mesh only once fully done. Two RenderStaticMesh
-// copies per cache entry, not one: dsiRepackCapturedMeshStep() converts a
-// mesh's bytes in place and only flips its "done" flags once the WHOLE mesh
-// is converted, so a mesh still being incrementally repacked reads as
-// not-yet-converted right up until that moment -- drawing THAT SAME mesh
-// object on an in-between frame would read some vertices already
-// overwritten as v16/t16 ints but still flagged float, producing garbage.
-// WorldRendererDsi.cpp avoids this for terrain sections with its own
-// staging/live mesh split; this mirrors that exact precedent for the HUD.
-struct DsiHudRepackState
-{
-	RenderStaticMesh staging;
-	int stage = 2; // 2 == nothing in progress / nothing to do
-	int cursor = 0;
-};
-
+// Real-hardware-motivated optimization (not yet confirmed on hardware,
+// pending a profiling log): this HUD cache's whole point is cutting draw
+// CALLS per frame (the block comment above DsiHudCache), but each one still
+// replays through RenderAPI_DSI.cpp's per-vertex float path every frame --
+// the exact per-vertex cost WorldRendererDsi.cpp's terrain sections already
+// stopped paying via dsiRepackCapturedMeshStep()'s v16/t16 + compiled GX
+// FIFO command list (see that function's own comment). These caches never
+// called it: Tessellator::finishStaticMesh() (what builds them) only ever
+// calls the generic, cross-platform renderStaticMeshCompile(), which never
+// repacks on any backend. dsiAdvanceMeshRepack()/DsiMeshRepackState
+// (DsiCapturedMeshRepack.h, shared with ModelRenderer.cpp's entity/mob
+// geometry) drive the repack across several frames for a mesh already being
+// drawn every frame, which the generic one-shot compile call has no way to
+// do -- call sites that want it opt in explicitly, the same way
+// WorldRendererDsi.cpp already does for terrain.
 struct DsiHudCache
 {
 	RenderStaticMesh hotbar;
@@ -244,61 +240,10 @@ struct DsiHudCache
 	bool statusValid = false;
 	unsigned long long statusSignature = 0;
 
-	DsiHudRepackState hotbarRepack;
-	DsiHudRepackState crosshairRepack;
-	DsiHudRepackState statusRepack;
+	DsiMeshRepackState hotbarRepack;
+	DsiMeshRepackState crosshairRepack;
+	DsiMeshRepackState statusRepack;
 };
-
-// Real-hardware-motivated optimization (not yet confirmed on hardware,
-// pending a profiling log): this HUD cache's whole point is cutting draw
-// CALLS per frame (the block comment above DsiHudCache), but each one still
-// replays through RenderAPI_DSI.cpp's per-vertex float path every frame --
-// the exact per-vertex cost WorldRendererDsi.cpp's terrain sections already
-// stopped paying via dsiRepackCapturedMeshStep()'s v16/t16 + compiled GX
-// FIFO command list (see that function's own comment). These caches never
-// called it: Tessellator::finishStaticMesh() (what builds them) only ever
-// calls the generic, cross-platform renderStaticMeshCompile(), which never
-// repacks on any backend. Hooked in here instead of there because the
-// repack needs to run across several frames for a mesh already being drawn
-// every frame (see DsiHudRepackState above), which the generic one-shot
-// compile call has no way to drive -- call sites that want it opt in
-// explicitly, the same way WorldRendererDsi.cpp already does for terrain.
-//
-// `recompiled`: true the one frame `live` was just rebuilt from scratch
-// (restarts the repack against the fresh mesh); false on every later frame
-// (continues an in-progress repack, or no-ops once finished). Safe to call
-// every frame regardless -- state.stage stays at 2 once done, and the
-// dsiRepackCapturedMeshStep() call below is a cheap no-op check when it is.
-void dsiAdvanceHudRepack(DsiHudRepackState &state, RenderStaticMesh &live, bool recompiled)
-{
-	if (recompiled)
-	{
-		// live.captured is the freshly-compiled, not-yet-repacked mesh --
-		// mirror it into staging to repack there, leaving `live` itself
-		// alone (and still correctly drawable via the ordinary float path)
-		// until the repack finishes.
-		state.staging.captured = live.captured;
-		state.stage = 0;
-		state.cursor = 0;
-	}
-
-	if (state.stage >= 2)
-		return;
-
-	// vertexBudget 0 -> dsiRepackCapturedMeshStep() covers the whole mesh
-	// in one call for whichever stage runs this frame: these are a few
-	// dozen vertices at most (a hotbar frame, a crosshair, a status row),
-	// nowhere near the several-thousand-vertex terrain sections that
-	// motivated that function's own per-call budget in the first place, so
-	// there is no spike to budget against here. Still always at least 2
-	// frames end to end -- the function itself yields once between its
-	// position/texcoord stage and its command-compile stage by design.
-	if (dsiRepackCapturedMeshStep(state.staging.captured, dsiGetBoundTexture(), 0, state.stage, state.cursor))
-	{
-		// Fully repacked: this is now what every later frame actually draws.
-		live.captured = state.staging.captured;
-	}
-}
 #endif
 
 RenderItem *GuiIngame::itemRenderer = new RenderItem();
@@ -926,7 +871,7 @@ void GuiIngame::dsiRenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 	}
 
 	if (cache.hotbarValid)
-		dsiAdvanceHudRepack(cache.hotbarRepack, cache.hotbar, needsCompile);
+		dsiAdvanceMeshRepack(cache.hotbarRepack, cache.hotbar, needsCompile);
 
 	if (cache.hotbarValid && renderStaticMeshDraw(cache.hotbar))
 		return;
@@ -958,7 +903,7 @@ void GuiIngame::dsiRenderCrosshair(int_t sw, int_t sh)
 	}
 
 	if (cache.crosshairValid)
-		dsiAdvanceHudRepack(cache.crosshairRepack, cache.crosshair, needsCompile);
+		dsiAdvanceMeshRepack(cache.crosshairRepack, cache.crosshair, needsCompile);
 
 	if (cache.crosshairValid && renderStaticMeshDraw(cache.crosshair))
 		return;
@@ -1006,7 +951,7 @@ void GuiIngame::dsiRenderPlayerStatusHud(int_t sw, int_t sh)
 	}
 
 	if (cache.statusValid)
-		dsiAdvanceHudRepack(cache.statusRepack, cache.status, needsCompile);
+		dsiAdvanceMeshRepack(cache.statusRepack, cache.status, needsCompile);
 
 	if (cache.statusValid && renderStaticMeshDraw(cache.status))
 		return;

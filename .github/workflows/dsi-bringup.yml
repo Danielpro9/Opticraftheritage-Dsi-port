@@ -27,7 +27,7 @@ name: DSi bring-up build
 on:
   push:
     branches:
-      - claude/dsi-backend-memory-setup-nvtg0d
+      - claude/dsi-port-nvtg0d
     # Mirrors Makefile.game's SOURCEDIRS: ../client ../java ../net ../util
     # ../platform ../external (relative to src/dsi/), plus src/dsi/ itself
     # for the DSi-local dirs that Makefile lists bare (system, lwjgl, java,

@@ -3,6 +3,8 @@
 #include "platform/Log.h"
 
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #include <dswifi9.h>
@@ -118,13 +120,37 @@ bool DsiNetworkSocket::connect(const std::string &host, int port)
     target.sin_port = htons(static_cast<unsigned short>(port));
     std::memcpy(&target.sin_addr, resolved->h_addr_list[0], sizeof(target.sin_addr));
 
+    // Real-hardware report: a server confirmed reachable (same address,
+    // same port) from another device got "Connection refused" from this
+    // port specifically. ECONNREFUSED is a real RST from *something* at the
+    // IP this resolved to -- it does not by itself say whether that IP is
+    // actually the server's. Logging it (dotted-decimal, not just the
+    // hostname the player typed) is what the next real-hardware log needs
+    // to tell a DNS problem (dswifi9's gethostbyname() resolving to a
+    // different address than the player's own PC gets for the same name --
+    // its DNS server comes from the WFC AP's DHCP, which some routers hand
+    // out differently to different clients) apart from a TCP-level one (the
+    // right IP, but something about this console's TCP stack specifically
+    // getting an active reject a normal client's connection does not).
+    // Formatted by hand from the raw address bytes rather than inet_ntop():
+    // this toolchain's socket support is a minimal BSD-compatible shim over
+    // dswifi9 (see this class's own header comment), and this session has
+    // already found more than one standard libc/POSIX symbol missing from
+    // it at link time -- not worth risking on a pure diagnostic.
+    const std::uint8_t *addrBytes = reinterpret_cast<const std::uint8_t *>(&target.sin_addr);
+    char resolvedIp[16];
+    std::snprintf(resolvedIp, sizeof(resolvedIp), "%u.%u.%u.%u",
+        addrBytes[0], addrBytes[1], addrBytes[2], addrBytes[3]);
+    MC_LOG_INFO("network", "DSi: %s resolved to %s\n", host.c_str(), resolvedIp);
+
     // Deliberately still blocking for this one call -- matches every other
     // platform's NetworkManager constructor (a synchronous connect(), the
     // same "Connecting..." UX vanilla Minecraft already has). Only the
     // ongoing per-tick reads/writes after this need to be non-blocking.
     if (::connect(socketFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
     {
-        MC_LOG_ERROR("network", "DSi: connect(%s:%d) failed: %s\n", host.c_str(), port, strerror(errno));
+        MC_LOG_ERROR("network", "DSi: connect(%s [%s]:%d) failed: %s\n",
+            host.c_str(), resolvedIp, port, strerror(errno));
         ::closesocket(socketFd);
         return false;
     }

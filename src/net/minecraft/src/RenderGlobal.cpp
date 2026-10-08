@@ -1989,6 +1989,12 @@ void RenderGlobal::buildCloudMesh()
 	}
 
 	tessellator->finishStaticMesh(cloudMesh);
+	// Kicks off the v16/t16 + compiled GX FIFO command list repack
+	// renderClouds() continues across the next few frames -- see
+	// dsiAdvanceMeshRepack()'s own comment. Safe to call even if the compile
+	// above produced an empty mesh (no cubeList/vertex case): dsiRepackCapturedMeshStep()
+	// treats an empty mesh as trivially done, so this just no-ops.
+	dsiAdvanceMeshRepack(cloudMeshRepack, cloudMesh, true);
 }
 #endif
 
@@ -2065,6 +2071,8 @@ void RenderGlobal::renderClouds(float f)
 	renderLoadIdentity();
 	renderTranslate(f10, f11, 0.0f);
 	renderMatrixMode(RenderMatrixMode::ModelView);
+
+	dsiAdvanceMeshRepack(cloudMeshRepack, cloudMesh, false);
 
 	renderPushMatrix();
 	renderTranslate(0.0f, f9, 0.0f);

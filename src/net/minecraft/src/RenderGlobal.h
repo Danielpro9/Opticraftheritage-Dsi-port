@@ -10,6 +10,9 @@
 #include "platform/PlatformConfig.h" // PLATFORM_PS2, for the RAM reporter below
 #include "platform/PlatformTuning.h"
 #include "platform/RenderTerrainAPI.h" // RenderTerrainMeshRam, likewise
+#ifdef DSI_PLATFORM
+#include "dsi/minecraft/DsiCapturedMeshRepack.h"
+#endif
 #include "java/Type.h"
 #include "java/String.h"
 #include "java/Random.h"
@@ -191,6 +194,15 @@ private:
 	// buildCloudMesh()/renderClouds()). PS2/WII keep the original per-frame
 	// tessellation path unchanged; this is DSi-only.
 	RenderStaticMesh cloudMesh;
+	// Drives cloudMesh's v16/t16 + compiled GX FIFO command list repack
+	// across the first few frames after buildCloudMesh() -- see
+	// dsiAdvanceMeshRepack()'s own comment (DsiCapturedMeshRepack.h, shared
+	// with GuiIngame.cpp's HUD caches and ModelRenderer.cpp's entity
+	// geometry). cloudMesh has no per-vertex colour or normals (see
+	// buildCloudMesh()'s own comment), so unlike entity meshes it already
+	// qualified for the original no-normal compiled format -- it just never
+	// had anything call the repack for it.
+	DsiMeshRepackState cloudMeshRepack;
 #endif
 #else
 	int_t starGLCallList = 0;

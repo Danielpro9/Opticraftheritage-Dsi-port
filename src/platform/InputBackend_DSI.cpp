@@ -372,65 +372,82 @@ void dsiPushGameplayKeyEvents(bool inMenu)
 			lwjgl::Mouse::detail::pushButton(0, (held & KEY_R) != 0, 0, 0);
 	}
 
-	// A/X/Y: jump/inventory/chat, keyBindJump/keyBindInventory/keyBindChat's
-	// default keyboard keys (space/E/T).
-	if (changed & KEY_A)
-		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_SPACE, (held & KEY_A) != 0);
-	if (changed & KEY_X)
-		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_E, (held & KEY_X) != 0);
-	// START: pause/menu, not quit -- see Display_dsi.cpp's header comment.
-	// Escape is exactly the right synthesized key: Minecraft.cpp already
-	// opens the pause menu on Escape when no screen is up, and every
-	// GuiScreen's base keyTyped() already closes back to the game on Escape
-	// when one is, so this needs no DSi-specific menu handling at all.
-	if (changed & KEY_START)
-		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (held & KEY_START) != 0);
-	// Y: mapped to F3 (toggles Minecraft.cpp's showDebugInfo overlay) rather
-	// than back to chat now that multiplayer is live -- B+Up (below) is the
-	// dedicated chat chord instead, the same reasoning that put hotbar
-	// stepping on a B chord rather than its own button: there is no spare
-	// single button left, and chat is not needed often enough to deserve
-	// one of the few there are.
-	if (changed & KEY_Y)
-		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F3, (held & KEY_Y) != 0);
-
-	// B + Left/Right: step the hotbar selection, the same mouse-wheel path
-	// a real scroll wheel drives (Minecraft.cpp's
-	// thePlayer->inventory->changeCurrentItem(wheel)). A chord, not its own
-	// binding, since B alone already means "back/close" in menu navigation
-	// (see mapTextButtons() above) -- the two never conflict, since a menu
-	// being open and gameplay both consuming input at once can't happen.
-	//
-	// InventoryPlayer::changeCurrentItem() does `currentItem -= direction`,
-	// so a positive wheel value DECREASES the slot index (moves the
-	// highlight left on screen) and a negative one INCREASES it (moves
-	// right). This was originally backwards here -- Left pushed -1 (which
-	// increases the index, moving the highlight right) and Right pushed +1
-	// (which decreases it, moving left) -- confirmed on real hardware:
-	// pressing Right visibly moved the selection left. Ps2InputMapper.cpp's
-	// R1/L1 mapping (pushWheel(-1) for the right-side button, pushWheel(1)
-	// for the left) has the correct sign for each direction; swapped to
-	// match it.
-	//
-	// B + Up: open chat (keyBindChat's default key T), added on request the
-	// same way as the hotbar chord above -- B has no meaning of its own in
-	// gameplay, so pairing it with a D-pad direction costs no existing
-	// binding. Pushed as an immediate down+up tap rather than tracked with
-	// `changed` like A/X/Y above: those three are keys Minecraft expects to
-	// see genuinely held (space for repeated jumping, E/F3 toggles checked
-	// on their own down edge), but a synthesized T only needs to exist for
-	// the one instant that opens GuiChat -- once that screen is up, further
-	// typing comes from the on-screen keyboard, not from T staying "held".
-	if (held & KEY_B)
+	// Real-hardware report: typing a player name through the on-screen
+	// keyboard (A = type the selected key, B = backspace/close) also typed
+	// a stray space on every A press and backspaced-then-closed the
+	// keyboard on every B press -- this whole block was never checking
+	// platformTextInputExclusive() before synthesizing anything, so every
+	// physical button VirtualKeyboard::tick() reads for its own purpose
+	// (mapTextButtons() above maps the same A/B to PLATFORM_TEXT_TYPE/
+	// PLATFORM_TEXT_BACK|PLATFORM_TEXT_CLOSE) fired BOTH handlers at once.
+	// PS2's Ps2InputMapper.cpp and Wii's WiiPadState.cpp already guard their
+	// own equivalent of this block the same way (WiiPadState.cpp zeroes
+	// state.keys/mouse/wheel outright while it is set); this was simply
+	// missing here. While the keyboard owns input, VirtualKeyboard::tick()
+	// (called every frame from GuiScreen.cpp regardless of this function)
+	// is the sole source of keyboard/mouse events -- nothing below this
+	// point should also react to the same physical buttons.
+	if (!platformTextInputExclusive())
 	{
-		if (pressedEdge & KEY_LEFT)
-			lwjgl::Mouse::detail::pushWheel(1, 0, 0);
-		if (pressedEdge & KEY_RIGHT)
-			lwjgl::Mouse::detail::pushWheel(-1, 0, 0);
-		if (pressedEdge & KEY_UP)
+		// A/X/Y: jump/inventory/chat, keyBindJump/keyBindInventory/keyBindChat's
+		// default keyboard keys (space/E/T).
+		if (changed & KEY_A)
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_SPACE, (held & KEY_A) != 0);
+		if (changed & KEY_X)
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_E, (held & KEY_X) != 0);
+		// START: pause/menu, not quit -- see Display_dsi.cpp's header comment.
+		// Escape is exactly the right synthesized key: Minecraft.cpp already
+		// opens the pause menu on Escape when no screen is up, and every
+		// GuiScreen's base keyTyped() already closes back to the game on Escape
+		// when one is, so this needs no DSi-specific menu handling at all.
+		if (changed & KEY_START)
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (held & KEY_START) != 0);
+		// Y: mapped to F3 (toggles Minecraft.cpp's showDebugInfo overlay) rather
+		// than back to chat now that multiplayer is live -- B+Up (below) is the
+		// dedicated chat chord instead, the same reasoning that put hotbar
+		// stepping on a B chord rather than its own button: there is no spare
+		// single button left, and chat is not needed often enough to deserve
+		// one of the few there are.
+		if (changed & KEY_Y)
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F3, (held & KEY_Y) != 0);
+
+		// B + Left/Right: step the hotbar selection, the same mouse-wheel path
+		// a real scroll wheel drives (Minecraft.cpp's
+		// thePlayer->inventory->changeCurrentItem(wheel)). A chord, not its own
+		// binding, since B alone already means "back/close" in menu navigation
+		// (see mapTextButtons() above).
+		//
+		// InventoryPlayer::changeCurrentItem() does `currentItem -= direction`,
+		// so a positive wheel value DECREASES the slot index (moves the
+		// highlight left on screen) and a negative one INCREASES it (moves
+		// right). This was originally backwards here -- Left pushed -1 (which
+		// increases the index, moving the highlight right) and Right pushed +1
+		// (which decreases it, moving left) -- confirmed on real hardware:
+		// pressing Right visibly moved the selection left. Ps2InputMapper.cpp's
+		// R1/L1 mapping (pushWheel(-1) for the right-side button, pushWheel(1)
+		// for the left) has the correct sign for each direction; swapped to
+		// match it.
+		//
+		// B + Up: open chat (keyBindChat's default key T), added on request the
+		// same way as the hotbar chord above -- B has no meaning of its own in
+		// gameplay, so pairing it with a D-pad direction costs no existing
+		// binding. Pushed as an immediate down+up tap rather than tracked with
+		// `changed` like A/X/Y above: those three are keys Minecraft expects to
+		// see genuinely held (space for repeated jumping, E/F3 toggles checked
+		// on their own down edge), but a synthesized T only needs to exist for
+		// the one instant that opens GuiChat -- once that screen is up, further
+		// typing comes from the on-screen keyboard, not from T staying "held".
+		if (held & KEY_B)
 		{
-			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
-			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
+			if (pressedEdge & KEY_LEFT)
+				lwjgl::Mouse::detail::pushWheel(1, 0, 0);
+			if (pressedEdge & KEY_RIGHT)
+				lwjgl::Mouse::detail::pushWheel(-1, 0, 0);
+			if (pressedEdge & KEY_UP)
+			{
+				lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
+				lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
+			}
 		}
 	}
 

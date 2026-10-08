@@ -36,8 +36,26 @@ ThreadConnectToServer::~ThreadConnectToServer()
 
 void ThreadConnectToServer::start()
 {
+#ifdef DSI_PLATFORM
+	// No thread backend exists on this platform (see NetworkManager.h's own
+	// DSI_PLATFORM comment) -- worker.start() below would silently never run
+	// run() at all (platform/compat's shadow std::thread never invokes its
+	// callable; confirmed real-hardware symptom: GuiConnecting's
+	// "Connecting..." screen sat there forever with nothing to poll, since
+	// resultHandler/errorPending never left their initial state). Run
+	// synchronously instead: the whole connection attempt (WiFi association
+	// wait, DNS, TCP connect) is already a single blocking call chain by
+	// design -- see DsiNetworkSocket::connect()'s own comment -- matching
+	// vanilla Minecraft's own blocking-connect-with-a-spinner UX, just
+	// without a background thread keeping the frame animating while it
+	// runs. run() already catches every exception it can throw internally
+	// (sets resultError/errorPending instead), so nothing here needs its
+	// own try/catch.
+	run();
+#else
 	if (!worker.start(&ThreadConnectToServer::wiiThreadEntry, this, 32 * 1024, 64))
 		throw std::runtime_error("Could not create connection thread");
+#endif
 }
 
 void ThreadConnectToServer::cancel()

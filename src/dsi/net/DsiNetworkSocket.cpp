@@ -71,6 +71,29 @@ bool DsiNetworkSocket::ensureWifiReady()
     return false;
 }
 
+void DsiNetworkSocket::releaseWifi()
+{
+    if (!g_wifiAttempted)
+        return; // ensureWifiReady() never ran -- nothing to tear down
+
+    // Wifi_DisconnectAP() drops the association; Wifi_DisableWifi() then
+    // powers the WiFi hardware itself down (the ARM7 side stops needing to
+    // service it at all -- see arm7/main_arm7.c's Wifi_Update() call, which
+    // keeps running every vblank regardless of this call, but has nothing
+    // left to do once the chip is disabled). Safe to call even if
+    // association never actually completed (g_wifiReady == false but
+    // g_wifiAttempted == true, e.g. a timed-out or refused connect
+    // attempt): Wifi_InitDefault() still brought the hardware up in that
+    // case, so it still needs to be told to shut back down.
+    Wifi_DisconnectAP();
+    Wifi_DisableWifi();
+
+    g_wifiReady = false;
+    g_wifiAttempted = false;
+
+    MC_LOG_INFO("network", "DSi: WiFi released\n");
+}
+
 bool DsiNetworkSocket::connect(const std::string &host, int port)
 {
     close();

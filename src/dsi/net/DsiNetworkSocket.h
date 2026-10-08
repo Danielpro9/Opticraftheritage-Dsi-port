@@ -23,6 +23,19 @@ public:
     // earlier call. Returns false if association never completes.
     static bool ensureWifiReady();
 
+    // Drops the WiFi association brought up by ensureWifiReady(), on
+    // request: a singleplayer world (the overwhelmingly common case) never
+    // touches this class at all, but once a multiplayer attempt has turned
+    // WiFi on, it stayed on for the rest of the process -- the ARM7 side's
+    // Wifi_Update() pump (arm7/main_arm7.c) keeps servicing it every vblank
+    // whether or not anything is still using it. Called from
+    // NetworkManager::networkShutdown(), which every disconnect path (a
+    // clean quit, a connection error, the player leaving the server) and
+    // ~NetworkManager() itself already funnel through, so this does not
+    // need its own call site anywhere else. Safe to call even if WiFi was
+    // never brought up (ensureWifiReady() never ran) or already released.
+    static void releaseWifi();
+
     DsiNetworkSocket() = default;
     ~DsiNetworkSocket() { close(); }
     DsiNetworkSocket(const DsiNetworkSocket &) = delete;

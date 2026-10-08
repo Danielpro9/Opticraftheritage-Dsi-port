@@ -291,6 +291,14 @@ void NetworkManager::networkShutdown(const std::string &s, const std::vector<std
 	// Safe to call unconditionally: closing an already-closed
 	// DsiNetworkSocket is a no-op (checks fd >= 0 itself).
 	dsiSocket.close();
+
+	// Every disconnect path funnels through here (a clean quit, a
+	// connection error, the player leaving the server), and so does
+	// ~NetworkManager() -- this is the one place that can safely say "no
+	// NetworkManager is using WiFi any more" and power it back down. See
+	// DsiNetworkSocket::releaseWifi()'s own comment for why a singleplayer
+	// world otherwise never pays for WiFi staying associated.
+	DsiNetworkSocket::releaseWifi();
 #endif
 }
 

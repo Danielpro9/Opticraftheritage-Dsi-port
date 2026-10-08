@@ -2,6 +2,7 @@
 
 #include "Vec3D.h"
 #include "MovingObjectPosition.h"
+#include "platform/PlatformCompat.h"
 
 #include <memory>
 #include <vector>
@@ -114,7 +115,17 @@ AxisAlignedBB *AxisAlignedBB::getOffsetBoundingBox(double d, double d1, double d
 	return getBoundingBoxFromPool(minX + d, minY + d1, minZ + d2, maxX + d, maxY + d1, maxZ + d2);
 }
 
-double AxisAlignedBB::calculateXOffset(AxisAlignedBB *axisalignedbb, double d)
+// DSi only (PLATFORM_FAST_CODE is a no-op everywhere else): these four are
+// the per-axis/per-block collision tests World::getCollidingBoundingBoxes()'s
+// callers (Entity::moveFlying()/moveEntity()) run once per colliding AABB per
+// axis step, for every moving entity, every tick -- a player falling or
+// walking through even a couple of blocks' worth of terrain calls these far
+// more often per tick than MathHelper::sin()/cos() above, the same ITCM
+// rationale that already justified those two. All four are small (a handful
+// of branches and double compares, no loops, no calls out) and already
+// non-virtual, matching what fastSqrtApprox()'s own comment calls out as
+// what actually qualifies for this.
+PLATFORM_FAST_CODE double AxisAlignedBB::calculateXOffset(AxisAlignedBB *axisalignedbb, double d)
 {
 	if (axisalignedbb->maxY <= minY || axisalignedbb->minY >= maxY)
 		return d;
@@ -135,7 +146,7 @@ double AxisAlignedBB::calculateXOffset(AxisAlignedBB *axisalignedbb, double d)
 	return d;
 }
 
-double AxisAlignedBB::calculateYOffset(AxisAlignedBB *axisalignedbb, double d)
+PLATFORM_FAST_CODE double AxisAlignedBB::calculateYOffset(AxisAlignedBB *axisalignedbb, double d)
 {
 	if (axisalignedbb->maxX <= minX || axisalignedbb->minX >= maxX)
 		return d;
@@ -156,7 +167,7 @@ double AxisAlignedBB::calculateYOffset(AxisAlignedBB *axisalignedbb, double d)
 	return d;
 }
 
-double AxisAlignedBB::calculateZOffset(AxisAlignedBB *axisalignedbb, double d)
+PLATFORM_FAST_CODE double AxisAlignedBB::calculateZOffset(AxisAlignedBB *axisalignedbb, double d)
 {
 	if (axisalignedbb->maxX <= minX || axisalignedbb->minX >= maxX)
 		return d;
@@ -177,7 +188,10 @@ double AxisAlignedBB::calculateZOffset(AxisAlignedBB *axisalignedbb, double d)
 	return d;
 }
 
-bool AxisAlignedBB::intersectsWith(AxisAlignedBB *axisalignedbb)
+// Called from World::getCollidingBoundingBoxes()'s own block-AABB scan (once
+// per candidate block per query) on top of the three call sites above, so it
+// shares their ITCM rationale.
+PLATFORM_FAST_CODE bool AxisAlignedBB::intersectsWith(AxisAlignedBB *axisalignedbb)
 {
 	if (axisalignedbb->maxX <= minX || axisalignedbb->minX >= maxX)
 		return false;

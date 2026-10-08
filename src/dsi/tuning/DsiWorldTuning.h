@@ -219,6 +219,19 @@
 #undef  PLATFORM_CHUNK_SAVE_SLICE_US
 #define PLATFORM_CHUNK_SAVE_SLICE_US              3000
 
+// PLATFORM_CHUNK_LOAD_SLICE_US: load-side mirror of PLATFORM_CHUNK_SAVE_SLICE_US
+// above, for McRegionChunkLoader::continueSlicedLoad()'s inflate loop
+// (ChunkProvider.cpp's drainPendingLoads()). Same reasoning: the single
+// inflate() call this replaces is the same cost class as the deflate call on
+// the save side (100-700ms+ for one chunk), all of it CPU time on this same
+// FPU-less ARM9. Unlike a save, which only runs when a chunk unloads dirty, a
+// deferred load can be waiting on the very path the player is currently
+// walking, so it keeps the same 3ms slice rather than a larger one -- staying
+// a non-hitch is worth it even if walking back into fully-explored terrain
+// takes a few more ticks to finish streaming in.
+#undef  PLATFORM_CHUNK_LOAD_SLICE_US
+#define PLATFORM_CHUNK_LOAD_SLICE_US              3000
+
 // A third PS2-only knob found in the same sweep, this time a genuine
 // unbounded-growth bug rather than an unmeasured trade-off: RenderEngine.cpp's
 // shouldCacheDecodedTexturePixels() defaults (its #else branch, active

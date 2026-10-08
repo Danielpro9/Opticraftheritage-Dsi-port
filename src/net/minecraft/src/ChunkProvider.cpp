@@ -628,6 +628,34 @@ Chunk *ChunkProvider::prepareChunkInternal(int_t i, int_t j, bool deferGeneratio
 		return chunk;
 	}
 
+#if PLATFORM_DSI
+	// Load-side mirror of the generation deferral further down this function:
+	// loadChunkFromFile() below runs McRegionChunkLoader::loadChunk()'s single
+	// atomic decompress+NBT-parse+build, the same cost class save-side
+	// slicing already addressed (100-700ms+ per chunk on real hardware), but
+	// unconditionally -- for EVERY chunk request whose region-file entry
+	// exists, not just new terrain. That is the overwhelmingly common case
+	// once a save exists: walking back into anything already explored this
+	// session. Only defer when the caller already tolerates a blankChunk
+	// placeholder this tick (deferGeneration -- the same contract the
+	// generation branch below relies on) and only once per coordinate
+	// (loadQueued dedup, mirroring generationQueued); a request for a chunk
+	// already mid-load just re-returns the placeholder instead of queuing a
+	// second task on top of it. Checked with a header-only existence probe
+	// (hasChunkOnDisk(), not a real read) so a chunk that has never been
+	// saved still falls through to the generation path below exactly as
+	// before.
+	if (deferGeneration && loadQueued.count(key) == 0)
+	{
+		McRegionChunkLoader *mcLoader = dynamic_cast<McRegionChunkLoader *>(chunkLoader);
+		if (mcLoader != nullptr && mcLoader->hasChunkOnDisk(i, j))
+		{
+			loadQueued.insert(key);
+			loadQueue.emplace_back(i, j);
+			return blankChunk;
+		}
+	}
+#endif
 	WORLD_LOAD_STAGE("prepareChunk");
 	bool readFailed = false;
 #if PLATFORM_PROFILE_STREAMING
@@ -1294,6 +1322,127 @@ void ChunkProvider::drainPendingSaves(int_t budget)
 	delete chunk;
 }
 
+// Load-side mirror of drainPendingSaves() above: McRegionChunkLoader::
+// beginSlicedLoad()/continueSlicedLoad() spread one chunk's zlib inflate
+// across however many of these calls it takes (gated by the caller below to
+// roughly once per real 50ms, same as the save side), instead of the single
+// atomic loadChunkFromFile() call this replaces for any chunk whose
+// region-file entry exists. publishedChunk reports whether this call added a
+// chunk to chunkMap, mirroring drainPendingGeneration()'s own out-param (see
+// its comment on the deferred-populate decoration gate in
+// unload100OldestChunks() -- the same distinction applies here).
+void ChunkProvider::drainPendingLoads(int_t budget, bool &publishedChunk)
+{
+	publishedChunk = false;
+	McRegionChunkLoader *mcLoader = dynamic_cast<McRegionChunkLoader *>(chunkLoader);
+	if (mcLoader == nullptr)
+	{
+		// Not McRegion (shouldn't happen on this platform -- defensive only):
+		// fall back to loading synchronously rather than leave coordinates
+		// stuck in the queue forever.
+		for (int_t i = 0; i < budget && !loadQueue.empty(); ++i)
+		{
+			const std::pair<int_t, int_t> coord = loadQueue.front();
+			loadQueue.pop_front();
+			loadQueued.erase(chunkKey(coord.first, coord.second));
+			if (chunkMap.count(chunkKey(coord.first, coord.second)) != 0)
+				continue;
+			prepareChunkInternal(coord.first, coord.second, false);
+			publishedChunk = true;
+		}
+		return;
+	}
+
+	static long_t s_sliceStartNs = 0;
+	static int_t s_sliceCalls = 0;
+	if (!mcLoader->hasSlicedLoadTask())
+	{
+		bool started = false;
+		while (!loadQueue.empty())
+		{
+			const std::pair<int_t, int_t> coord = loadQueue.front();
+			loadQueue.pop_front();
+			const std::uint64_t key = chunkKey(coord.first, coord.second);
+			loadQueued.erase(key);
+
+			// Re-check "still wanted" before spending any inflate work on it --
+			// the player may have moved away, or the chunk may have been
+			// published some other way (e.g. reclaimed from a pending save),
+			// since this coordinate was queued. Same check
+			// drainPendingGeneration() runs before starting a generation task.
+			const bool wanted = chunkMap.count(key) == 0
+				&& (worldObj == nullptr || worldObj->findingSpawnPoint
+					|| canChunkExist(coord.first, coord.second));
+			if (!wanted)
+				continue;
+
+			if (mcLoader->beginSlicedLoad(coord.first, coord.second))
+			{
+				started = true;
+				break;
+			}
+
+			// Region entry vanished/corrupted between enqueue and now (rare
+			// race, e.g. the region file was rewritten by a save in between):
+			// fall back to the normal synchronous path for just this one
+			// coordinate, same generate-or-blank outcome prepareChunkInternal()
+			// would have produced had it never been deferred.
+			prepareChunkInternal(coord.first, coord.second, false);
+			publishedChunk = true;
+		}
+		if (!started)
+			return;
+
+		s_sliceStartNs = System::nanoTime();
+		s_sliceCalls = 0;
+	}
+
+	++s_sliceCalls;
+	if (!mcLoader->continueSlicedLoad(PLATFORM_CHUNK_LOAD_SLICE_US))
+		return; // more inflate left; next gated call picks up where this left off
+
+	const int_t loadedX = mcLoader->slicedLoadTaskX();
+	const int_t loadedZ = mcLoader->slicedLoadTaskZ();
+	const std::uint64_t key = chunkKey(loadedX, loadedZ);
+
+	ChunkLoadStatus loadStatus = ChunkLoadStatus::Missing;
+	Chunk *chunk = mcLoader->takeSlicedLoadChunk(worldObj, &loadStatus);
+
+	const bool stillWanted = chunkMap.count(key) == 0
+		&& (worldObj == nullptr || worldObj->findingSpawnPoint || canChunkExist(loadedX, loadedZ));
+
+	if (chunk != nullptr)
+	{
+		if (!stillWanted)
+		{
+			delete chunk;
+			return;
+		}
+		chunk->lastSaveTime = worldObj->getWorldTime();
+		MC_LOG_INFO("dsi", "deferred chunk load at %d,%d took %lldus over %d slice(s) (queue depth now %u)\n",
+			(int)loadedX, (int)loadedZ,
+			(long long)((System::nanoTime() - s_sliceStartNs) / 1000), (int)s_sliceCalls,
+			(unsigned)loadQueue.size());
+		publishPreparedChunk(loadedX, loadedZ, chunk);
+		publishedChunk = true;
+		return;
+	}
+
+	// hasChunkOnDisk() was true when this was queued, so a null chunk here
+	// means the region entry was corrupt/truncated by the time it was read --
+	// the same outcome prepareChunkInternal()'s own readFailed branch caches
+	// as blankChunk so the position is not retried every tick, not "chunk
+	// never existed" (that case can't reach this function: see
+	// prepareChunkInternal()'s hasChunkOnDisk() gate on enqueue).
+	if (stillWanted && loadStatus == ChunkLoadStatus::ReadError)
+	{
+		MC_LOG_ERROR("chunk", "ChunkProvider: refusing to regenerate unreadable chunk %d,%d (deferred load)\n",
+			(int)loadedX, (int)loadedZ);
+		publishPreparedChunk(loadedX, loadedZ, blankChunk);
+		publishedChunk = true;
+	}
+}
+
 // Full/exit saves (World::saveChunks(true, ...), the "Saving world" screen)
 // walk chunkList for dirty chunks -- but a chunk in this queue was already
 // removed from chunkList the moment it was queued, so without this it would
@@ -1741,6 +1890,32 @@ bool ChunkProvider::unload100OldestChunks()
 	// other generation tick now pays at most one extra PLATFORM_POPULATE_BUDGET_US.
 	publishedThisTick = incrementalPublishedChunk;
 #endif
+#endif
+#endif
+#if PLATFORM_DSI
+	// Load-side mirror of the generation drain gate just above, same real-
+	// hardware catch-up-tick multiplication risk (see that gate's own
+	// comment): cap to roughly one drain per real tick interval (50ms) so a
+	// burst of catch-up ticks after a stall can't force several inflate
+	// slices into one rendered frame. Placed alongside generation's own gate
+	// (rather than down by drainPendingSaves()'s, later in this function)
+	// so a load that completes this tick can still count toward
+	// publishedThisTick below -- it adds a column to chunkMap and rebuilds
+	// its skylight exactly like a generation publish does, same cost the
+	// deferred-populate budget reduction is meant to absorb.
+	static long_t s_lastLoadDrainMs = 0;
+	const long_t loadNowMs = System::currentTimeMillis();
+	bool loadPublishedChunk = false;
+	if (loadNowMs - s_lastLoadDrainMs >= 50)
+	{
+		s_lastLoadDrainMs = loadNowMs;
+		// Budget only matters for the defensive non-McRegion fallback inside
+		// drainPendingLoads() -- the normal sliced path paces itself via this
+		// 50ms gate instead, same as drainPendingSaves().
+		drainPendingLoads(4, loadPublishedChunk);
+	}
+#if PLATFORM_DEFERRED_POPULATE
+	publishedThisTick = publishedThisTick || loadPublishedChunk;
 #endif
 #endif
 #if PLATFORM_ASYNC_CHUNK_GENERATION

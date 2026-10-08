@@ -43,6 +43,12 @@ public:
     // and freeing an ~85KB vector for every chunk.
     bool getChunkData(int_t x, int_t z, std::vector<byte_t> &out,
                       ReadStatus *status = nullptr);
+    // Entry point for a caller that wants to run inflate() itself (ChunkProvider's
+    // sliced chunk-load path -- see its own comment). Returns the still-compressed
+    // sector bytes and the format byte (1 = gzip, 2 = zlib, matching the on-disk
+    // version byte writeSector() writes) instead of inflating them here.
+    bool readCompressedChunkSector(int_t x, int_t z, std::vector<byte_t> &compressedOut,
+                                    byte_t &versionOut, ReadStatus *status = nullptr);
     std::vector<byte_t> getChunkDataForWrite(int_t x, int_t z);
     void write(int_t x, int_t z, const byte_t *data, int_t length);
     // Entry point for a caller that already ran deflate() to completion

@@ -86,6 +86,44 @@ public:
     // Collects the chunk once continueSlicedSave()/finishSlicedSaveNow() has
     // returned true. Returns nullptr if the task is still in progress.
     Chunk *takeSlicedSaveChunk();
+
+    // Sliced load: the loading counterpart to the sliced save above.
+    // loadChunk()'s readChunkData() -> RegionFile::getChunkData() ran a
+    // single inflate() call to completion (same cost class the save side's
+    // compress2() had, 100-700ms+), and -- unlike generation, which defers
+    // through the incremental generationTask queue when the chunk does not
+    // yet exist -- ChunkProvider::prepareChunkInternal() called this
+    // unconditionally and synchronously for EVERY chunk whose file already
+    // exists, including every ordinary re-entry into previously-visited
+    // terrain. beginSlicedLoad() reads the still-compressed sector bytes
+    // (RegionFile::readCompressedChunkSector(), a cheap I/O read -- not the
+    // expensive part) and starts an inflate stream. continueSlicedLoad(
+    // budgetUs) runs inflate() for up to budgetUs of wall-clock CPU time per
+    // call and returns true once the chunk's raw NBT is fully decompressed;
+    // the caller then collects the Chunk via takeSlicedLoadChunk(), which
+    // runs the same NBT-parse-and-build decodeChunkBlocksFromData()/
+    // attachChunkEntities() this loader's own synchronous path already used,
+    // unsliced (both measured cheap relative to decompression). Only one
+    // task is active at a time, same as the save side.
+    // Cheap existence check for ChunkProvider's deferred-load queue: true if
+    // this chunk has a region-file entry worth queuing a sliced load for
+    // (RegionFile::hasChunk() -- a header-only check, no sector read). Used
+    // instead of attempting a load first, since "never existed" and "existed
+    // but should now generate" need different queues (deferred load vs.
+    // deferred generation).
+    bool hasChunkOnDisk(int_t x, int_t z);
+    bool beginSlicedLoad(int_t x, int_t z);
+    bool continueSlicedLoad(long_t budgetUs);
+    bool hasSlicedLoadTask() const;
+    int_t slicedLoadTaskX() const;
+    int_t slicedLoadTaskZ() const;
+    // Collects the chunk once continueSlicedLoad() has returned true.
+    // Returns nullptr (with *status left at whatever continueSlicedLoad()'s
+    // own failure path set) if the task never had data to parse -- a
+    // missing/corrupt region entry is a normal outcome here, same as
+    // loadChunk()'s existing readFailed contract.
+    Chunk *takeSlicedLoadChunk(World *world, ChunkLoadStatus *status);
+    void cancelSlicedLoad();
 #endif
 
 private:
@@ -117,5 +155,23 @@ private:
     // left to do (finished or abandoned on error), false if more work
     // remains and the budget ran out first.
     bool pumpSlicedDeflate(long_t budgetUs);
+
+    struct SlicedLoadTask
+    {
+        bool active = false;
+        bool finished = false;
+        bool streamInitialized = false;
+        bool dataReady = false; // false => missing/corrupt; takeSlicedLoadChunk() returns nullptr
+        int_t chunkX = 0;
+        int_t chunkZ = 0;
+        std::vector<byte_t> compressedIn;
+        std::vector<byte_t> rawOut;
+        z_stream zs{};
+    };
+    SlicedLoadTask slicedLoad;
+
+    void endSlicedInflateStream();
+    // Same shape as pumpSlicedDeflate(), for inflate() instead.
+    bool pumpSlicedInflate(long_t budgetUs);
 #endif
 };

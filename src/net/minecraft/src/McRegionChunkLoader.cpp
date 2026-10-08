@@ -280,6 +280,8 @@ McRegionChunkLoader::~McRegionChunkLoader()
     // this. Only reached if the loader is torn down with a task mid-flight
     // some other way.
     endSlicedDeflateStream();
+    // Same defensive cleanup for the load side's inflate stream.
+    endSlicedInflateStream();
 }
 
 void McRegionChunkLoader::endSlicedDeflateStream()
@@ -458,5 +460,183 @@ Chunk *McRegionChunkLoader::takeSlicedSaveChunk()
     slicedSave.rawNbt.clear();
     slicedSave.compressedOut.clear();
     return chunk;
+}
+
+void McRegionChunkLoader::endSlicedInflateStream()
+{
+    if (slicedLoad.streamInitialized)
+    {
+        inflateEnd(&slicedLoad.zs);
+        slicedLoad.streamInitialized = false;
+    }
+}
+
+bool McRegionChunkLoader::hasChunkOnDisk(int_t x, int_t z)
+{
+    std::shared_ptr<RegionFile> rf = RegionFileCache::acquireRegionFile(worldDir, x, z);
+    return rf->hasChunk(x & 0x1f, z & 0x1f);
+}
+
+bool McRegionChunkLoader::beginSlicedLoad(int_t x, int_t z)
+{
+    if (slicedLoad.active)
+        return false;
+
+    std::shared_ptr<RegionFile> rf = RegionFileCache::acquireRegionFile(worldDir, x, z);
+    byte_t version = 0;
+    RegionFile::ReadStatus readStatus = RegionFile::ReadStatus::Missing;
+    if (!rf->readCompressedChunkSector(x & 0x1f, z & 0x1f, slicedLoad.compressedIn, version, &readStatus))
+    {
+        // Missing or unreadable -- the caller treats this exactly like
+        // loadChunk() returning nullptr immediately; no task to slice for a
+        // chunk that was never there (or whose region data is corrupt).
+        slicedLoad.compressedIn.clear();
+        return false;
+    }
+
+    std::memset(&slicedLoad.zs, 0, sizeof(slicedLoad.zs));
+    // version is already validated to be 1 or 2 by readCompressedChunkSector()
+    // (anything else fails that call) -- same two formats RegionFile::write()
+    // can produce (plain write() always picks version 2; an older region
+    // written some other way could still have a version 1 entry).
+    const int windowBits = (version == 1) ? (16 + MAX_WBITS) : MAX_WBITS;
+    if (inflateInit2(&slicedLoad.zs, windowBits) != Z_OK)
+    {
+        slicedLoad.compressedIn.clear();
+        return false;
+    }
+
+    slicedLoad.streamInitialized = true;
+    slicedLoad.zs.next_in = reinterpret_cast<Bytef *>(slicedLoad.compressedIn.data());
+    slicedLoad.zs.avail_in = static_cast<uInt>(slicedLoad.compressedIn.size());
+    slicedLoad.rawOut.clear();
+    // A Beta chunk's raw NBT is ~85KB (readScratch's own sizing comment).
+    slicedLoad.rawOut.reserve(96 * 1024);
+    slicedLoad.dataReady = false;
+    slicedLoad.finished = false;
+    slicedLoad.chunkX = x;
+    slicedLoad.chunkZ = z;
+    slicedLoad.active = true;
+    return true;
+}
+
+bool McRegionChunkLoader::pumpSlicedInflate(long_t budgetUs)
+{
+    constexpr std::size_t kOutputChunk = 4096;
+    // Same cap inflateChunkData()'s own one-shot path refuses to exceed.
+    constexpr std::size_t kMaxOut = 1024 * 1024;
+    const long_t startNs = System::nanoTime();
+    for (;;)
+    {
+        if (slicedLoad.rawOut.size() >= kMaxOut)
+        {
+            slicedLoad.rawOut.clear();
+            return true; // abandon: over-cap, same outcome as the one-shot path
+        }
+
+        const std::size_t writePos = slicedLoad.rawOut.size();
+        slicedLoad.rawOut.resize(writePos + kOutputChunk);
+        slicedLoad.zs.next_out = reinterpret_cast<Bytef *>(slicedLoad.rawOut.data() + writePos);
+        slicedLoad.zs.avail_out = static_cast<uInt>(kOutputChunk);
+
+        const int ret = inflate(&slicedLoad.zs, Z_NO_FLUSH);
+        const std::size_t produced = kOutputChunk - slicedLoad.zs.avail_out;
+        slicedLoad.rawOut.resize(writePos + produced);
+
+        if (ret == Z_STREAM_END)
+            return true;
+        if (ret != Z_OK && ret != Z_BUF_ERROR)
+        {
+            // zlib error: truncated/corrupt sector. Same "fail, no partial
+            // data" contract inflateChunkData() uses.
+            slicedLoad.rawOut.clear();
+            return true;
+        }
+        if (slicedLoad.zs.avail_out != 0)
+        {
+            // Not full, not finished, not erred: inflate made no further
+            // progress with the input it has -- the one-shot path treats
+            // this the same as a truncated stream rather than retrying.
+            slicedLoad.rawOut.clear();
+            return true;
+        }
+
+        if (budgetUs > 0 && (System::nanoTime() - startNs) / 1000 >= budgetUs)
+            return false;
+    }
+}
+
+bool McRegionChunkLoader::continueSlicedLoad(long_t budgetUs)
+{
+    if (!slicedLoad.active)
+        return false;
+    if (slicedLoad.finished)
+        return true;
+
+    if (!pumpSlicedInflate(budgetUs))
+        return false;
+
+    endSlicedInflateStream();
+    slicedLoad.dataReady = !slicedLoad.rawOut.empty();
+    slicedLoad.finished = true;
+    return true;
+}
+
+bool McRegionChunkLoader::hasSlicedLoadTask() const
+{
+    return slicedLoad.active;
+}
+
+int_t McRegionChunkLoader::slicedLoadTaskX() const
+{
+    return slicedLoad.chunkX;
+}
+
+int_t McRegionChunkLoader::slicedLoadTaskZ() const
+{
+    return slicedLoad.chunkZ;
+}
+
+Chunk *McRegionChunkLoader::takeSlicedLoadChunk(World *world, ChunkLoadStatus *status)
+{
+    if (!slicedLoad.active || !slicedLoad.finished)
+        return nullptr;
+
+    Chunk *chunk = nullptr;
+    if (slicedLoad.dataReady)
+    {
+        std::unique_ptr<NBTTagCompound> root;
+        chunk = decodeChunkBlocksFromData(world, slicedLoad.chunkX, slicedLoad.chunkZ,
+            slicedLoad.rawOut, root, status);
+        if (chunk != nullptr)
+            attachChunkEntities(world, chunk, root.get());
+    }
+    else if (status != nullptr)
+    {
+        *status = ChunkLoadStatus::ReadError;
+    }
+
+    slicedLoad.active = false;
+    slicedLoad.finished = false;
+    slicedLoad.dataReady = false;
+    slicedLoad.chunkX = 0;
+    slicedLoad.chunkZ = 0;
+    slicedLoad.compressedIn.clear();
+    slicedLoad.rawOut.clear();
+    return chunk;
+}
+
+void McRegionChunkLoader::cancelSlicedLoad()
+{
+    if (!slicedLoad.active)
+        return;
+    endSlicedInflateStream();
+    slicedLoad.active = false;
+    slicedLoad.finished = false;
+    slicedLoad.dataReady = false;
+    slicedLoad.chunkX = 0;
+    slicedLoad.chunkZ = 0;
+    slicedLoad.compressedIn.clear();
+    slicedLoad.rawOut.clear();
 }
 #endif

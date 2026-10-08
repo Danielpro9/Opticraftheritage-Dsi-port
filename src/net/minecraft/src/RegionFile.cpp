@@ -469,6 +469,116 @@ bool RegionFile::getChunkData(int_t x, int_t z, std::vector<byte_t> &out,
     return fail(ReadStatus::IoError);
 }
 
+// Deliberately NOT a refactor of getChunkData() above (same sector-locate-and-
+// read prefix, duplicated instead of shared): getChunkData() is still used
+// as-is by every other caller/platform, including ones that may genuinely
+// run this under real concurrency (PS2/Wii's ThreadedFileIOBase), and this
+// method exists only for ChunkProvider's DSi-only sliced chunk-load path
+// (see its own comment) to run inflate() itself in budgeted slices instead
+// of here. Duplicating this prefix costs a few dozen lines; reusing it would
+// mean either locking twice (getChunkData calling this, a second lock
+// acquisition after this one already released it -- a window where a
+// concurrent write() could invalidate the sector between the two) or
+// restructuring getChunkData()'s own locking for a caller it does not have
+// yet on any other platform.
+bool RegionFile::readCompressedChunkSector(int_t x, int_t z, std::vector<byte_t> &compressedOut,
+                                            byte_t &versionOut, ReadStatus *status)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    compressedOut.clear();
+    versionOut = 0;
+
+    const auto fail = [status](ReadStatus failure)
+    {
+        if (status != nullptr)
+            *status = failure;
+        return false;
+    };
+
+    if (outOfBounds(x, z)) return fail(ReadStatus::InvalidCoordinates);
+
+    const int_t entryIndex = x + z * 32;
+    int_t offset = getOffset(x, z);
+    if (offset == 0) return fail(ReadStatus::Missing);
+
+    if (!entryValid[entryIndex])
+        return fail(ReadStatus::InvalidSector);
+
+    int_t sectorStart  = offset >> 8;
+    int_t sectorLength = offset & 0xff;
+
+    if (sectorStart < 2 || sectorLength <= 0)
+        return fail(ReadStatus::InvalidSector);
+    if (sectorStart + sectorLength > (int_t)sectorFree.size())
+        return fail(ReadStatus::InvalidSector);
+
+    for (int_t s = 0; s < sectorLength; s++)
+    {
+        if (sectorOwner[sectorStart + s] != entryIndex)
+            return fail(ReadStatus::InvalidSector);
+    }
+
+    try
+    {
+#if PLATFORM_REGION_RANDOM_ACCESS
+        const std::size_t sectorBytes = static_cast<std::size_t>(sectorLength) * 4096u;
+        ioScratch.resize(sectorBytes);
+        dataFile.clear();
+        dataFile.seekg(static_cast<long_t>(JavaArithmetic::intMul(sectorStart, 4096)));
+        {
+            PlatformLoadWorkScope readWork(PlatformLoadWork::RegionRead);
+            dataFile.read(reinterpret_cast<char*>(ioScratch.data()), static_cast<std::streamsize>(sectorBytes));
+        }
+        if (!dataFile || dataFile.gcount() != static_cast<std::streamsize>(sectorBytes))
+            return fail(ReadStatus::TruncatedData);
+
+        const unsigned char *sectorData = reinterpret_cast<const unsigned char*>(ioScratch.data());
+        const std::uint32_t lengthBits = (static_cast<std::uint32_t>(sectorData[0]) << 24)
+                                       | (static_cast<std::uint32_t>(sectorData[1]) << 16)
+                                       | (static_cast<std::uint32_t>(sectorData[2]) << 8)
+                                       | static_cast<std::uint32_t>(sectorData[3]);
+        const int_t dataLength = JavaArithmetic::intFromBits(lengthBits);
+        if (dataLength <= 0 || dataLength > 4096 * sectorLength)
+            return fail(ReadStatus::InvalidLength);
+        if (static_cast<std::size_t>(dataLength) + 4u > sectorBytes)
+            return fail(ReadStatus::TruncatedData);
+
+        const byte_t version = static_cast<byte_t>(sectorData[4]);
+        const byte_t *compressedData = ioScratch.data() + 5;
+        const std::size_t compressedLength = static_cast<std::size_t>(dataLength) - 1u;
+#else
+        dataFile.clear();
+        dataFile.seekg(static_cast<long_t>(JavaArithmetic::intMul(sectorStart, 4096)));
+        int_t dataLength = readInt32BE(dataFile);
+        if (dataLength <= 0 || dataLength > 4096 * sectorLength)
+            return fail(ReadStatus::InvalidLength);
+
+        byte_t version = readByte(dataFile);
+
+        ioScratch.resize((size_t)dataLength - 1u);
+        dataFile.read((char*)ioScratch.data(), dataLength - 1);
+        if (!dataFile || dataFile.gcount() != dataLength - 1)
+            return fail(ReadStatus::TruncatedData);
+        const byte_t *compressedData = ioScratch.data();
+        const std::size_t compressedLength = ioScratch.size();
+#endif
+
+        if (version != 1 && version != 2)
+            return fail(ReadStatus::UnsupportedCompression);
+
+        compressedOut.assign(compressedData, compressedData + compressedLength);
+        versionOut = version;
+        if (status != nullptr)
+            *status = ReadStatus::Success;
+        return true;
+    }
+    catch (...)
+    {
+        compressedOut.clear();
+        return fail(ReadStatus::IoError);
+    }
+}
+
 void RegionFile::write(int_t x, int_t z, const byte_t *rawData, int_t rawLength)
 {
     std::lock_guard<std::mutex> lock(mtx);

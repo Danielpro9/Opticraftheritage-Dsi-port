@@ -122,6 +122,20 @@ private:
 	void drainPendingSaves(int_t budget);
 	Chunk *reclaimPendingSave(std::uint64_t key);
 	std::deque<Chunk *> pendingSaveQueue;
+
+	// Deferred chunk-load queue -- the load-side mirror of pendingSaveQueue
+	// above. prepareChunkInternal() enqueues a coordinate here instead of
+	// running McRegionChunkLoader's loadChunk() inline when the chunk's
+	// region-file entry already exists (the common case for re-entering any
+	// previously-visited, previously-saved terrain) and the caller tolerates
+	// a blankChunk placeholder this tick; drainPendingLoads() below resumes
+	// the sliced inflate and publishes the finished chunk, same per-tick
+	// gating pattern as drainPendingSaves(). Keyed the same way
+	// generationQueue/generationQueued are, since (unlike pendingSaveQueue)
+	// there is no live Chunk object to queue yet -- just a coordinate.
+	void drainPendingLoads(int_t budget, bool &publishedChunk);
+	std::deque<std::pair<int_t, int_t>> loadQueue;
+	std::unordered_set<std::uint64_t> loadQueued;
 #endif
 
 #if PLATFORM_DEFERRED_POPULATE

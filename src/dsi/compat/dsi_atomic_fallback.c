@@ -15,6 +15,11 @@
 //                                    first two were already resolved -- the
 //                                    linker reports one missing symbol at a
 //                                    time, not the whole set up front)
+//   __atomic_fetch_add_4         <- GuiMultiplayer::incrementThreadsPending()/
+//   __atomic_fetch_sub_4            decrementThreadsPending()'s std::atomic<int_t>
+//                                    threadsPending, dead code (so never linked)
+//                                    until NO_NETWORK was removed made this class's
+//                                    real multiplayer UI reachable
 //
 // This is not a general-purpose libatomic replacement: it only defines the
 // symbols actually referenced, and it is correct ONLY because DSi has
@@ -71,6 +76,26 @@ bool __atomic_compare_exchange_8(volatile void *ptr, void *expected, unsigned lo
 	}
 	*exp = *p;
 	return false;
+}
+
+// GCC's __atomic_fetch_add_N/__atomic_fetch_sub_N ABI: apply val to *ptr,
+// return the value *ptr held before the update.
+unsigned int __atomic_fetch_add_4(volatile void *ptr, unsigned int val, int memorder)
+{
+	(void)memorder;
+	volatile unsigned int *p = (volatile unsigned int *)ptr;
+	unsigned int old = *p;
+	*p = old + val;
+	return old;
+}
+
+unsigned int __atomic_fetch_sub_4(volatile void *ptr, unsigned int val, int memorder)
+{
+	(void)memorder;
+	volatile unsigned int *p = (volatile unsigned int *)ptr;
+	unsigned int old = *p;
+	*p = old - val;
+	return old;
 }
 
 #endif // DSI_PLATFORM

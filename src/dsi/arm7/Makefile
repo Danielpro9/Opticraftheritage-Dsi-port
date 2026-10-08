@@ -10,16 +10,23 @@
 # scripts -- not something to fold into the ARM9-side Makefile.game).
 #
 # Uses the same $(BLOCKSDS)/$(WONDERFUL_TOOLCHAIN) exports and toolchain
-# prefix Makefile.game already does, not ClassiCube's reference copy of this
-# same file (which assumes the Wonderful Toolchain package manager's nested
-# install path) -- this project's Docker image installs BlocksDS straight to
-# /opt/blocksds/core, already relied on throughout Makefile.game.
+# prefix Makefile.game already does. The ?= default below only matters if
+# BLOCKSDS is not already exported by the environment -- the CI container
+# actually exports BLOCKSDS=/opt/wonderful/thirdparty/blocksds/core itself
+# (confirmed from a real build log), which wins over this default either
+# way; it is only here for a shell that does not set it at all.
 export BLOCKSDS			?= /opt/blocksds/core
 export WONDERFUL_TOOLCHAIN	?= /opt/wonderful
 ARM_NONE_EABI_PATH		?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
 
 SOURCEDIRS	:=	.
 INCLUDEDIRS	:=
+# ARM7 (not ARM9): nds.h itself #errors out without exactly one of these --
+# the BlocksDS/libnds headers this file includes use it to pick the ARM7 vs
+# ARM9 half of every dual-CPU register/function declaration they provide
+# (REG_DMA_FILL, IRQ_RTC, installSoundFIFO(), ... all the symbols main_arm7.c
+# needs), not just a cosmetic label.
+DEFINES		:=	-D__NDS__ -DARM7
 LIBS		:=	-lnds7 -ldswifi7 -lc
 LIBDIRS		:=	$(BLOCKSDS)/libs/libnds $(BLOCKSDS)/libs/dswifi
 
@@ -42,7 +49,7 @@ INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
 
 LIBDIRSFLAGS	:= $(foreach path,$(LIBDIRS),-L$(path)/lib)
 
-CFLAGS		:= -std=gnu11 $(WARNFLAGS) $(ARCH) \
+CFLAGS		:= -std=gnu11 $(WARNFLAGS) $(DEFINES) $(ARCH) \
 		   -mthumb -mthumb-interwork $(INCLUDEFLAGS) -O2 \
 		   -ffunction-sections -fdata-sections \
 		   -fomit-frame-pointer

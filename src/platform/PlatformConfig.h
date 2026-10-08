@@ -377,6 +377,8 @@ declares."
 // Bound the decoded ARGB helper cache on PS2 to one most-recent resource.
 // This preserves useful back-to-back reuse (compass/watch both read items.png)
 // without retaining every 256x256 colormap/atlas for the whole session.
+// (DSi enables this too, via its own override in dsi/tuning/DsiWorldTuning.h
+// -- see that file's comment -- rather than changing the default here.)
 #ifndef PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE
 #  define PLATFORM_BOUNDED_DECODED_TEXTURE_CACHE PLATFORM_PS2
 #endif

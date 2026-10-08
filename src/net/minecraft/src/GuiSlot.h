@@ -18,6 +18,12 @@ public:
 
 protected:
 	void setHasHeader(bool hasHeader, int_t headerHeight);
+	// Adjusts amountScrolled (otherwise private -- a subclass has no way to
+	// touch it directly) just enough to bring element `index` back inside
+	// [top, bottom], for a selection that moved without a matching mouse
+	// drag -- see GuiSlotServer::selectIndex(), added for console D-pad
+	// navigation of the server list.
+	void ensureVisible(int_t index);
 
 	virtual int_t getSize() = 0;
 	virtual void elementClicked(int_t index, bool doubleClicked) = 0;

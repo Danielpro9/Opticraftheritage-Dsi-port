@@ -99,6 +99,25 @@ void GuiSlot::bindAmountScrolled()
 	if (amountScrolled > (float_t)maxScroll) amountScrolled = (float_t)maxScroll;
 }
 
+void GuiSlot::ensureVisible(int_t index)
+{
+	if (index < 0 || index >= getSize())
+		return;
+
+	// Same layout math drawScreen() uses to place slot `index` on screen,
+	// solved backwards: find the amountScrolled that would put it just
+	// inside [top, bottom] instead of placing it and testing like
+	// drawScreen() does.
+	const int_t slotH = posZ - 4;
+	const int_t unscrolledY = top + 4 + index * posZ + headerPadding;
+	const int_t slotY = unscrolledY - (int_t)amountScrolled;
+	if (slotY < top)
+		amountScrolled -= (float_t)(top - slotY);
+	else if (slotY + slotH > bottom)
+		amountScrolled += (float_t)(slotY + slotH - bottom);
+	bindAmountScrolled();
+}
+
 void GuiSlot::actionPerformed(GuiButton *button)
 {
 	if (!button->enabled) return;

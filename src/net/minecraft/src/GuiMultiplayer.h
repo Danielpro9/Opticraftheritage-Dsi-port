@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "GuiScreen.h"
+#include "platform/PlatformConfig.h"
 
 class GuiButton;
 class GuiSlotServer;
@@ -52,6 +53,13 @@ protected:
     void mouseClicked(int_t x, int_t y, int_t button) override;
 
 private:
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
+    // D-pad Left/Right move the server-list selection instead of the normal
+    // GuiScreen::adjustKeyboardSelection() -- see the .cpp for why that call
+    // is otherwise always a no-op on this screen, and why Left/Right (not
+    // Up/Down) were free to repurpose for this.
+    void handleConsoleServerListNavigation();
+#endif
     void loadServerList();
     void saveServerList();
     int_t parseIntWithDefault(const std::string &value, int_t defaultValue) const;

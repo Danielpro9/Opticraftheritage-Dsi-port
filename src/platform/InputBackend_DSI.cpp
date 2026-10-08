@@ -151,16 +151,39 @@ bool g_dsiMenuTouchWasDown = false;
 int g_dsiMenuLastTouchX = 0;
 int g_dsiMenuLastTouchY = 0;
 
-// Synthesizes a full click (press immediately followed by release, both at
-// the last known touch position) into lwjgl::Mouse -- see
-// dsiUpdateMenuPointer()'s own comment for when this fires. Pushing both
-// halves lets GuiButton's normal mousePressed()/mouseReleased() pair run
-// exactly as it would for a real mouse click, rather than leaving
-// GuiScreen::selectedButton latched with no matching release.
+// Frames left before dsiUpdateMenuPointer() pushes the release half of an
+// in-progress dsiFireMenuPointerClick() -- see that function's own comment.
+// 0 means no click is currently being held down.
+int g_dsiMenuPointerClickHoldFrames = 0;
+
+// Real-hardware report: a server could not be selected from the Multiplayer
+// list by tapping it, only by touching Edit/Delete/Select/etc (real
+// GuiButtons). Root cause: this used to push a press immediately followed
+// by a release, both in this one call -- fine for GuiButton, whose clicks
+// go through GuiScreen::handleMouseInput()'s EVENT QUEUE (lwjgl::Mouse::
+// next()/getEventButtonState()), which sees the two queued events in order
+// regardless of how much real time separated them. GuiSlot (the server
+// list's own base class, GuiSlot.cpp's drawScreen()) instead polls
+// lwjgl::Mouse::isButtonDown(0) -- true only while a button is physically
+// down across at least one frame that poll actually runs on -- which this
+// press-then-instantly-release pair could never satisfy: both halves
+// landed before anything else had a chance to observe the state in
+// between. PC never hits this, since a real mouse click stays down for
+// several frames' worth of real time.
+//
+// Fixed by holding the synthetic press for a few frames before releasing
+// it (dsiUpdateMenuPointer() below flushes the matching release once
+// g_dsiMenuPointerClickHoldFrames reaches zero) instead of releasing it in
+// this same call. 3 frames (~50ms at 60fps) is comfortably longer than one
+// frame regardless of exactly where in a frame GuiSlot::drawScreen() runs
+// relative to this function, and far too short for a human to perceive as
+// anything but an instant tap. GuiButton's own click is unaffected either
+// way: its event-queue consumption does not care how many frames apart the
+// two queued events are.
 void dsiFireMenuPointerClick()
 {
 	lwjgl::Mouse::detail::pushButton(0, true, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
-	lwjgl::Mouse::detail::pushButton(0, false, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
+	g_dsiMenuPointerClickHoldFrames = 3;
 }
 
 std::uint32_t mapTextButtons(std::uint32_t bits)
@@ -290,6 +313,14 @@ void dsiUpdateTouchCameraDelta(bool inMenu)
 // Display_wii.cpp's does (Minecraft::getMinecraft()->currentScreen != nullptr).
 void dsiUpdateMenuPointer(bool inMenu)
 {
+	// Flush a held-down click's release before anything else this call --
+	// see dsiFireMenuPointerClick()'s own comment. Done even if the screen
+	// just closed (inMenu false below): deliver the release now rather than
+	// leave it queued for whatever screen opens next to receive out of
+	// nowhere.
+	if (g_dsiMenuPointerClickHoldFrames > 0 && --g_dsiMenuPointerClickHoldFrames == 0)
+		lwjgl::Mouse::detail::pushButton(0, false, g_dsiMenuLastTouchX, g_dsiMenuLastTouchY);
+
 	if (!inMenu)
 	{
 		// No screen open: reset ownership and the touch-edge tracker so the

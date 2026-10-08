@@ -22,6 +22,12 @@ int_t GuiSlotServer::getSize()
     return parentGui != nullptr ? (int_t)parentGui->getServerList().size() : 0;
 }
 
+void GuiSlotServer::selectIndex(int_t index)
+{
+    elementClicked(index, false);
+    ensureVisible(index);
+}
+
 void GuiSlotServer::elementClicked(int_t index, bool doubleClicked)
 {
     if (parentGui == nullptr)

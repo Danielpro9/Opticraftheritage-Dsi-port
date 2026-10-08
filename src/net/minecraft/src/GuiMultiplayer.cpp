@@ -29,6 +29,9 @@
 #include "java/String.h"
 #include "pc/lwjgl/Keyboard.h"
 #include "platform/Log.h"
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
+#include "platform/Input.h"
+#endif
 
 std::atomic<int_t> GuiMultiplayer::threadsPending{0};
 
@@ -47,7 +50,72 @@ GuiMultiplayer::~GuiMultiplayer()
 
 void GuiMultiplayer::updateScreen()
 {
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
+    handleConsoleServerListNavigation();
+#endif
 }
+
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_DSI
+// Real-hardware report (DSi): neither the touch cursor nor the D-pad could
+// select a server from the list -- only "Direct Connection" worked. Root
+// cause has two independent halves:
+//
+// 1. GuiSlot::drawScreen() (the server list's own base class) detects a
+//    click by polling lwjgl::Mouse::isButtonDown(0) -- true only while a
+//    real mouse button is physically held across at least one polled
+//    frame. DSi's touch cursor (dsiUpdateMenuPointer()) fires a tap as a
+//    press immediately followed by a release in the same call (see
+//    dsiFireMenuPointerClick()'s own comment on why -- a deliberate "tap on
+//    release" design), so isButtonDown(0) was never actually observed true
+//    on any frame GuiSlot polled it. Fixed at the source: see
+//    dsiFireMenuPointerClick()'s own comment in InputBackend_DSI.cpp.
+//
+// 2. The D-pad has never driven anything inside a GuiSlot list at all --
+//    GuiScreen::handleConsoleJavaUiNavigation() only moves a highlight
+//    through controlList (the on-screen GuiButtons: Edit/Delete/Select/
+//    Direct/Add/Refresh/Cancel here), which the server rows are not part
+//    of. Fixed here: Left/Right move the server selection instead of
+//    GuiScreen::adjustKeyboardSelection(), which -- unlike on a slider --
+//    is always a no-op for these seven plain GuiButtons
+//    (GuiButton::adjustKeyboard() returns false unless overridden), so
+//    repurposing Left/Right costs nothing already working. Up/Down are
+//    left alone: they are the only way to reach any of those seven buttons
+//    at all without touch, and still work exactly as before.
+void GuiMultiplayer::handleConsoleServerListNavigation()
+{
+#ifdef NO_NETWORK
+    return;
+#else
+    if (serverSlotContainer == nullptr || serverList.empty())
+        return;
+    // Same exclusions GuiScreen::isJavaUiKeyboardNavigationEnabled() applies
+    // to the button highlight above (that check itself is private to
+    // GuiScreen, so this mirrors it rather than calling it): do not steal
+    // Left/Right while a field is focused, a touch/stick is actively
+    // driving the pointer, a container screen owns the pad, or a Controls-
+    // menu rebind is capturing raw presses.
+    if (platformTextInputExclusive() || platformMenuPointerActive() ||
+        platformContainerNavigationActive() || platformPadRebindExclusive())
+        return;
+
+    const PlatformTextInputSnapshot pad = platformTextInputSnapshot(platformMenuPad());
+    int_t direction = 0;
+    if (pad.pressed & PLATFORM_TEXT_LEFT)       direction = -1;
+    else if (pad.pressed & PLATFORM_TEXT_RIGHT) direction = 1;
+    if (direction == 0)
+        return;
+
+    const int_t count = (int_t)serverList.size();
+    int_t index = selectedServer;
+    if (index < 0 || index >= count)
+        index = direction > 0 ? 0 : count - 1;
+    else
+        index = (index + direction + count) % count;
+
+    serverSlotContainer->selectIndex(index);
+#endif
+}
+#endif
 
 void GuiMultiplayer::initGui()
 {

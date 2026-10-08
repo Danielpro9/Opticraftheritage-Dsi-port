@@ -13,6 +13,12 @@ class GuiSlotServer : public GuiSlot
 public:
     explicit GuiSlotServer(GuiMultiplayer *parent);
 
+    // Console D-pad navigation (GuiMultiplayer::handleConsoleServerListNavigation()):
+    // selects `index` the same way clicking its row would, then scrolls it
+    // into view -- a D-pad move has no mouse position of its own to hit-test
+    // against, unlike elementClicked()'s normal caller (GuiSlot::drawScreen()).
+    void selectIndex(int_t index);
+
 protected:
     int_t getSize() override;
     void elementClicked(int_t index, bool doubleClicked) override;

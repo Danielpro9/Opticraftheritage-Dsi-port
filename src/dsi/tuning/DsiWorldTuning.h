@@ -842,4 +842,50 @@
 #undef  PLATFORM_GENERATION_SOURCE_COLUMNS_PER_STEP
 #define PLATFORM_GENERATION_SOURCE_COLUMNS_PER_STEP 4
 
+// Real-hardware report, still open at the time of writing: the screen
+// flashes white, most often while turning the camera or moving but also
+// (less often) while standing still. RenderGlobal.cpp's own
+// clipRenderersByFrustrum() already carries a diagnostic (added earlier
+// this session, not yet acted on) counting how many of this platform's up
+// to 18 sections flip from rejected to accepted IN THE SAME FRAME --
+// hypothesis being that a burst of newly-visible sections means a burst of
+// drawCapturedTerrain() draw calls in that one frame, widening the window
+// for a CPU/GPU race against Display_dsi.cpp's single swiWaitForVBlank per
+// frame. A real-hardware log (this session's own) confirms the diagnostic
+// fires constantly through ordinary play -- 23 times over one ~340-second
+// session, spaced roughly every 10-20 seconds, with 3-10 sections revealing
+// at once -- not just at world load, so this is a real, continuous
+// condition during normal play, not a rare edge case. It also explains the
+// "still happens standing still, just less often" half of the report: a
+// section can newly enter frustum either because the camera turned INTO
+// it, or because it only just finished its first mesh build and already
+// sat inside a frustum that did not move -- streaming/world-gen keeps
+// completing builds in the background regardless of camera movement, just
+// at a lower rate than a camera turn can reveal sections.
+//
+// DSI_MAX_FRUSTUM_REVEALS_PER_FRAME bounds how many NEW reveals (false->true
+// transitions) RenderGlobal::clipRenderersByFrustrum() commits to in one
+// frame; the rest simply keep their current (false) isInFrustum for this
+// frame and get retried next frame, same as any other rejected section
+// already is every frame regardless (see that function's own WII/DSI
+// comment). This is deliberately NOT a cap on how many sections render
+// total, and never touches a section that is ALREADY isInFrustum==true:
+// an already-visible section is still retested every frame so it can be
+// correctly hidden the moment it turns out of view -- skipping that would
+// leave stale terrain rendered forever, the opposite of what this is for.
+// The only user-visible cost is a newly-visible section taking up to a few
+// extra frames (a few tens of ms at this platform's frame times) to start
+// drawing after crossing into view, never missing/stale terrain.
+//
+// 2 is a first, deliberately conservative guess -- most ordinary frames in
+// the real log above reveal 0-2 sections already (the diagnostic only logs
+// at 3+, "notable"), so this cap should not touch steady-state viewing at
+// all and only smooths the rarer bursts the diagnostic actually caught.
+// Unmeasured whether this is enough to close the real-hardware race (that
+// needs a new log with this change to confirm the flash correlates with --
+// and hopefully stops correlating with -- the reveals>=3 log line), so
+// treat this as the experiment the diagnostic comment called for, not a
+// confirmed fix yet.
+#define DSI_MAX_FRUSTUM_REVEALS_PER_FRAME 2
+
 #endif // PLATFORM_DSI

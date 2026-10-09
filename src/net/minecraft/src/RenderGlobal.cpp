@@ -3646,28 +3646,42 @@ void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 		if (!worldRenderers[i]->skipAllRenderPasses())
 		{
 #if PLATFORM_DSI
-			// DIAGNOSTIC ONLY, no behavior change -- real-hardware report: the
-			// screen flashes white specifically while turning the camera or
-			// moving, essentially never while standing still. Hypothesis:
-			// turning can flip several of this platform's 3x2x3=18-section
-			// grid from rejected to accepted in the same frame (nothing caps
-			// that submission spike for DSi -- see this function's own PS2/Wii
-			// comments above), widening the window for Display_dsi.cpp's
-			// single-swiWaitForVBlank-per-frame CPU/GPU race. Not yet acted
-			// on: capping submission risked hiding sections that are
-			// legitimately in frustum during ordinary steady-state viewing
-			// (DSi's grid is small enough that a wrong guess at the cap would
-			// show as constant missing terrain, worse than an intermittent
-			// flash). This just counts the false->true transition and, below,
-			// logs the frames where that count is notably large, so a real-
-			// hardware log can confirm or rule out the correlation with the
-			// reported flash before anything about rendering itself changes.
+			// Real-hardware report: the screen flashes white, most often
+			// while turning the camera or moving but also, less often,
+			// while standing still. Hypothesis (see this function's own
+			// PS2/Wii comments above, and DsiWorldTuning.h's
+			// DSI_MAX_FRUSTUM_REVEALS_PER_FRAME comment for the full
+			// account and the real-hardware log behind it): several of
+			// this platform's up to 18 sections can flip from rejected to
+			// accepted in the same frame -- either because the camera
+			// turned into them, or because streaming/world-gen just
+			// finished their first mesh build inside a frustum that never
+			// moved -- and nothing capped that per-frame submission
+			// spike, widening the window for Display_dsi.cpp's single
+			// swiWaitForVBlank-per-frame CPU/GPU race.
+			//
+			// Only NEW reveals (false->true) are throttled, never a
+			// section already isInFrustum==true: that one is still
+			// retested unconditionally below so it can be correctly
+			// hidden the instant it turns out of view -- skipping that
+			// would leave stale terrain rendered forever, the opposite of
+			// what this is for. A section whose reveal is deferred simply
+			// keeps its current (false) isInFrustum for this frame and is
+			// retried next frame, same as any other rejected section
+			// already is every frame regardless of this cap (see the
+			// comment above this block). The only visible cost is a newly-
+			// visible section taking up to a few extra frames to start
+			// drawing after crossing into view -- never missing/stale
+			// terrain, since an accepted section is never revoked here.
 			const bool wasInFrustum = worldRenderers[i]->isInFrustum;
-#endif
+			if (wasInFrustum || g_dsiFrustumRevealsThisFrame < DSI_MAX_FRUSTUM_REVEALS_PER_FRAME)
+			{
+				worldRenderers[i]->updateInFrustrum(icamera);
+				if (!wasInFrustum && worldRenderers[i]->isInFrustum)
+					++g_dsiFrustumRevealsThisFrame;
+			}
+#else
 			worldRenderers[i]->updateInFrustrum(icamera);
-#if PLATFORM_DSI
-			if (!wasInFrustum && worldRenderers[i]->isInFrustum)
-				++g_dsiFrustumRevealsThisFrame;
 #endif
 		}
 #else
@@ -3677,12 +3691,18 @@ void RenderGlobal::clipRenderersByFrustrum(ICamera *icamera, float f)
 	}
 
 #if PLATFORM_DSI
-	// 3 is a first guess at "notable" (a sixth of the full 18-section grid
-	// becoming visible in one frame) -- not tuned against real data yet,
-	// this diagnostic exists to gather that data. t= lets a log line here be
-	// matched against the dsi.perf renderphase/frames= lines around it to
-	// see whether a reveal spike actually lines up with a render-time spike,
-	// which is the rest of this bug's hypothesis.
+	// This used to be a pure diagnostic (3 is a sixth of the full 18-section
+	// grid becoming visible in one frame) gathering real-hardware evidence
+	// for the white-flash hypothesis -- see DsiWorldTuning.h's
+	// DSI_MAX_FRUSTUM_REVEALS_PER_FRAME comment for that evidence (23 hits
+	// over one real session) and for why the loop above now throttles new
+	// reveals to that cap. g_dsiFrustumRevealsThisFrame can no longer reach
+	// 3 with a cap of 2, so this should go quiet in the next real-hardware
+	// log BY CONSTRUCTION -- that silence is expected, not a sign nothing is
+	// happening any more. Left in, not removed: if this line ever fires
+	// again, something is wrong with the throttle above (a counter/cap
+	// mismatch, a code path that bypasses it), and that is worth knowing
+	// immediately rather than silently losing this signal.
 	if (g_dsiFrustumRevealsThisFrame >= 3)
 	{
 		MC_LOG_INFO("dsi", "frustum reveals=%d t=%lluus\n",

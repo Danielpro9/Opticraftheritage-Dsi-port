@@ -163,7 +163,15 @@ public:
 	void applyNaturalTextureTransform(int_t side, int_t rotation, bool flip);
 	void restoreNaturalTextureTransform();
 	int_t &getFaceRotation(int_t side);
-	void renderBlockOnInventory(Block *block, int_t i, float f);
+	// captureOut/captureAppend: ONLY honoured by the simple full-cube branch
+	// (block->getRenderType() == 0 or 16) -- see this function's own comment
+	// in RenderBlocks.cpp for why every other render type still always
+	// draws immediately regardless of what is passed here. Callers that
+	// want a cached icon must check getRenderType() themselves before
+	// passing a non-null captureOut; this function does not re-check it for
+	// branches where honouring it would be unsafe.
+	void renderBlockOnInventory(Block *block, int_t i, float f,
+		RenderCapturedMesh *captureOut = nullptr, bool captureAppend = false);
 	void renderBlockAsItem(Block *block, int_t i, float f) { renderBlockOnInventory(block, i, f); }
 
 	static bool renderItemIn3d(int_t i);

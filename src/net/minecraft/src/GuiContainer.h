@@ -2,6 +2,11 @@
 
 #include "GuiScreen.h"
 
+#ifdef DSI_PLATFORM
+#include <vector>
+#include "dsi/minecraft/DsiGuiItemIconCache.h"
+#endif
+
 class Container;
 class Slot;
 class RenderItem;
@@ -63,4 +68,15 @@ public:
 
 private:
 	bool ownsInventorySlots;
+
+#ifdef DSI_PLATFORM
+	// One per inventorySlots slot -- see DsiGuiItemIconCache.h's own comment
+	// for the real-hardware evidence this exists for (measured on the
+	// hotbar, which shares the exact same drawItemIntoGui()/
+	// renderItemIntoGUI() path this screen's own slot grid also uses).
+	// Resized lazily in drawSlotInventory() the first time this screen
+	// draws a given slot index, since inventorySlots->slots.size() is not
+	// necessarily known yet at construction for every subclass.
+	std::vector<DsiCachedGuiIcon> dsiSlotIconCache;
+#endif
 };

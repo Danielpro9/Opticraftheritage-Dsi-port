@@ -21,6 +21,7 @@
 #include "platform/PlatformConfig.h"
 #include "pc/lwjgl/Keyboard.h"
 #include <algorithm>
+#include <cstddef>
 
 #if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(DSI_PLATFORM)
 #include "ContainerSlotNavigator.h"
@@ -299,7 +300,18 @@ void GuiContainer::drawSlotInventory(Slot *slot)
 			return;
 		}
 	}
+#ifdef DSI_PLATFORM
+	if (stack != nullptr)
+	{
+		if ((std::size_t)slot->slotNumber >= dsiSlotIconCache.size())
+			dsiSlotIconCache.resize(inventorySlots->slots.size());
+		if (!dsiDrawCachedItemIcon(itemRenderer, fontRenderer, mc->renderEngine, stack, x, y,
+			dsiSlotIconCache[slot->slotNumber]))
+			itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, stack, x, y);
+	}
+#else
 	itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, stack, x, y);
+#endif
 	itemRenderer->renderItemOverlayIntoGUI(fontRenderer, mc->renderEngine, stack, x, y);
 }
 

@@ -46,6 +46,7 @@
 #endif
 #ifdef DSI_PLATFORM
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"
+#include "dsi/minecraft/DsiGuiItemIconCache.h"
 #endif
 #if PLATFORM_PC_LEGACY
 #include "GLAllocation.h"
@@ -243,6 +244,12 @@ struct DsiHudCache
 	DsiMeshRepackState hotbarRepack;
 	DsiMeshRepackState crosshairRepack;
 	DsiMeshRepackState statusRepack;
+
+	// One per hotbar slot -- see DsiGuiItemIconCache.h's own comment for the
+	// real-hardware "hudItems" evidence this exists for (6ms/frame average,
+	// up to 18% of a 30fps frame, just for these 9 icons redrawn from
+	// scratch every frame).
+	DsiCachedGuiIcon hotbarItemIcon[9];
 };
 #endif
 
@@ -1350,7 +1357,11 @@ void GuiIngame::renderInventorySlot(int_t slot, int_t x, int_t y, float_t partia
 		renderScale(1.0f / scale, (scale + 1.0f) / 2.0f, 1.0f);
 		renderTranslate(-(float_t)(x + 8), -(float_t)(y + 12), 0.0f);
 	}
-	itemRenderer->renderItemIntoGUI(mc->fontRenderer, mc->renderEngine, stack, x, y);
+#ifdef DSI_PLATFORM
+	if (!dsiDrawCachedItemIcon(itemRenderer, mc->fontRenderer, mc->renderEngine, stack, x, y,
+		dsiHudCache->hotbarItemIcon[slot]))
+#endif
+		itemRenderer->renderItemIntoGUI(mc->fontRenderer, mc->renderEngine, stack, x, y);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
 	if (animF > 0.0f) renderPopMatrix();

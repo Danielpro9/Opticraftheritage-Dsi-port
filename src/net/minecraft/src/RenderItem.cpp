@@ -244,12 +244,18 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
     renderPopMatrix();
 }
 
-void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* renderengine, int i, int j, int k, int l, int i1) {
+void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* renderengine, int i, int j, int k, int l, int i1,
+    RenderCapturedMesh* captureOut, bool captureAppend) {
     if (!ItemStack::isValidItemID(i)) {
         return;
     }
     Item* item = Item::itemsList[i];
     if (Block::endPortal != nullptr && i == Block::endPortal->blockID) {
+        // Never cached: rare, and its own icon path (both the DSi-flat and
+        // the real multi-texture version) binds large decorative textures
+        // that already strain this console's texture-image VRAM budget on
+        // their own -- see that function's own comment. captureOut is
+        // ignored here regardless of what a caller passes.
 #ifdef DSI_PLATFORM
         renderEndPortalGuiIconFlat(l, i1, zLevel);
 #else
@@ -291,7 +297,16 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         }
         renderRotate(-90.0f, 0.0f, 1.0f, 0.0f);
         renderBlocks->field_31088_b = field_27004_a;
-        renderBlocks->renderBlockOnInventory(block, j, 1.0f);
+        // captureOut is only honoured by renderBlockOnInventory() when the
+        // block's own render type is the simple full cube (0 or 16) -- see
+        // that function's own comment. Every other block shape here (slabs,
+        // crops, stairs, ...) still always draws immediately regardless of
+        // what this caller was given, so this narrows capture down to
+        // exactly the branch that actually supports it rather than passing
+        // captureOut unconditionally and trusting the callee to sort it out.
+        const int_t blockRenderType = block->getRenderType();
+        renderBlocks->renderBlockOnInventory(block, j, 1.0f,
+            (blockRenderType == 0 || blockRenderType == 16) ? captureOut : nullptr, captureAppend);
         renderBlocks->field_31088_b = true;
         renderPopMatrix();
     } else if (item->func_46058_c()) {
@@ -306,7 +321,12 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
             if (field_27004_a) {
                 renderColor4f(red, green, blue, 1.0f);
             }
-            renderTexturedQuad(l, i1, (icon & 15) * 16, (icon >> 4) * 16, 16, 16);
+            // Second pass always appends onto whatever the first pass just
+            // put in captureOut (both passes are this one slot's own icon,
+            // never meant to land in separate meshes) -- only the FIRST
+            // pass's append behaviour is the caller's own choice.
+            renderTexturedQuad(l, i1, (icon & 15) * 16, (icon >> 4) * 16, 16, 16,
+                captureOut, renderPass == 0 ? captureAppend : true);
         }
         renderEnable(RenderCapability::Lighting);
     } else if (k >= 0) {
@@ -323,18 +343,34 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         if (field_27004_a) {
             renderColor4f(f, f1, f3, 1.0f);
         }
-        renderTexturedQuad(l, i1, (k & 15) * 16, (k >> 4) * 16, 16, 16);
+        renderTexturedQuad(l, i1, (k & 15) * 16, (k >> 4) * 16, 16, 16, captureOut, captureAppend);
         renderEnable(RenderCapability::Lighting);
     }
     renderEnable(RenderCapability::CullFace);
 }
 
-void RenderItem::renderItemIntoGUI(FontRenderer* fontrenderer, RenderEngine* renderengine, ItemStack* itemstack, int i, int j) {
+void RenderItem::renderItemIntoGUI(FontRenderer* fontrenderer, RenderEngine* renderengine, ItemStack* itemstack, int i, int j,
+    RenderCapturedMesh* captureOut, bool captureAppend) {
     if (itemstack == nullptr || !itemstack->isValid()) {
         return;
     }
 
-    drawItemIntoGui(fontrenderer, renderengine, itemstack->itemID, itemstack->getItemDamage(), itemstack->getIconIndex(), i, j);
+    drawItemIntoGui(fontrenderer, renderengine, itemstack->itemID, itemstack->getItemDamage(), itemstack->getIconIndex(), i, j,
+        captureOut, captureAppend);
+    // Always drawn immediately, never through captureOut: see
+    // renderItemGlintOverlayIfNeeded()'s own comment for why.
+    renderItemGlintOverlayIfNeeded(renderengine, itemstack, i, j);
+}
+
+// Split out of renderItemIntoGUI() so a caller that replays a CACHED icon
+// (skipping renderItemIntoGUI()/drawItemIntoGui() entirely that frame) can
+// still call just this part every frame. Never itself cacheable: the glint
+// scrolls with real time (System::currentTimeMillis() inside
+// renderGuiItemGlint()), so a captured copy would show whatever phase it
+// happened to be at the moment the icon was last rebuilt, frozen, instead
+// of animating -- this always draws immediately, regardless of whether the
+// icon underneath it just came from a cache or was freshly rebuilt.
+void RenderItem::renderItemGlintOverlayIfNeeded(RenderEngine* renderengine, ItemStack* itemstack, int i, int j) {
 #ifndef PS2_PLATFORM
     // Enchantment glint: the DstColor/SrcColor+One blend passes do not map to
     // the GS blend equation and render as garbage on PS2.
@@ -459,7 +495,8 @@ void RenderItem::renderQuad(Tessellator* tessellator, int i, int j, int k, int l
     tessellator->draw();
 }
 
-void RenderItem::renderTexturedQuad(int i, int j, int k, int l, int i1, int j1) {
+void RenderItem::renderTexturedQuad(int i, int j, int k, int l, int i1, int j1,
+    RenderCapturedMesh* captureOut, bool captureAppend) {
     float f = zLevel;
     float f1 = 0.00390625f;
     float f2 = 0.00390625f;
@@ -469,7 +506,10 @@ void RenderItem::renderTexturedQuad(int i, int j, int k, int l, int i1, int j1) 
     tessellator->addVertexWithUV(i + i1, j + j1, f, (float)(k + i1) * f1, (float)(l + j1) * f2);
     tessellator->addVertexWithUV(i + i1, j + 0, f, (float)(k + i1) * f1, (float)(l + 0) * f2);
     tessellator->addVertexWithUV(i + 0, j + 0, f, (float)(k + 0) * f1, (float)(l + 0) * f2);
-    tessellator->draw();
+    if (captureOut)
+        tessellator->capture(*captureOut, captureAppend);
+    else
+        tessellator->draw();
 }
 
 void RenderItem::doRender(Entity* entity, double d, double d1, double d2, float f, float f1) {

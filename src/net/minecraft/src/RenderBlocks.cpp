@@ -4568,7 +4568,8 @@ void RenderBlocks::renderSouthFace(Block *block, tess_coord_t d, tess_coord_t d1
 	restoreNaturalTextureTransform();
 }
 
-void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
+void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f,
+	RenderCapturedMesh *captureOut, bool captureAppend)
 {
 	Tessellator *tessellator = &Tessellator::instance;
 	if (field_31088_b)
@@ -4607,7 +4608,21 @@ void RenderBlocks::renderBlockOnInventory(Block *block, int_t i, float f)
 		renderNorthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSideAndMetadata(4, i));
 		tessellator->setNormal(1.0f, 0.0f, 0.0f);
 		renderSouthFace(block, 0.0, 0.0, 0.0, block->getBlockTextureFromSideAndMetadata(5, i));
-		tessellator->draw();
+		// Only this branch (the simple full cube, by far the most common
+		// held/hotbarred item shape) supports being captured instead of
+		// drawn immediately -- see this function's own declaration comment
+		// in RenderBlocks.h for why every other render type below ignores
+		// captureOut. Real-hardware evidence this exists for: GuiIngame.cpp's
+		// own "hudItems" render-phase measured 6ms/frame average (up to
+		// 18% of a 30fps frame) just for the 9 always-visible hotbar icons,
+		// redrawn from scratch -- six faces' worth of tessellator/DMA work
+		// each -- every single frame even when nothing in the hotbar
+		// changed. Callers cache the result in a RenderStaticMesh and only
+		// call this again when the slot's item identity actually changes.
+		if (captureOut)
+			tessellator->capture(*captureOut, captureAppend);
+		else
+			tessellator->draw();
 		renderTranslate(0.5f, 0.5f, 0.5f);
 	}
 	else if (k == 1)

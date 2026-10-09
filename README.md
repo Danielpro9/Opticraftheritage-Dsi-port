@@ -1,10 +1,24 @@
-# OptiCraft Heritage (WIP DSi PORT!!!)
+# OptiCraft Heritage (WIP DSi PORT)
 
-En alguna de las branchs de esta repo (ni idea de cual no me acuerdo) se esta vibecodeando un port de OptiCraft Heritage a la Nintendo DSi (Super experimental)
+## English:
 
-btw está todo el Port ya está implementado y funcional (debería) teniendo algunos bugs visuales, lo único que falta es mejorar bastante el rendimiento (4-12 FPS) 
+In this branch is being vibecoded a port of OptiCraft Heritage to the Nintendo DSi. Its VERY experimental, and it WILL run laggy and slow (around 5-17fps iirc), so dont expect anything crazy. I still havent writed a building guide, so you will have to download the builds from GitHub Actions (which you need a github account to do so).
 
-Este port usa blocksds pero ni idea de como compilarlo como tal
+Multiplayer is being worked on but it still wont work properly. Getting the game to run "smootly" and stable is currently the main goal
+
+You can try it on real hardware by creating a folder called "opticraft" on the root of your SD card, and excracting the "data" folder from the Wii port (which you can find on Opti's website) into it, then copying the "OptiCraftDsi.nds" file into any folder on the SD card. You can launch it using Unlaunch/Astronaut, or nds-bootstrap via a front-end like TWiLight Menu++ or AKMenu-Next. Currently the game doesnt boot if you install it to the system menu if using HiyaCFW
+
+Also it doesnt work on melonDS afaik
+
+## Español:
+
+En esta rama se esta vibecodeando un port del OptiCraft Heritage a la Nintendo DSi. Es MUY experimental y VA a correr lento y lageado, asi que no se esperen nada loco. Todavia no he escrito una guia para compilarlo, asi que tienen que descargar las builds de GitHub Actions (lo cual requiere tener una cuenta de github para descargarlos).
+
+Se esta trabajando en el multijugador pero de momento no funciona bien. Actualmente, la meta principal es hacer que el juego corra "fluido" y estable.
+
+Pueden probarlo en hardware real, creando una carpeta llamada "opticraft" en la raiz de la tarjeta SD, y extrayendo la carpeta "data" del port de la Wii (el cual se encuentra en la pagina web de Opti) adentro de ella, despues se copia el "OptiCraftDsi.nds" en cualquier directorio de la SD. Se puede abrir el juego a traves de Unlaunch/Astronaut, o de nds-bootstrap usando un front-end como TWiLight Menu++ o AKMenu-Next. De momento no se puede instalar el juego al menu del sistema si se usa HiyaCFW (osea, si se instalara, pero no cargara)
+
+Ah y de momento no funciona en melonDS que yo me acuerde
 
 # README ORIGINAL:
 

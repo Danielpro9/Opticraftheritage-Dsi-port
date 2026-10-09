@@ -2,6 +2,7 @@
 
 #include "platform/RenderAPI.h"
 #include "platform/Log.h"
+#include "platform/PlatformCompat.h"
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"
 #include "dsi/DsiEarlyInit.h"
 
@@ -48,6 +49,52 @@
 
 namespace
 {
+
+// -----------------------------------------------------------------------------
+// DMA wait diagnostic -- added to answer a real question before committing to
+// a much riskier change, not a permanent feature.
+// -----------------------------------------------------------------------------
+// drawInterleavedMeshFast() and drawCapturedMeshFast() (further down this
+// file) each kick one GX-FIFO DMA transfer and then busy-wait for it to
+// finish before returning -- the CPU does nothing useful for however long
+// that transfer takes, every single call. The naive fix (just stop waiting)
+// was investigated and rejected: BlocksDS's own libnds glCallList() -- the
+// function this file's own comments say drawCapturedMeshFast() mirrors --
+// keeps the IDENTICAL busy-wait after kicking its own DMA, despite calling
+// the transfer "asynchronous" in its comment, and separately documents "a
+// hardware bug... when there are multiple DMA channels active" as the reason
+// for the OTHER wait (the one before the kick). That is strong evidence the
+// wait is load-bearing for a real hardware reason, not just caution worth
+// second-guessing from a sandbox with no real DSi to test against. A safe
+// version would have to overlap the wait with other CPU work instead of
+// removing it outright -- a much larger restructuring, not worth attempting
+// blind. This measures the actual cost first, with zero behaviour change:
+// both draw functions already bracket their own wait loops; this just also
+// records how long each one took, and reports a 20-frame-averaged line
+// (same shape as Profiler_DSI.cpp's own renderphase line) so the next real-
+// hardware debug.log gives a real number to decide with instead of a guess.
+long long g_dsiDmaWaitSumUs = 0;
+long long g_dsiDmaWaitMaxUs = 0;
+int g_dsiDmaWaitFrames = 0;
+
+void dsiRecordDmaWait(long long elapsedUs)
+{
+	g_dsiDmaWaitSumUs += elapsedUs;
+	if (elapsedUs > g_dsiDmaWaitMaxUs)
+		g_dsiDmaWaitMaxUs = elapsedUs;
+}
+
+// Called once per frame from renderSubmitFrame() below.
+void dsiReportDmaWaitIfDue()
+{
+	if (++g_dsiDmaWaitFrames < 20)
+		return;
+	MC_LOG_INFO("dsi.perf", "dmawait avgUsPerFrame=%ld maxSingleCallUs=%ld n=%d\n",
+		(long)(g_dsiDmaWaitSumUs / g_dsiDmaWaitFrames), (long)g_dsiDmaWaitMaxUs, g_dsiDmaWaitFrames);
+	g_dsiDmaWaitSumUs = 0;
+	g_dsiDmaWaitMaxUs = 0;
+	g_dsiDmaWaitFrames = 0;
+}
 
 // -----------------------------------------------------------------------------
 // Poly format shadow state -- VERIFIED mechanism, APPROXIMATED mapping
@@ -1457,11 +1504,13 @@ bool drawInterleavedMeshFast(const RenderInterleavedMesh& mesh)
 	glPushMatrix();
 	glScalef(kVertexScale, kVertexScale, kVertexScale);
 	glBegin(glPrimitive);
+	const std::uint64_t dmaWaitStartUs = PlatformCompat::getMonotonicMicros();
 	while (dmaBusy(0) || dmaBusy(1) || dmaBusy(2) || dmaBusy(3))
 		;
 	dmaSetParams(0, scratch.data(), (void*)&GFX_FIFO, DMA_FIFO | static_cast<std::uint32_t>(totalWords));
 	while (dmaBusy(0))
 		;
+	dsiRecordDmaWait((long long)(PlatformCompat::getMonotonicMicros() - dmaWaitStartUs));
 	glEnd();
 	glPopMatrix(1);
 
@@ -1919,12 +1968,14 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 		// function's own comment for the fuller explanation.
 		DC_FlushRange(mesh.compiledCommands.data(), mesh.compiledCommands.size() * sizeof(std::uint32_t));
 		glBegin(glPrimitive);
+		const std::uint64_t dmaWaitStartUs = PlatformCompat::getMonotonicMicros();
 		while (dmaBusy(0) || dmaBusy(1) || dmaBusy(2) || dmaBusy(3))
 			;
 		dmaSetParams(0, mesh.compiledCommands.data(), (void*)&GFX_FIFO,
 		             DMA_FIFO | static_cast<std::uint32_t>(mesh.compiledCommands.size()));
 		while (dmaBusy(0))
 			;
+		dsiRecordDmaWait((long long)(PlatformCompat::getMonotonicMicros() - dmaWaitStartUs));
 		glEnd();
 		glPopMatrix(1);
 		return true;
@@ -2729,6 +2780,10 @@ void renderSubmitFrame()
 	// See RenderAPI.h's own doc comment on this function: DS has no
 	// asynchronous present to kick off early, so this is a no-op and the
 	// caller's own swap (glFlush()) remains the real synchronization point.
+	// Called exactly once per frame, which is why the DMA-wait diagnostic's
+	// own 20-frame-averaged report (see this file's top-of-file comment on
+	// g_dsiDmaWaitSumUs) is flushed from here.
+	dsiReportDmaWaitIfDue();
 }
 
 // ASSUMED (real-hardware report: in-world sky renders solid black instead of

@@ -926,26 +926,34 @@ void dsiAdvanceMeshRepack(DsiMeshRepackState &state, RenderStaticMesh &live, boo
 
 // -----------------------------------------------------------------------------
 // Static / captured mesh replay -- VERIFIED per-call mapping (glBegin/
-// glVertex3f/glTexCoord2f/glColor3b), still true for drawInterleavedMesh()
-// immediately below this banner: that path is for ONE-SHOT/dynamic meshes
-// (GUI, particles, anything rebuilt most frames anyway), which re-issues one
-// GL call per vertex every time by necessity -- there is nothing to
-// precompile for geometry that is different every frame.
+// glVertex3f/glTexCoord2f/glColor3b), still true for drawInterleavedMeshSlow()
+// below: the per-vertex fallback for ONE-SHOT/dynamic meshes (GUI, particles,
+// anything rebuilt most frames anyway), kept as the correctness reference and
+// as the fallback drawInterleavedMeshFast() below defers to when it cannot
+// safely pack a call (see that function's own eligibility checks).
 //
-// The captured/static path (dsiRepackCapturedMeshStep()/drawCapturedMeshFast()
-// further below, for chunk section meshes that replay unchanged across many
-// frames between rebuilds) is NOT limited this way any more: it compiles a
-// native GX FIFO command list once per section build and replays the whole
-// section with a single async DMA'd call instead of N immediate-mode ones --
-// see dsiRepackCapturedMeshStep()'s own banner (the "next step up" this
-// comment used to describe as still missing) for the full design and the
-// real-hardware/ClassiCube validation behind it.
+// Both the captured/static path (dsiRepackCapturedMeshStep()/
+// drawCapturedMeshFast() further below, for chunk section meshes that replay
+// UNCHANGED across many frames between rebuilds) and drawInterleavedMeshFast()
+// immediately below this banner (for geometry that is DIFFERENT every single
+// call) now use the same underlying trick: pack every vertex's commands into
+// a buffer once and replay the whole call with a single DMA into the
+// geometry engine's FIFO port, instead of one glColor3b()/glTexCoord2f()/
+// glNormal3f()/glVertex3f() libnds call per vertex. The saving for the
+// one-shot path does NOT come from reusing the pack across frames (there is
+// nothing to reuse -- the content really is different every call) -- it
+// comes from replacing N separate function calls and N separate FIFO
+// register writes (each a potential stall if the FIFO is momentarily full)
+// with one bulk transfer the DMA controller paces on its own. See
+// drawInterleavedMeshFast()'s own comment for the eligibility checks that
+// keep this safe, and dsiRepackCapturedMeshStep()'s own banner for the
+// original design and the real-hardware/ClassiCube validation this reuses.
 // -----------------------------------------------------------------------------
 namespace
 {
 
 // Every vertex position this engine submits goes through the same v16
-// pre-scale dance -- see the full story where drawInterleavedMesh() uses
+// pre-scale dance -- see the full story where drawInterleavedMeshSlow() uses
 // these below. Hoisted to file scope so renderCaptureInterleaved()'s
 // capture-time conversion (below) and this function's own draw-time
 // conversion (for one-shot/dynamic meshes, which have no earlier "capture"
@@ -956,10 +964,14 @@ constexpr float kInvVertexScale = 1.0f / kVertexScale;
 // A Minecraft interleaved vertex is always float3 position, float2 texcoord,
 // RGBA8 colour, signed-byte3 normal, in whatever subset the mesh's hasTexture/
 // hasColor/hasNormals/hasBrightness flags declare -- see RenderInterleavedMesh
-// in RenderAPI.h. renderDrawInterleaved()'s job is to walk that buffer and
-// issue one glVertex3f() (plus whatever glTexCoord2f()/glColor3b()/glNormal3f()
-// precede it) per vertex.
-bool drawInterleavedMesh(const RenderInterleavedMesh& mesh)
+// in RenderAPI.h. This is the correctness reference and fallback: it walks
+// that buffer and issues one glVertex3f() (plus whatever glTexCoord2f()/
+// glColor3b()/glNormal3f() precede it) per vertex -- see
+// drawInterleavedMeshFast() below for the packed-DMA path this now falls
+// back from, and drawInterleavedMesh() (the dispatcher every other call site
+// actually calls, at the end of this namespace block) for how the two are
+// wired together.
+bool drawInterleavedMeshSlow(const RenderInterleavedMesh& mesh)
 {
 	if (!mesh.data || mesh.count <= 0 || mesh.stride <= 0)
 		return false;
@@ -1228,6 +1240,242 @@ bool drawInterleavedMesh(const RenderInterleavedMesh& mesh)
 	glPopMatrix(1);
 
 	return true;
+}
+
+// Packed-DMA path for one-shot/dynamic meshes: same underlying trick as
+// dsiRepackCapturedMeshStep()/drawCapturedMeshFast() (pack every vertex's
+// commands into a buffer, replay with one DMA instead of N per-vertex libnds
+// calls), generalised to a mesh whose hasTexture/hasNormals/hasColor/
+// hasBrightness combination is only known at this call, not baked in ahead
+// of time by an earlier capture step. The combination is still fixed FOR THE
+// WHOLE CALL (RenderInterleavedMesh's flags are per-mesh, not per-vertex), so
+// the same four-command-slot FIFO_COMMAND_PACK() header this file already
+// uses for the captured path still applies -- just with COLOR and VERTEX16
+// always present (drawInterleavedMeshSlow()'s own per-vertex logic always
+// emits SOME colour, even a fallback white, and always emits a vertex) and
+// TEX_COORD/NORMAL only when the mesh actually carries them. VERTEX16 is
+// always the LAST real command in every variant: on this hardware, writing
+// GFX_VERTEX16 is what finalises a vertex and submits it to the rasteriser,
+// so every other attribute for that vertex must already be latched by the
+// time it's written -- the same ordering dsiRepackCapturedMeshStep()'s own
+// header choices already rely on.
+//
+// Returns false (does nothing -- caller falls back to drawInterleavedMeshSlow())
+// when it cannot safely build a packed call: a primitive this backend has no
+// native grouping for, a position buffer in the PC-only short-vector format
+// (never produced on this backend -- see drawInterleavedMeshSlow()'s own
+// comment), or a texture the mesh asks for that is not yet resident (no
+// texture dimensions to convert a float UV into t16 against -- the exact
+// same residency gate dsiRepackCapturedMeshStep()'s stage 0 already applies
+// before committing to texCoordIsT16).
+bool drawInterleavedMeshFast(const RenderInterleavedMesh& mesh)
+{
+	if (!mesh.data || mesh.count <= 0 || mesh.stride <= 0)
+		return false;
+
+	if (mesh.positionShort)
+		return false;
+
+	// Safety ceiling on the reused scratch buffer below: it never shrinks
+	// once grown, so without a cap, one unusually large one-shot batch (a
+	// big inventory/creative grid, a long chat/credits screen, ...) would
+	// permanently reserve that much memory for the rest of the session --
+	// a real concern on this platform's ~12-13.5MB total heap budget (see
+	// DsiWorldTuning.h's own banner). 4096 vertices x 6 words/vertex x 4
+	// bytes is a 96KB worst case, comfortably small against that budget;
+	// anything bigger falls back to the slow path instead of growing
+	// scratch further -- correct either way, just not the faster one for
+	// whatever unusually large draw call hit this.
+	constexpr int kMaxFastVertices = 4096;
+	if (mesh.count > kMaxFastVertices)
+		return false;
+
+	GL_GLBEGIN_ENUM glPrimitive = GL_TRIANGLES;
+	switch (mesh.primitive)
+	{
+		case RenderPrimitive::Triangles:
+		case RenderPrimitive::TriangleStrip:
+		case RenderPrimitive::TriangleFan:
+			glPrimitive = GL_TRIANGLES;
+			break;
+		case RenderPrimitive::Quads:
+			glPrimitive = GL_QUADS;
+			break;
+		default:
+			return false;
+	}
+
+	const std::uint8_t* base = static_cast<const std::uint8_t*>(mesh.data) + (std::size_t)mesh.first * mesh.stride;
+
+	// Texture residency is a per-call question (the bound texture cannot
+	// change mid-call), resolved once here -- same approach as
+	// dsiRepackCapturedMeshStep()'s stage 0. A requested-but-not-yet-resident
+	// texture falls back to the slow path rather than packing a UV against a
+	// width/height of zero.
+	const DsiTexture* boundTex = mesh.hasTexture ? textureSlot(g_boundTexture) : nullptr;
+	const bool texResident = boundTex && boundTex->allocated && boundTex->width > 0 && boundTex->height > 0;
+	if (mesh.hasTexture && !texResident)
+		return false;
+	const float texW = texResident ? static_cast<float>(boundTex->width) : 0.0f;
+	const float texH = texResident ? static_cast<float>(boundTex->height) : 0.0f;
+
+	// Same translucency approximation as drawInterleavedMeshSlow() -- see its
+	// own comment on why first+last vertex alpha is sampled, not scanned.
+	if (mesh.hasColor)
+	{
+		std::uint8_t alphaFirst;
+		std::memcpy(&alphaFirst, base + mesh.colorOffset + 3, sizeof(alphaFirst));
+		std::uint8_t alphaLast = alphaFirst;
+		if (mesh.count > 1)
+			std::memcpy(&alphaLast, base + (std::size_t)(mesh.count - 1) * mesh.stride + mesh.colorOffset + 3, sizeof(alphaLast));
+		const unsigned int alphaSum = static_cast<unsigned int>(alphaFirst) + static_cast<unsigned int>(alphaLast);
+		const float averageAlpha = static_cast<float>(alphaSum) / (255.0f * 2.0f);
+		g_poly.alpha31 = static_cast<std::uint8_t>(averageAlpha * 31.0f + 0.5f);
+		markPolyDirty();
+	}
+	applyPolyFormatIfDirty();
+
+	const bool wantTexCoord = mesh.hasTexture; // already proven resident above
+	const bool wantNormal = mesh.hasNormals;
+	const std::size_t wordsPerVertex = 2 /* header + colour */
+		+ (wantTexCoord ? 1u : 0u) + (wantNormal ? 1u : 0u) + 2u /* vertex16 */;
+
+	std::uint32_t header;
+	if (wantTexCoord && wantNormal)
+		header = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_NORMAL, FIFO_VERTEX16);
+	else if (wantTexCoord)
+		header = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_TEX_COORD, FIFO_VERTEX16, FIFO_NOP);
+	else if (wantNormal)
+		header = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_NORMAL, FIFO_VERTEX16, FIFO_NOP);
+	else
+		header = FIFO_COMMAND_PACK(FIFO_COLOR, FIFO_VERTEX16, FIFO_NOP, FIFO_NOP);
+
+	// Reused scratch buffer across calls instead of a fresh heap allocation
+	// every call -- this path runs every frame for the GUI, particles, the
+	// held item, the block-breaking overlay and the selection box, so a
+	// malloc/free per draw would undercut the saving this exists to get.
+	// Never shrinks, same growth shape as RenderCapturedMesh::compiledCommands;
+	// grows at most a handful of times total (to the largest batch this
+	// session ever draws) and then stays put.
+	static std::vector<std::uint32_t> scratch;
+	const std::size_t totalWords = (std::size_t)mesh.count * wordsPerVertex;
+	if (scratch.size() < totalWords)
+		scratch.resize(totalWords);
+	std::uint32_t* out = scratch.data();
+
+	for (int i = 0; i < mesh.count; ++i)
+	{
+		const std::uint8_t* vertex = base + (std::size_t)i * mesh.stride;
+
+		// Identical colour/lightmap combine to drawInterleavedMeshSlow()'s own
+		// per-vertex loop -- kept in sync by hand, same as that function's own
+		// relationship to drawCapturedMeshFast()'s per-vertex fallback.
+		std::uint8_t r = 255, g = 255, b = 255;
+		bool haveLightmapColor = false;
+		std::uint8_t lightmapR = 255, lightmapG = 255, lightmapB = 255;
+		if (mesh.hasBrightness)
+		{
+			std::int32_t packedBrightness = 0;
+			std::memcpy(&packedBrightness, vertex + mesh.brightnessOffset, sizeof(packedBrightness));
+			const float lightU = static_cast<float>(packedBrightness & 0xffff) / 256.0f;
+			const float lightV = static_cast<float>((packedBrightness >> 16) & 0xffff) / 256.0f;
+			haveLightmapColor = lightmapColorAt(lightU, lightV, lightmapR, lightmapG, lightmapB);
+		}
+		if (mesh.hasColor)
+		{
+			std::uint8_t rgba[4];
+			std::memcpy(rgba, vertex + mesh.colorOffset, sizeof(rgba));
+			if (haveLightmapColor)
+			{
+				r = static_cast<std::uint8_t>((static_cast<int>(lightmapR) * rgba[0]) / 255);
+				g = static_cast<std::uint8_t>((static_cast<int>(lightmapG) * rgba[1]) / 255);
+				b = static_cast<std::uint8_t>((static_cast<int>(lightmapB) * rgba[2]) / 255);
+			}
+			else
+			{
+				r = rgba[0]; g = rgba[1]; b = rgba[2];
+			}
+		}
+		else if (haveLightmapColor)
+		{
+			r = lightmapR; g = lightmapG; b = lightmapB;
+		}
+		// else: r=g=b=255 (white) -- same fallback as drawInterleavedMeshSlow()'s
+		// final else branch, so a mesh with neither colour nor brightness still
+		// gets an explicit white command instead of inheriting whatever
+		// GFX_COLOR the previous draw call happened to leave latched.
+
+		out[0] = header;
+		out[1] = static_cast<std::uint32_t>(RGB15(r >> 3, g >> 3, b >> 3));
+		int outIdx = 2;
+		if (wantTexCoord)
+		{
+			float uv[2];
+			std::memcpy(uv, vertex + mesh.texCoordOffset, sizeof(uv));
+			out[outIdx++] = static_cast<std::uint32_t>(TEXTURE_PACK(
+				static_cast<t16>(floattot16(uv[0] * texW)),
+				static_cast<t16>(floattot16(uv[1] * texH))));
+		}
+		if (wantNormal)
+		{
+			constexpr float kInvNormalScale = 1.0f / 127.0f;
+			std::int8_t normal[3];
+			std::memcpy(normal, vertex + mesh.normalOffset, sizeof(normal));
+			out[outIdx++] = static_cast<std::uint32_t>(NORMAL_PACK(
+				floattov10(normal[0] * kInvNormalScale),
+				floattov10(normal[1] * kInvNormalScale),
+				floattov10(normal[2] * kInvNormalScale)));
+		}
+
+		float position[3];
+		std::memcpy(position, vertex, sizeof(position));
+		const std::int32_t posV16[3] = {
+			floattov16(position[0] * kInvVertexScale),
+			floattov16(position[1] * kInvVertexScale),
+			floattov16(position[2] * kInvVertexScale),
+		};
+		out[outIdx++] = (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[1])) << 16)
+		       | (static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[0])) & 0xFFFFu);
+		out[outIdx++] = static_cast<std::uint32_t>(static_cast<std::uint16_t>(posV16[2]));
+
+		out += wordsPerVertex;
+	}
+
+	// CACHE COHERENCY: the loop above just wrote `scratch` through the ARM9's
+	// data cache -- the DMA controller that reads it next sits on the system
+	// bus and does NOT go through that cache, so without an explicit
+	// flush-to-RAM here it could read stale/partial data sitting in dirty
+	// cache lines instead of what was just written. This matters more here
+	// than for the captured-mesh path below (whose compiledCommands buffer
+	// was typically written whole frames earlier, giving the cache more
+	// chances to have already evicted/written it back on its own by
+	// coincidence): this buffer is read back by DMA within the same
+	// function call it was written in, with nothing in between to force
+	// that writeback.
+	DC_FlushRange(scratch.data(), totalWords * sizeof(std::uint32_t));
+
+	glPushMatrix();
+	glScalef(kVertexScale, kVertexScale, kVertexScale);
+	glBegin(glPrimitive);
+	while (dmaBusy(0) || dmaBusy(1) || dmaBusy(2) || dmaBusy(3))
+		;
+	dmaSetParams(0, scratch.data(), (void*)&GFX_FIFO, DMA_FIFO | static_cast<std::uint32_t>(totalWords));
+	while (dmaBusy(0))
+		;
+	glEnd();
+	glPopMatrix(1);
+
+	return true;
+}
+
+// Dispatcher every call site in the engine actually reaches (via
+// renderDrawInterleaved() below): try the packed-DMA path first, fall back
+// to the per-vertex path for anything drawInterleavedMeshFast() declined.
+bool drawInterleavedMesh(const RenderInterleavedMesh& mesh)
+{
+	if (drawInterleavedMeshFast(mesh))
+		return true;
+	return drawInterleavedMeshSlow(mesh);
 }
 
 } // namespace
@@ -1659,6 +1907,17 @@ bool drawCapturedMeshFast(const RenderCapturedMesh& mesh)
 		// technique, minus a redundant word, and
 		// validated against ClassiCube's real, shipped implementation of
 		// exactly this DMA call rather than assumed.
+		//
+		// CACHE COHERENCY FIX: this DMA reads compiledCommands straight off
+		// the system bus, bypassing the ARM9's data cache -- any of its words
+		// still sitting in a dirty cache line (last written by
+		// dsiRepackCapturedMeshStep() or dsiAdvanceMeshRepack()'s swap,
+		// possibly just one call earlier on the very frame a repack finishes)
+		// would read stale/partial data instead of what was actually written.
+		// Previously missing here; added alongside drawInterleavedMeshFast()
+		// above, which has the identical gap for the same reason -- see that
+		// function's own comment for the fuller explanation.
+		DC_FlushRange(mesh.compiledCommands.data(), mesh.compiledCommands.size() * sizeof(std::uint32_t));
 		glBegin(glPrimitive);
 		while (dmaBusy(0) || dmaBusy(1) || dmaBusy(2) || dmaBusy(3))
 			;

@@ -16,8 +16,17 @@
 // choice). Everything else here (sound/touch/power/RTC init) is unchanged
 // from the stock template; this file deliberately adds the one thing missing
 // rather than writing a new ARM7 core from scratch.
+//
+// Also installs the chunk-save compression offload (dsiArm7ChunkCompressInit()/
+// dsiArm7ChunkCompressPoll(), arm7_chunk_compress.c): this CPU is otherwise
+// idle outside an active multiplayer session (no audio implemented yet),
+// so it picks up the zlib deflate work RegionFile::write() would otherwise
+// spend 100-700ms+ of ARM9 budget on per edited chunk -- see
+// DsiArm7ChunkCompress.h for the full design.
 #include <dswifi7.h>
 #include <nds.h>
+
+#include "arm7_chunk_compress.h"
 
 volatile bool exit_loop = false;
 
@@ -46,6 +55,7 @@ int main(int argc, char *argv[])
     installWifiFIFO();
     installSoundFIFO();
     installSystemFIFO();
+    dsiArm7ChunkCompressInit();
 
     setPowerButtonCB(power_button_callback);
 
@@ -59,6 +69,17 @@ int main(int argc, char *argv[])
 
         if ((keys_pressed & key_mask) == key_mask)
             exit_loop = true;
+
+        // Runs outside any interrupt context, deliberately -- see
+        // arm7_chunk_compress.c's own comment on why the actual deflate
+        // work is deferred here instead of running inline in the FIFO
+        // message handler that latches it. A compress job can take up to
+        // a couple of seconds (see DsiArm7ChunkCompress.h's own cost
+        // comment); vblank-driven input/WiFi servicing is unaffected
+        // either way (that runs via IRQ_VBLANK, not this loop), the only
+        // cost is the power-button reset combo above being checked up to
+        // that much later than usual on the rare frame a save lands on.
+        dsiArm7ChunkCompressPoll();
 
         swiWaitForVBlank();
     }

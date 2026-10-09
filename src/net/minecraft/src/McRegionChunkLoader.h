@@ -140,6 +140,13 @@ private:
         bool active = false;
         bool finished = false;
         bool streamInitialized = false;
+        // True while this task's compression is running on the ARM7
+        // instead of the ARM9 deflate stream below -- see
+        // DsiArm7Compress.h and this file's beginSlicedSave()/
+        // continueSlicedSave() for the full design. Cleared (falls back
+        // to the ARM9 stream) on a timeout or an ARM7-reported failure;
+        // never touched on any other platform.
+        bool viaArm7 = false;
         World *world = nullptr;
         Chunk *chunk = nullptr;
         std::vector<byte_t> rawNbt;

@@ -15,6 +15,9 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#if PLATFORM_DSI
+#include "dsi/system/DsiArm7Compress.h"
+#endif
 
 namespace
 {
@@ -316,6 +319,26 @@ bool McRegionChunkLoader::beginSlicedSave(World *world, Chunk *chunk)
         if (slicedSave.rawNbt.empty())
             return false;
 
+        slicedSave.compressedOut.clear();
+        slicedSave.finished = false;
+        slicedSave.chunk = chunk;
+        slicedSave.world = world;
+        slicedSave.active = true;
+        slicedSave.viaArm7 = false;
+
+#if PLATFORM_DSI
+        // Try the ARM7 first -- see DsiArm7Compress.h for the full design
+        // and the real-hardware-measured cost (100-700ms+/chunk) this
+        // tries to move off the ARM9's own budget entirely rather than
+        // just slicing it thinner. Declines immediately (false) if a
+        // previous request is still in flight or the link never came up;
+        // continueSlicedSave() then falls through to the exact ARM9
+        // deflate stream below, unchanged, for this one chunk.
+        slicedSave.viaArm7 = dsiArm7BeginCompress(slicedSave.rawNbt.data(), slicedSave.rawNbt.size());
+        if (slicedSave.viaArm7)
+            return true;
+#endif
+
         std::memset(&slicedSave.zs, 0, sizeof(slicedSave.zs));
         // Same level choice as RegionFile::write()'s own compress2() call --
         // see PLATFORM_FAST_REGION_COMPRESSION's comment there. MAX_WBITS
@@ -328,17 +351,17 @@ bool McRegionChunkLoader::beginSlicedSave(World *world, Chunk *chunk)
 #endif
         if (deflateInit2(&slicedSave.zs, compressionLevel, Z_DEFLATED, MAX_WBITS,
                           8, Z_DEFAULT_STRATEGY) != Z_OK)
+        {
+            slicedSave.active = false;
+            slicedSave.chunk = nullptr;
+            slicedSave.world = nullptr;
             return false;
+        }
 
         slicedSave.streamInitialized = true;
         slicedSave.zs.next_in = reinterpret_cast<Bytef *>(slicedSave.rawNbt.data());
         slicedSave.zs.avail_in = static_cast<uInt>(slicedSave.rawNbt.size());
-        slicedSave.compressedOut.clear();
         slicedSave.compressedOut.reserve(slicedSave.rawNbt.size() / 2 + 64);
-        slicedSave.finished = false;
-        slicedSave.chunk = chunk;
-        slicedSave.world = world;
-        slicedSave.active = true;
         return true;
     }
     catch (...)
@@ -346,6 +369,7 @@ bool McRegionChunkLoader::beginSlicedSave(World *world, Chunk *chunk)
         endSlicedDeflateStream();
         slicedSave.active = false;
         slicedSave.finished = false;
+        slicedSave.viaArm7 = false;
         slicedSave.chunk = nullptr;
         slicedSave.world = nullptr;
         return false;
@@ -394,10 +418,86 @@ bool McRegionChunkLoader::continueSlicedSave(long_t budgetUs)
 
     try
     {
+#if PLATFORM_DSI
+        if (slicedSave.viaArm7)
+        {
+            // Generous: the ARM7 runs this ~4x slower in wall-clock terms
+            // than the ARM9 would (33MHz fixed vs. 133MHz, no data cache)
+            // -- an accepted trade for paying zero ARM9 budget while it
+            // works, not a sign anything is wrong. 4 seconds is well past
+            // worst-case even for an unusually large chunk; this exists to
+            // catch a stuck/crashed ARM7, not to second-guess ordinary
+            // slowness. See DsiArm7Compress.h's own cost comment.
+            constexpr std::uint64_t kArm7CompressTimeoutUs = 4'000'000;
+
+            std::size_t compressedLength = 0;
+            DsiArm7CompressResult result = dsiArm7PollCompress(compressedLength);
+
+            // finishSlicedSaveNow() calls this with budgetUs<=0 and expects
+            // the task to be fully done before it returns (used only for
+            // the "Saving world" screen / a full exit save, where blocking
+            // is already the accepted cost -- same as the old unsliced
+            // saveChunk() path). Busy-wait for the ARM7 response rather
+            // than abandoning real progress that may already be most of
+            // the way done.
+            while (budgetUs <= 0 && result == DsiArm7CompressResult::Pending &&
+                   dsiArm7CompressElapsedUs() < kArm7CompressTimeoutUs)
+            {
+                result = dsiArm7PollCompress(compressedLength);
+            }
+
+            const bool timedOut = result == DsiArm7CompressResult::Pending &&
+                                   dsiArm7CompressElapsedUs() >= kArm7CompressTimeoutUs;
+            if (result == DsiArm7CompressResult::Pending && !timedOut)
+                return false; // still waiting, well within budget -- try again next gated call
+
+            if (result == DsiArm7CompressResult::Done)
+            {
+                const byte_t *bytes = reinterpret_cast<const byte_t *>(dsiArm7CompressedData());
+                slicedSave.compressedOut.assign(bytes, bytes + compressedLength);
+                slicedSave.viaArm7 = false;
+            }
+            else
+            {
+                // Failed, or timed out (including inside the budgetUs<=0
+                // busy-wait above) -- fall back to the ARM9 path for this
+                // same chunk, starting the stream fresh exactly as
+                // beginSlicedSave() would have. slicedSave.rawNbt is still
+                // exactly what it was when sent -- the ARM7 side only ever
+                // reads its own private copy of it (DsiArm7Compress.cpp's
+                // own comment) -- so this loses nothing.
+                slicedSave.viaArm7 = false;
+                std::memset(&slicedSave.zs, 0, sizeof(slicedSave.zs));
+#if PLATFORM_FAST_REGION_COMPRESSION
+                const int compressionLevel = Z_BEST_SPEED;
+#else
+                const int compressionLevel = Z_DEFAULT_COMPRESSION;
+#endif
+                if (deflateInit2(&slicedSave.zs, compressionLevel, Z_DEFLATED, MAX_WBITS,
+                                  8, Z_DEFAULT_STRATEGY) != Z_OK)
+                {
+                    slicedSave.finished = true;
+                    return true;
+                }
+                slicedSave.streamInitialized = true;
+                slicedSave.zs.next_in = reinterpret_cast<Bytef *>(slicedSave.rawNbt.data());
+                slicedSave.zs.avail_in = static_cast<uInt>(slicedSave.rawNbt.size());
+                slicedSave.compressedOut.reserve(slicedSave.rawNbt.size() / 2 + 64);
+            }
+        }
+
+        if (!slicedSave.viaArm7 && slicedSave.streamInitialized)
+        {
+            if (!pumpSlicedDeflate(budgetUs))
+                return false;
+            endSlicedDeflateStream();
+        }
+#else
         if (!pumpSlicedDeflate(budgetUs))
             return false;
 
         endSlicedDeflateStream();
+#endif
         if (!slicedSave.compressedOut.empty())
         {
             std::shared_ptr<RegionFile> rf = RegionFileCache::acquireRegionFile(
@@ -435,6 +535,13 @@ void McRegionChunkLoader::cancelSlicedSave()
     endSlicedDeflateStream();
     slicedSave.active = false;
     slicedSave.finished = false;
+    // Safe to clear rawNbt even if an ARM7 job for this task is still
+    // in flight: DsiArm7Compress.cpp copies the bytes it sends into its
+    // own buffer rather than reading this vector directly, specifically
+    // so a cancel here can never race an in-flight read on the ARM7 side
+    // (see that file's own comment). The abandoned job simply finishes in
+    // the background with its result left unread.
+    slicedSave.viaArm7 = false;
     slicedSave.chunk = nullptr;
     slicedSave.world = nullptr;
     slicedSave.rawNbt.clear();

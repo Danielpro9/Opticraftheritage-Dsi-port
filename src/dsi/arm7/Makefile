@@ -20,7 +20,20 @@ export WONDERFUL_TOOLCHAIN	?= /opt/wonderful
 ARM_NONE_EABI_PATH		?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
 
 SOURCEDIRS	:=	.
-INCLUDEDIRS	:=
+# zlib, deflate-only: adler32.c/deflate.c/trees.c/zutil.c are the minimal
+# set deflate() actually needs (confirmed against external/zlib/deflate.c's
+# own #includes) -- this ARM7 build only ever compresses, never
+# decompresses, so inflate*.c/infback.c/compress.c/gz*.c/crc32.c (CRC32 is
+# the gzip-wrapper checksum; the zlib-wrapper format deflateInit2() uses
+# here needs adler32.c instead) are deliberately left out, both for ARM7
+# code-size headroom and because pulling in code this side of the link
+# never calls is pure risk for no benefit. See arm7_chunk_compress.c's own
+# comment for why windowBits/memLevel are also cut down from the ARM9
+# side's defaults.
+ZLIBDIR		:=	../../../external/zlib
+ZLIB_SOURCES	:=	$(ZLIBDIR)/adler32.c $(ZLIBDIR)/deflate.c \
+			$(ZLIBDIR)/trees.c $(ZLIBDIR)/zutil.c
+INCLUDEDIRS	:=	$(ZLIBDIR) build/zconf
 # ARM7 (not ARM9): nds.h itself #errors out without exactly one of these --
 # the BlocksDS/libnds headers this file includes use it to pick the ARM7 vs
 # ARM9 half of every dual-CPU register/function declaration they provide
@@ -29,6 +42,17 @@ INCLUDEDIRS	:=
 DEFINES		:=	-D__NDS__ -DARM7
 LIBS		:=	-lnds7 -ldswifi7 -lc
 LIBDIRS		:=	$(BLOCKSDS)/libs/libnds $(BLOCKSDS)/libs/dswifi
+
+# zconf.h is generated (never checked into the zlib submodule itself) --
+# same two-line sed substitution as src/dsi/Makefile.game's own ARM9-side
+# copy of this exact step; see that file's comment for why #cmakedefine
+# needs this instead of zlib's own absent-a-CMake-run configure step, and
+# why $(shell ...) (not a prerequisite rule) is what actually runs it before
+# the rest of this file is parsed.
+$(shell mkdir -p build/zconf && sed \
+	-e 's/#cmakedefine Z_PREFIX/\/* #undef Z_PREFIX *\//' \
+	-e 's/#cmakedefine Z_HAVE_UNISTD_H/#define Z_HAVE_UNISTD_H/' \
+	$(ZLIBDIR)/zconf.h.cmakein > build/zconf/zconf.h)
 
 NAME	:= dsi_arm7
 BUILDDIR	:= build
@@ -42,7 +66,7 @@ LD		:= $(CC)
 ARCH		:= -mcpu=arm7tdmi -mtune=arm7tdmi
 WARNFLAGS	:= -Wall
 
-C_FILES		:= $(foreach dir,$(SOURCEDIRS),$(wildcard $(dir)/*.c))
+C_FILES		:= $(foreach dir,$(SOURCEDIRS),$(wildcard $(dir)/*.c)) $(ZLIB_SOURCES)
 
 INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
 		   $(foreach path,$(LIBDIRS),-I$(path)/include)
@@ -62,7 +86,7 @@ LDFLAGS		:= -mthumb -mthumb-interwork $(LIBDIRSFLAGS) \
 
 OBJS		:= $(addprefix $(BUILDDIR)/,$(notdir $(C_FILES:%.c=%.o)))
 DEPS		:= $(OBJS:.o=.d)
-export VPATH	:= $(SOURCEDIRS)
+export VPATH	:= $(SOURCEDIRS) $(ZLIBDIR)
 
 .PHONY: all clean
 

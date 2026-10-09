@@ -2,8 +2,8 @@
 
 #ifdef DSI_PLATFORM
 
-#include "RenderItem.h"
-#include "ItemStack.h"
+#include "net/minecraft/src/RenderItem.h"
+#include "net/minecraft/src/ItemStack.h"
 
 bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer, RenderEngine *renderEngine,
 	ItemStack *stack, int_t x, int_t y, DsiCachedGuiIcon &cache)

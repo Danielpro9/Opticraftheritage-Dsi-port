@@ -29,13 +29,26 @@ NAME		:= DsiBringup
 SOURCEDIRS	:= tools system
 # ".." is src/ -- both this port's own headers ("dsi/...") and the shared
 # "platform/Log.h" this code logs through are rooted there.
-INCLUDEDIRS	:= ..
+#
+# ../../external/zlib + the generated build/$(NAME)/zconf dir: system/
+# is glob-included below (SOURCEDIRS), so system/DsiArm7Compress.cpp's own
+# "#include <zlib.h>" (for compressBound() -- see that file's own comment)
+# needs to resolve here too, same as Makefile.game's own copy of this exact
+# include-path/zconf-generation pair.
+INCLUDEDIRS	:= .. ../../external/zlib build/$(NAME)/zconf
 # No graphics/audio/NitroFS asset pipeline yet -- this Makefile only has S/C/CPP
 # compile rules below. Copy those sections from
 # $(BLOCKSDS)/../templates/rom_arm9_only/Makefile (grit for GFXDIRS, mmutil for
 # AUDIODIRS, bin2c for BINDIRS) once real assets exist.
 
 DEFINES		:= -DDSI_PLATFORM=1
+
+# See Makefile.game's own copy of this exact step for the full rationale
+# (zlib's zconf.h is generated from zconf.h.cmakein, never checked in).
+$(shell mkdir -p build/$(NAME)/zconf && sed \
+	-e 's/#cmakedefine Z_PREFIX/\/* #undef Z_PREFIX *\//' \
+	-e 's/#cmakedefine Z_HAVE_UNISTD_H/#define Z_HAVE_UNISTD_H/' \
+	../../external/zlib/zconf.h.cmakein > build/$(NAME)/zconf/zconf.h)
 
 # No custom ARM7 code and no DSWiFi/audio yet, so the prebuilt "libnds only"
 # core is enough. Swap to arm7_dswifi_maxmod.elf once networking/audio land.
@@ -66,6 +79,11 @@ endif
 
 SOURCES_S	:= $(shell find -L $(SOURCEDIRS) -name "*.s")
 SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "*.c")
+# compress.c alone: the one zlib symbol system/DsiArm7Compress.cpp's
+# compressBound() call needs (plain arithmetic, no deps on deflate/inflate)
+# -- not the full zlib source list Makefile.game links for the real game,
+# since nothing else in this smoke-test build calls into zlib.
+SOURCES_C	+= ../../external/zlib/compress.c
 SOURCES_CPP	:= $(shell find -L $(SOURCEDIRS) -name "*.cpp")
 # These specific src/platform files are safe to pull in on their own, unlike
 # the rest of that directory: most of it assumes PC/PS2/Wii headers (SDL2,
@@ -152,7 +170,17 @@ CXXFLAGS	+= $(WARNFLAGS) $(INCLUDEFLAGS) $(DEFINES) \
 		   -std=gnu++17 \
 		   -specs=$(SPECS)
 
+# --gc-sections: needed now that compress.c (added above, for
+# compressBound()) is linked straight in rather than from an archive -- a
+# plain .o on the command line pulls in ALL of its functions regardless of
+# whether anything calls them, so without this, compress.c's own unused
+# compress()/compress2() would demand deflate()/deflateInit2()/deflateEnd()
+# (confirmed via a real CI link failure) even though nothing in this
+# smoke-test build ever calls them. $(CFLAGS)'s existing -ffunction-sections
+# already puts each function in its own section; this is the other half
+# that actually discards the ones nothing references.
 LDFLAGS		+= $(ARCH) $(LIBDIRSFLAGS) -Wl,-Map,$(MAP) $(DEFINES) \
+		   -Wl,--gc-sections \
 		   -Wl,--start-group $(LIBS) -Wl,--end-group -specs=$(SPECS)
 
 OBJS_SOURCES	:= $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_S))) \

@@ -23,13 +23,25 @@ SOURCEDIRS	:=	.
 # zlib, deflate-only: adler32.c/deflate.c/trees.c/zutil.c are the minimal
 # set deflate() actually needs (confirmed against external/zlib/deflate.c's
 # own #includes) -- this ARM7 build only ever compresses, never
-# decompresses, so inflate*.c/infback.c/compress.c/gz*.c/crc32.c (CRC32 is
-# the gzip-wrapper checksum; the zlib-wrapper format deflateInit2() uses
-# here needs adler32.c instead) are deliberately left out, both for ARM7
-# code-size headroom and because pulling in code this side of the link
-# never calls is pure risk for no benefit. See arm7_chunk_compress.c's own
-# comment for why windowBits/memLevel are also cut down from the ARM9
-# side's defaults.
+# decompresses, so inflate*.c/infback.c/compress.c/gz*.c (the gzip
+# wrapper/CLI helpers) are deliberately left out, both for ARM7 code-size
+# headroom and because pulling in code this side of the link never calls
+# is pure risk for no benefit. See arm7_chunk_compress.c's own comment for
+# why windowBits/memLevel are also cut down from the ARM9 side's defaults.
+#
+# crc32.c is ALSO left out, but that needs -DNO_GZIP below to actually hold:
+# deflate.c's gzip-header code path (state->wrap==2) is compiled in by
+# default (deflate.h: "#ifndef NO_GZIP / #define GZIP") and calls crc32()
+# from several functions (deflateResetKeep(), read_buf(), deflate() itself)
+# -- the call is part of the compiled object code regardless of the RUNTIME
+# wrap value this project actually uses (deflateInit2()'s windowBits=12 is
+# positive, i.e. the zlib-wrapper format, never gzip), so without -DNO_GZIP
+# the linker still demands a crc32 symbol that was never pulled in. Confirmed
+# via a real CI link failure: "deflate.c:(.text.deflate+0x274): undefined
+# reference to `crc32'". -DNO_GZIP (deflate.h's own documented, intended
+# escape hatch for exactly this) compiles that whole code path out instead
+# of pulling in crc32.c just to satisfy a reference nothing here ever
+# exercises.
 ZLIBDIR		:=	../../../external/zlib
 ZLIB_SOURCES	:=	$(ZLIBDIR)/adler32.c $(ZLIBDIR)/deflate.c \
 			$(ZLIBDIR)/trees.c $(ZLIBDIR)/zutil.c
@@ -39,7 +51,7 @@ INCLUDEDIRS	:=	$(ZLIBDIR) build/zconf
 # ARM9 half of every dual-CPU register/function declaration they provide
 # (REG_DMA_FILL, IRQ_RTC, installSoundFIFO(), ... all the symbols main_arm7.c
 # needs), not just a cosmetic label.
-DEFINES		:=	-D__NDS__ -DARM7
+DEFINES		:=	-D__NDS__ -DARM7 -DNO_GZIP
 LIBS		:=	-lnds7 -ldswifi7 -lc
 LIBDIRS		:=	$(BLOCKSDS)/libs/libnds $(BLOCKSDS)/libs/dswifi
 

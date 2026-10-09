@@ -896,19 +896,130 @@ void applyLightmapColorAt(float u, float v)
 }
 
 // -----------------------------------------------------------------------------
-// Fog -- APPROXIMATED. The DS fog is a 32-entry density lookup table indexed
-// by (depth >> shift) - offset, not GL's parametric density/start/end/mode.
-// Rebuilding the table from GL-style parameters on every renderFogf() call
-// would be the faithful approach; for now this only forwards the colour
-// (renderFogColor -> glFogColor) and leaves the table at libnds's default
-// (set once in dsiEnsureEarlyVideo()-equivalent init below), which is a
-// reasonable fixed falloff but does not track Minecraft's actual fog
-// start/end distance options yet. Flagged rather than silently wrong: fog
-// will render as *some* distance fog, just not necessarily at the requested
-// distance.
+// Fog. The DS fog is a 32-entry density lookup table (GFX_FOG_TABLE[0..31],
+// via glFogShift()/glFogOffset()/glFogDensity()) indexed by *window-space*
+// depth -- the same non-linear value the Z-buffer itself stores, since this
+// project never enables W-buffering (glFlush() is always called with mode 0;
+// see glFrustumf32()'s matrix in libnds for the standard OpenGL hyperbolic
+// depth encoding that follows from that: ndcZ(d) = (f+n)/(f-n) - 2fn/((f-n)*d)
+// for eye-distance d, near n, far f). GL's own parametric density/start/end
+// is only Minecraft's side of the API; renderFogf()/renderFrustum() just
+// record the latest values, and dsiApplyFogTableIfDirty() (called once both
+// are known for the frame) rebuilds the table: for each of the 32 entries it
+// inverts that entry's window depth back to an eye-distance and places it
+// linearly between fogStart (density 0) and fogEnd (density 127), so the
+// *visible* falloff matches Minecraft's own linear eye-distance fog model
+// despite the table being indexed by a non-linear depth.
+//
+// This is a first-pass calculation, not an empirically-tuned one -- even
+// BlocksDS's own fog example (examples/graphics_3d/fog) treats shift/offset/
+// density as sliders to tune by eye rather than deriving them, and the
+// fogStart..fogEnd span lands within roughly the last 1% of the 0-0x7FFF
+// window-depth range on this project's near/far planes (a consequence of the
+// hyperbolic encoding compressing distant depth), so small errors here move
+// shift by a step. Expect a real-hardware visual pass to confirm placement.
+// Exp/Exp2 fog (underwater, lava, the cloud layer) only ever sets Density,
+// never Start/End, so those modes keep replaying whichever table a prior
+// Linear setupFog() call last built rather than modelling true exp falloff.
 float g_fogDensity = 1.0f;
 float g_fogStart = 0.0f;
 float g_fogEnd = 1.0f;
+float g_fogFrustumNear = 0.0f;
+float g_fogFrustumFar = 0.0f;
+bool g_fogTableDirty = false;
+float g_fogTableAppliedStart = -1.0f;
+float g_fogTableAppliedEnd = -1.0f;
+float g_fogTableAppliedNear = -1.0f;
+float g_fogTableAppliedFar = -1.0f;
+
+// Inverse of glFrustumf32()'s depth encoding: maps a window-space depth
+// value (what the fog table/Z-buffer store, [0, GL_MAX_DEPTH]) back to the
+// eye-space distance it represents under the given near/far planes.
+float dsiWindowDepthToEyeDistance(float windowDepth, float near, float far)
+{
+	const float ndcZ = (windowDepth / 16383.5f) - 1.0f; // [0,0x7FFF] -> [-1,1]
+	const float denom = (far - near) * (((far + near) / (far - near)) - ndcZ);
+	if (denom <= 0.0001f)
+		return far;
+	return (2.0f * far * near) / denom;
+}
+
+// Forward direction of the same mapping: eye-space distance -> window depth.
+float dsiEyeDistanceToWindowDepth(float distance, float near, float far)
+{
+	if (distance < near)
+		distance = near;
+	const float ndcZ = ((far + near) / (far - near)) - (2.0f * far * near) / ((far - near) * distance);
+	float windowDepth = (ndcZ + 1.0f) * 16383.5f;
+	if (windowDepth < 0.0f)
+		windowDepth = 0.0f;
+	if (windowDepth > (float)GL_MAX_DEPTH)
+		windowDepth = (float)GL_MAX_DEPTH;
+	return windowDepth;
+}
+
+// Rebuilds GFX_FOG_TABLE from g_fogStart/g_fogEnd whenever they (or the
+// current frame's frustum) actually changed since the last call -- not
+// every frame, so this costs nothing on the vast majority of frames where
+// fog hasn't moved. See the fog comment block above for the approach.
+void dsiApplyFogTableIfDirty()
+{
+	if (!g_fogTableDirty)
+		return;
+	// Frustum not established yet this frame (renderFrustum() hasn't run) --
+	// wait for it rather than dividing by a degenerate near==far.
+	if (g_fogFrustumNear <= 0.0f || g_fogFrustumFar <= g_fogFrustumNear)
+		return;
+
+	if (g_fogTableAppliedStart == g_fogStart && g_fogTableAppliedEnd == g_fogEnd &&
+	    g_fogTableAppliedNear == g_fogFrustumNear && g_fogTableAppliedFar == g_fogFrustumFar)
+	{
+		g_fogTableDirty = false;
+		return;
+	}
+
+	const float windowStart = dsiEyeDistanceToWindowDepth(g_fogStart, g_fogFrustumNear, g_fogFrustumFar);
+	const float windowEnd = dsiEyeDistanceToWindowDepth(g_fogEnd, g_fogFrustumNear, g_fogFrustumFar);
+
+	float span = windowEnd - windowStart;
+	if (span < 32.0f)
+		span = 32.0f; // avoid a degenerate table when fogEnd <= fogStart
+
+	// Largest shift (finest resolution) whose 32-entry table still reaches
+	// across the needed span -- see glFogShift()/glFogOffset() in libnds.
+	int shift = 0;
+	while (shift < 15 && (float)((0x400 >> shift) * 32) < span)
+		++shift;
+
+	const int bucketWidth = 0x400 >> shift;
+	int offset = (int)windowStart;
+	if (offset < 0)
+		offset = 0;
+	if (offset > (int)GL_MAX_DEPTH)
+		offset = (int)GL_MAX_DEPTH;
+
+	glFogShift(shift);
+	glFogOffset(offset);
+
+	const float fogRange = g_fogEnd - g_fogStart;
+	for (int i = 0; i < 32; ++i)
+	{
+		const float entryWindowDepth = (float)offset + (float)(i * bucketWidth);
+		const float entryDistance = dsiWindowDepthToEyeDistance(entryWindowDepth, g_fogFrustumNear, g_fogFrustumFar);
+		float factor = fogRange > 0.001f ? (entryDistance - g_fogStart) / fogRange : 1.0f;
+		if (factor < 0.0f)
+			factor = 0.0f;
+		if (factor > 1.0f)
+			factor = 1.0f;
+		glFogDensity(i, (int)(factor * 127.0f + 0.5f));
+	}
+
+	g_fogTableAppliedStart = g_fogStart;
+	g_fogTableAppliedEnd = g_fogEnd;
+	g_fogTableAppliedNear = g_fogFrustumNear;
+	g_fogTableAppliedFar = g_fogFrustumFar;
+	g_fogTableDirty = false;
+}
 
 } // namespace
 
@@ -2601,17 +2712,33 @@ void renderResetResources()
 	g_boundTexture = 0;
 }
 
-// APPROXIMATED -- see the fog comment block above; only colour is forwarded
-// for now, not the density table.
+// See the fog comment block above: Start/End drive the real hardware table;
+// Density is recorded but only used by the Exp/Exp2 callers' colour (the
+// table itself isn't rebuilt from it -- see that comment for why).
 void renderFogf(RenderFogParameter parameter, float value)
 {
 	switch (parameter)
 	{
-		case RenderFogParameter::Density: g_fogDensity = value; break;
-		case RenderFogParameter::Start:   g_fogStart = value; break;
-		case RenderFogParameter::End:     g_fogEnd = value; break;
+		case RenderFogParameter::Density:
+			g_fogDensity = value;
+			break;
+		case RenderFogParameter::Start:
+			if (g_fogStart != value)
+			{
+				g_fogStart = value;
+				g_fogTableDirty = true;
+			}
+			break;
+		case RenderFogParameter::End:
+			if (g_fogEnd != value)
+			{
+				g_fogEnd = value;
+				g_fogTableDirty = true;
+			}
+			break;
 		default: break;
 	}
+	dsiApplyFogTableIfDirty();
 }
 
 void renderFogi(RenderFogParameter, RenderFogMode)
@@ -2967,6 +3094,16 @@ void renderFrustum(double left, double right, double bottom, double top, double 
 {
 	glFrustumf32(floattof32((float)left), floattof32((float)right), floattof32((float)bottom),
 	             floattof32((float)top), floattof32((float)nearValue), floattof32((float)farValue));
+
+	const float nearF = (float)nearValue;
+	const float farF = (float)farValue;
+	if (g_fogFrustumNear != nearF || g_fogFrustumFar != farF)
+	{
+		g_fogFrustumNear = nearF;
+		g_fogFrustumFar = farF;
+		g_fogTableDirty = true;
+	}
+	dsiApplyFogTableIfDirty();
 }
 void renderOrtho(double left, double right, double bottom, double top, double nearValue, double farValue)
 {

@@ -15,6 +15,11 @@ namespace
 	constexpr unsigned kStride = 8; // words/vertex: x,y,z,u,v,color,<unused>,brightness
 	constexpr unsigned kQuad = kStride * 4;
 
+	// See DsiWaterMerge.h's own comment on dsiGetTotalWaterQuadsMerged() for
+	// why this exists: the only prior signal (the MC_LOG_DEBUG call below)
+	// has never been able to print on this platform's actual log level.
+	unsigned long g_dsiWaterQuadsMergedCount = 0ul;
+
 	inline float readFloat(const std::int32_t *p)
 	{
 		float f;
@@ -183,8 +188,16 @@ unsigned dsi_merge_water_top_pairs(std::vector<std::int32_t> &raw, int_t tile,
 
 	raw.resize(out);
 	if (merged != 0)
+	{
 		MC_LOG_DEBUG("dsi", "water merge: pairs/squares removed=%u\n", merged);
+		g_dsiWaterQuadsMergedCount += merged;
+	}
 	return merged;
+}
+
+unsigned long dsiGetTotalWaterQuadsMerged()
+{
+	return g_dsiWaterQuadsMergedCount;
 }
 
 #endif // DSI_PLATFORM

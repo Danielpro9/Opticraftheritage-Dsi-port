@@ -54,4 +54,19 @@ unsigned dsi_merge_water_top_pairs(std::vector<std::int32_t> &raw, int_t tile,
                                     ChunkCache &cc,
                                     int_t originX, int_t originY, int_t originZ);
 
+// Cumulative, process-lifetime count of quads this file has removed by
+// merging (same "prove it on real hardware, don't infer from FPS" reasoning
+// as DsiGreedyMesh.h's dsiGetTotalGreedyQuads()/dsiGetTotalGreedyFacesCovered()
+// -- see that header's own comment for the full rationale). This was the
+// missing piece since this feature was first ported (commit 5f9077d): the
+// only existing signal was an MC_LOG_DEBUG() call inside
+// dsi_merge_water_top_pairs() itself, gated on MC_LOG_ENABLED(2) -- but this
+// platform's build runs at MC_LOG_LEVEL 1 (see Log.h; real-hardware
+// debug.log headers print "level=1"), so that line has never actually been
+// able to print on a build anyone has tested. There was no evidence either
+// way, on real hardware, of whether this merge ever finds anything to do.
+// Surfaced on Minecraft.cpp's memtrend line as waterMerged= so the next
+// real-hardware log near a body of water settles it either way.
+unsigned long dsiGetTotalWaterQuadsMerged();
+
 #endif // DSI_PLATFORM

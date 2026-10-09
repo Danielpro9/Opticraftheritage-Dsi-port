@@ -15,6 +15,7 @@
 #if PLATFORM_DSI
 #include "dsi/DsiEarlyInit.h"
 #include "dsi/render/DsiGreedyMesh.h"
+#include "dsi/render/DsiWaterMerge.h"
 #endif
 
 #include <iostream>
@@ -2050,7 +2051,15 @@ void Minecraft::runTick()
                 // would mean every merge came out 1x1 -- the pass runs but
                 // never merges anything; greedyFaces clearly larger than
                 // greedyQuads is the real confirmation.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu\n",
+                // waterMerged= (DsiWaterMerge.h's dsiGetTotalWaterQuadsMerged()):
+                // same shape of proof for the still-water top-face merge --
+                // see that header's own comment for why this was flying
+                // completely blind until now (its only prior signal was an
+                // MC_LOG_DEBUG call this platform's log level never prints).
+                // Staying at 0 for a whole session with visible still water
+                // on screen would mean the merge is never firing; climbing
+                // is the first real evidence either way.
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu waterMerged=%lu\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
@@ -2059,7 +2068,8 @@ void Minecraft::runTick()
                     dsiGetTotalRendererRebuilds(),
                     dsiGetTotalBuildRestarts(),
                     dsiGetTotalGreedyQuads(),
-                    dsiGetTotalGreedyFacesCovered());
+                    dsiGetTotalGreedyFacesCovered(),
+                    dsiGetTotalWaterQuadsMerged());
 
                 // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() already
                 // proved /mob/*.png (~40 distinct skins vanilla can load across a

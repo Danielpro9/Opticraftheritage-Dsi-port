@@ -88,6 +88,11 @@ private:
 
 	void seedChunkGeneration(int_t chunkX, int_t chunkZ);
 	void generateBaseTerrain(int_t chunkX, int_t chunkZ, byte_t *blocks, byte_t biomeIds[256]);
+	// The two halves generateBaseTerrain() calls in sequence -- split out so
+	// advanceGenerationTask() can yield between them. See their own comment
+	// (ChunkProviderGenerate.cpp) for why this boundary and not a finer one.
+	void generateBaseTerrainHeight(int_t chunkX, int_t chunkZ, byte_t *blocks);
+	void generateBaseTerrainBiomeReplace(int_t chunkX, int_t chunkZ, byte_t *blocks, byte_t biomeIds[256]);
 	void generateCaves(int_t chunkX, int_t chunkZ, byte_t *blocks);
 	void generateRavines(int_t chunkX, int_t chunkZ, byte_t *blocks);
 #if PLATFORM_INCREMENTAL_CHUNK_GENERATION
@@ -182,6 +187,7 @@ private:
 	enum class GenerationStage
 	{
 		BaseTerrain,
+		BiomeReplace,
 		Caves,
 		Ravines,
 		Structures,

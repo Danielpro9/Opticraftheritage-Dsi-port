@@ -350,8 +350,21 @@ void ChunkProviderGenerate::seedChunkGeneration(int_t chunkX, int_t chunkZ)
 	rand.setSeed(JavaArithmetic::longFromBits(chunkSeedBits));
 }
 
-void ChunkProviderGenerate::generateBaseTerrain(int_t chunkX, int_t chunkZ, byte_t *blocks,
-	byte_t biomeIds[256])
+// Split from the original single-shot generateBaseTerrain() below into its
+// two natural halves -- the WorldLoadTrace::step("terrain")/step("biomes")
+// boundary already marked where one ends and the other begins, this just
+// makes that boundary a real yield point for advanceGenerationTask() too.
+// Real-hardware evidence (DsiWorldTuning.h's PLATFORM_GENERATION_SOURCE_
+// COLUMNS_PER_STEP comment): a single atomic generation step measured
+// 20-143ms on this ARM9, and caves/ravines/structures already got sliced
+// to shrink that; BaseTerrain was the one stage left as one big atomic
+// call with no natural per-column cursor to slice against without
+// duplicating generateTerrainHeightmap()'s/replaceBlocksForBiome()'s own
+// precompute (biome lattice blend, noise setup) across resumed calls.
+// Splitting at this existing boundary instead needs no new state and
+// cannot change what gets generated -- same two calls, same order, same
+// inputs -- only where the incremental task can stop between them.
+void ChunkProviderGenerate::generateBaseTerrainHeight(int_t chunkX, int_t chunkZ, byte_t *blocks)
 {
 	seedChunkGeneration(chunkX, chunkZ);
 	WorldLoadTrace::step("terrain");
@@ -361,7 +374,11 @@ void ChunkProviderGenerate::generateBaseTerrain(int_t chunkX, int_t chunkZ, byte
 #else
 	generateTerrain(chunkX, chunkZ, blocks, nullptr, nullptr);
 #endif
+}
 
+void ChunkProviderGenerate::generateBaseTerrainBiomeReplace(int_t chunkX, int_t chunkZ, byte_t *blocks,
+	byte_t biomeIds[256])
+{
 	WorldLoadTrace::step("biomes");
 #if !PLATFORM_USE_HEIGHTMAP_TERRAIN
 	generationWorldChunkManager()->loadBlockGeneratorData(
@@ -373,6 +390,13 @@ void ChunkProviderGenerate::generateBaseTerrain(int_t chunkX, int_t chunkZ, byte
 
 	for (std::size_t index = 0; index < 256 && index < biomesForGeneration.size(); ++index)
 		biomeIds[index] = static_cast<byte_t>(biomesForGeneration[index]->biomeID);
+}
+
+void ChunkProviderGenerate::generateBaseTerrain(int_t chunkX, int_t chunkZ, byte_t *blocks,
+	byte_t biomeIds[256])
+{
+	generateBaseTerrainHeight(chunkX, chunkZ, blocks);
+	generateBaseTerrainBiomeReplace(chunkX, chunkZ, blocks, biomeIds);
 }
 
 void ChunkProviderGenerate::generateCaves(int_t chunkX, int_t chunkZ, byte_t *blocks)
@@ -617,7 +641,11 @@ bool ChunkProviderGenerate::advanceGenerationTask()
 	switch (generationTask.stage)
 	{
 	case GenerationStage::BaseTerrain:
-		generateBaseTerrain(generationTask.chunkX, generationTask.chunkZ, blocks, generationTask.biomeIds);
+		generateBaseTerrainHeight(generationTask.chunkX, generationTask.chunkZ, blocks);
+		generationTask.stage = GenerationStage::BiomeReplace;
+		break;
+	case GenerationStage::BiomeReplace:
+		generateBaseTerrainBiomeReplace(generationTask.chunkX, generationTask.chunkZ, blocks, generationTask.biomeIds);
 		generationTask.stage = GenerationStage::Caves;
 		break;
 	case GenerationStage::Caves:
@@ -711,8 +739,9 @@ const char *ChunkProviderGenerate::generationTaskStageName() const
 {
 	switch (generationTask.stage)
 	{
-	case GenerationStage::BaseTerrain: return "BaseTerrain";
-	case GenerationStage::Caves:       return "Caves";
+	case GenerationStage::BaseTerrain:   return "BaseTerrain";
+	case GenerationStage::BiomeReplace:  return "BiomeReplace";
+	case GenerationStage::Caves:         return "Caves";
 	case GenerationStage::Ravines:     return "Ravines";
 	case GenerationStage::Structures:  return "Structures";
 #if PLATFORM_CHUNK_LOCAL_DECORATION

@@ -1035,6 +1035,23 @@ void dsiApplyFogTableIfDirty()
 	g_fogTableAppliedNear = g_fogFrustumNear;
 	g_fogTableAppliedFar = g_fogFrustumFar;
 	g_fogTableDirty = false;
+
+	// Diagnostic only, zero behavior change: real-hardware report is fog
+	// visibly flickering on/off every frame, even standing still, when
+	// fogStart/fogEnd/near/far have no legitimate reason to change frame to
+	// frame -- this should be rebuilding rarely (only on an actual distance
+	// change), not every frame. Logging every rebuild (not rate-limited,
+	// since it should be rare) answers directly from the next real debug.log
+	// whether this dirty-check is somehow re-triggering every frame (a
+	// software bug here) or the table is in fact stable and the flicker's
+	// cause is elsewhere (e.g. a hardware timing issue between the direct
+	// GFX_FOG_* register writes above and the GX FIFO's queued polygon
+	// commands, which this diagnostic can't see either way but at least
+	// rules in or out).
+	static int s_fogRebuildCount = 0;
+	MC_LOG_INFO("dsi", "fog table rebuild #%d: start=%.2f end=%.2f near=%.2f far=%.2f shift=%d offset=%d\n",
+		++s_fogRebuildCount, (double)g_fogStart, (double)g_fogEnd,
+		(double)g_fogFrustumNear, (double)g_fogFrustumFar, shift, offset);
 }
 
 } // namespace

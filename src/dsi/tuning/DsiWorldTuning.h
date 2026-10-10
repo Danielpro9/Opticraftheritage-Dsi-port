@@ -179,6 +179,45 @@
 #undef  PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ
 #define PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ       36.0f
 
+// Real-hardware report: placing or breaking a block causes a noticeable,
+// ugly hitch. Same class of gap as the three distance radii above, but this
+// one makes things worse in the OPPOSITE direction -- not dead code, but
+// code that now fires on EVERY player edit instead of only nearby ones.
+// RenderGlobal.cpp's markRendererUpdateFromBlockChange(): a player-placed/
+// broken block within PLATFORM_URGENT_MESH_DISTANCE_SQ of the viewer marks
+// that section's renderer urgentRebuild=true, which jumps the queue and
+// runs inside its own dedicated PLATFORM_URGENT_MESH_BUDGET_MS/
+// PLATFORM_URGENT_MESH_STEP_CAP allowance -- all three still PS2's own
+// unmodified values (32 blocks, 32ms, 96 steps). DSi's entire visible world
+// is only PLATFORM_VISIBLE_CHUNK_RADIUS*16 = 16 blocks across, well inside
+// that 32-block radius, so unlike the sheep-wool/entity-radius gaps above
+// (where the inherited value was too LARGE to ever trigger), this one is
+// too LARGE in the other direction: every single player edit anywhere in
+// the loaded world qualifies as "urgent," not just ones genuinely close to
+// the player the way PS2's much bigger view distance intended. And once
+// urgent, the section pays a flat 32ms dedicated budget on top of whatever
+// else that frame already costs -- real logs this session show whole
+// frames completing in 12-20ms at steady state, so a single urgent rebuild
+// can cost MORE than an entire ordinary frame by itself, landing as exactly
+// the hitch reported.
+//
+// Distance halved to match the same ratio PLATFORM_ENTITY_RENDER_RADIUS_
+// BLOCKS above already used against PS2's own radius (still generous
+// against a 16-block world, but keeps a "far edge of the loaded area"
+// edit from claiming the same priority as one right next to the player).
+// Budget and step cap cut to a quarter: DSi's ARM9 has no hardware FPU at
+// all (a bigger gap than PS2's EE than raw clock speed alone suggests,
+// see this file's other FPU-gap knobs), and the edited section's build
+// budget, needsUpdate loop, and normal per-frame budget all still apply
+// underneath this -- the goal is bounding the worst case, not eliminating
+// the responsiveness player edits are supposed to get.
+#undef  PLATFORM_URGENT_MESH_DISTANCE_SQ
+#define PLATFORM_URGENT_MESH_DISTANCE_SQ          256.0f
+#undef  PLATFORM_URGENT_MESH_BUDGET_MS
+#define PLATFORM_URGENT_MESH_BUDGET_MS            8
+#undef  PLATFORM_URGENT_MESH_STEP_CAP
+#define PLATFORM_URGENT_MESH_STEP_CAP             24
+
 // Used by WorldRendererDsi.cpp's decorative-only distance cull (grass/
 // flowers/crops -- the purely decorative crossed-quad render types) to skip
 // baking their geometry into a section's mesh once DSi's own short-range

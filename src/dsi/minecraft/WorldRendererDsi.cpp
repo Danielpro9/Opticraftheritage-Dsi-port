@@ -101,6 +101,7 @@
 #include "net/minecraft/src/TileEntityRenderer.h"
 #include "net/minecraft/src/Config.h"
 #include "net/minecraft/src/EntityLiving.h"
+#include "net/minecraft/src/WorldProvider.h"
 #include "client/Minecraft.h"
 #include "platform/RenderTerrainAPI.h"
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"

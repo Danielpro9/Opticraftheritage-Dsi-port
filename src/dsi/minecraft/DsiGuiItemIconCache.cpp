@@ -5,6 +5,41 @@
 #include "net/minecraft/src/RenderItem.h"
 #include "net/minecraft/src/ItemStack.h"
 
+// Replays cache.mesh, redoing the exact renderPushMatrix()/Translate()/
+// Scale()/Rotate() sequence RenderItem::drawItemIntoGui()'s 3D-block branch
+// wraps renderBlockOnInventory() in, when cache.is3DBlock says this mesh's
+// captured vertex data needs it -- see DsiCachedGuiIcon::is3DBlock's own
+// comment for why a captured block cube is otherwise invisible on replay.
+// Kept in sync by hand with that branch (RenderItem.cpp's drawItemIntoGui(),
+// and RenderBlocks.cpp's renderBlockOnInventory() for the inner translate
+// pair) -- there is no shared single source of truth for this transform to
+// call into instead, since the original code applies it straight to the GPU
+// matrix stack around an immediate draw rather than building it as a
+// reusable object.
+static bool dsiDrawCachedMesh(RenderItem *itemRenderer, DsiCachedGuiIcon &cache, int_t x, int_t y)
+{
+	if (!cache.is3DBlock)
+		return renderStaticMeshDraw(cache.mesh);
+
+	renderPushMatrix();
+	renderTranslate((float)((int)x - 2), (float)((int)y + 3), -3.0f + itemRenderer->zLevel);
+	renderScale(10.0f, 10.0f, 10.0f);
+	renderTranslate(1.0f, 0.5f, 1.0f);
+	renderScale(1.0f, 1.0f, -1.0f);
+	renderRotate(210.0f, 1.0f, 0.0f, 0.0f);
+	renderRotate(45.0f, 0.0f, 1.0f, 0.0f);
+	renderRotate(-90.0f, 0.0f, 1.0f, 0.0f);
+	// renderBlockOnInventory()'s own translate pair, centering the unit cube
+	// at the origin before its six faces (added at block-local 0..1
+	// coordinates) are submitted -- captured vertex data is still in that
+	// same block-local space, so replaying it needs this too.
+	renderTranslate(-0.5f, -0.5f, -0.5f);
+	const bool drew = renderStaticMeshDraw(cache.mesh);
+	renderTranslate(0.5f, 0.5f, 0.5f);
+	renderPopMatrix();
+	return drew;
+}
+
 bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer, RenderEngine *renderEngine,
 	ItemStack *stack, int_t x, int_t y, DsiCachedGuiIcon &cache)
 {
@@ -28,6 +63,7 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 	if (!signatureMatches)
 	{
 		cache.mesh.captured.clear();
+		bool capturedAsBlock = false;
 		// drawItemIntoGui(), not renderItemIntoGUI(): the glint overlay
 		// renderItemIntoGUI() would also draw here always draws immediately
 		// regardless of captureOut (see its own comment) -- calling it
@@ -36,12 +72,13 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 		// exactly once, covering both the rebuild and the cache-hit path
 		// with the same line.
 		itemRenderer->drawItemIntoGui(fontRenderer, renderEngine, stack->itemID, damage,
-			stack->getIconIndex(), (int)x, (int)y, &cache.mesh.captured, false);
+			stack->getIconIndex(), (int)x, (int)y, &cache.mesh.captured, false, &capturedAsBlock);
 		cache.cacheable = !cache.mesh.captured.empty();
 		cache.signatureValid = true;
 		cache.itemID = stack->itemID;
 		cache.damage = damage;
 		cache.stackSize = stackSize;
+		cache.is3DBlock = capturedAsBlock;
 		if (cache.cacheable)
 		{
 			// drawItemIntoGui() just bound whichever texture this item's
@@ -50,7 +87,7 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 			// never calls drawItemIntoGui() again) knows what to rebind.
 			cache.textureId = dsiGetBoundTexture();
 			dsiAdvanceMeshRepack(cache.repack, cache.mesh, true);
-			handled = renderStaticMeshDraw(cache.mesh);
+			handled = dsiDrawCachedMesh(itemRenderer, cache, x, y);
 		}
 		else
 		{
@@ -71,7 +108,7 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 		// without drawItemIntoGui() ever rebinding anything in between.
 		renderBindTexture(cache.textureId);
 		dsiAdvanceMeshRepack(cache.repack, cache.mesh, false);
-		handled = renderStaticMeshDraw(cache.mesh);
+		handled = dsiDrawCachedMesh(itemRenderer, cache, x, y);
 	}
 	// else: signature matches but this exact item/damage/stackSize was
 	// already found not cacheable -- handled stays false, caller falls back

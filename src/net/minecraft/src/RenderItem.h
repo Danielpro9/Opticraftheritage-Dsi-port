@@ -27,8 +27,26 @@ public:
     // must already know it is one of the eligible cases before passing a
     // non-null captureOut -- this function does not re-check eligibility
     // on its caller's behalf for the branches where that would be unsafe.
+    //
+    // capturedAsBlock (optional out-param): set to true iff captureOut was
+    // actually honoured through the 3D-block branch. A caller needs to know
+    // this because that branch's capture only stores the cube's LOCAL
+    // (pre-transform) vertex data -- the renderPushMatrix()/renderTranslate()/
+    // renderScale()/renderRotate() calls that position, scale and rotate it
+    // into a recognisable isometric icon at (l, i1) are issued straight to
+    // the GPU's matrix stack and popped again before this function returns,
+    // never captured into the mesh itself. Replaying that mesh later without
+    // redoing the identical matrix sequence draws the bare unit cube with
+    // whatever transform happens to be active at replay time instead --
+    // typically the plain GUI projection, which puts it at the origin,
+    // unscaled and unrotated: for all practical purposes invisible. The
+    // flat-icon branch (renderTexturedQuad()) has no such hazard -- it bakes
+    // (l, i1) straight into the vertex positions it adds, with no wrapping
+    // transform at all -- so capturedAsBlock is only ever set for the block
+    // branch; a caller that doesn't care about this distinction may pass
+    // nullptr and lose nothing it was using before.
     void drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* renderengine, int i, int j, int k, int l, int i1,
-        RenderCapturedMesh* captureOut = nullptr, bool captureAppend = false);
+        RenderCapturedMesh* captureOut = nullptr, bool captureAppend = false, bool* capturedAsBlock = nullptr);
     void renderItemIntoGUI(FontRenderer* fontrenderer, RenderEngine* renderengine, ItemStack* itemstack, int i, int j,
         RenderCapturedMesh* captureOut = nullptr, bool captureAppend = false);
     void renderItemOverlayIntoGUI(FontRenderer* fontrenderer, RenderEngine* renderengine, ItemStack* itemstack, int i, int j);

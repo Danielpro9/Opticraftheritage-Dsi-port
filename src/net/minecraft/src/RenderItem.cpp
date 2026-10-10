@@ -245,7 +245,9 @@ void RenderItem::doRenderItem(EntityItem* entityitem, double d, double d1, doubl
 }
 
 void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* renderengine, int i, int j, int k, int l, int i1,
-    RenderCapturedMesh* captureOut, bool captureAppend) {
+    RenderCapturedMesh* captureOut, bool captureAppend, bool* capturedAsBlock) {
+    if (capturedAsBlock)
+        *capturedAsBlock = false;
     if (!ItemStack::isValidItemID(i)) {
         return;
     }
@@ -305,8 +307,11 @@ void RenderItem::drawItemIntoGui(FontRenderer* fontrenderer, RenderEngine* rende
         // exactly the branch that actually supports it rather than passing
         // captureOut unconditionally and trusting the callee to sort it out.
         const int_t blockRenderType = block->getRenderType();
+        const bool eligibleForCapture = blockRenderType == 0 || blockRenderType == 16;
         renderBlocks->renderBlockOnInventory(block, j, 1.0f,
-            (blockRenderType == 0 || blockRenderType == 16) ? captureOut : nullptr, captureAppend);
+            eligibleForCapture ? captureOut : nullptr, captureAppend);
+        if (capturedAsBlock && eligibleForCapture && captureOut)
+            *capturedAsBlock = true;
         renderBlocks->field_31088_b = true;
         renderPopMatrix();
     } else if (item->func_46058_c()) {

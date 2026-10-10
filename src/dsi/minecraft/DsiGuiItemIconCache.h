@@ -62,6 +62,19 @@ struct DsiCachedGuiIcon
 	// drawItemIntoGui() entirely, so nothing else rebinds this between
 	// slots; dsiDrawCachedItemIcon() must do it explicitly before replaying.
 	int textureId = 0;
+	// True iff this mesh came from the 3D-block capture branch (see
+	// RenderItem::drawItemIntoGui()'s capturedAsBlock out-param). That
+	// branch's capture only stores the cube's LOCAL, pre-transform geometry
+	// -- the renderPushMatrix()/Translate()/Scale()/Rotate() dance that
+	// positions, scales and rotates it into a recognisable isometric icon is
+	// issued straight to the GPU and popped again before drawItemIntoGui()
+	// returns, never captured into the mesh. A replay must redo that exact
+	// transform itself (dsiDrawCachedItemIcon() does, when this is true) or
+	// the cube draws at roughly the origin, unscaled and unrotated --
+	// effectively invisible. The flat-icon branch has no such hazard (it
+	// bakes (x, y) straight into the vertex positions, no wrapping
+	// transform at all), so this is always false for that kind of icon.
+	bool is3DBlock = false;
 };
 
 // Draws stack's icon at (x, y) using/updating cache, WITHOUT the stack-

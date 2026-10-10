@@ -435,10 +435,42 @@ bool RenderEngine::loadTextureInto(const std::string &s, int_t texture, bool app
 
 #if PLATFORM_DSI
 #include "dsi/DsiEarlyInit.h"
+#include "platform/PlatformCompat.h"
 namespace
 {
 int g_dsiLastDecodedWidth = 0;
 int g_dsiLastDecodedHeight = 0;
+
+// Real-hardware report, persisting across several sessions despite two
+// already-landed fixes for the same general "CPU races ahead of the GPU"
+// corruption class (Display_dsi.cpp's swapBuffers() comment: a confirmed
+// fix for VRAM reuse racing in-flight polygons; RenderGlobal.cpp's
+// DSI_MAX_FRUSTUM_REVEALS_PER_FRAME cap: an UNCONFIRMED experiment for
+// terrain-section submission bursts): the screen still flashes white,
+// "apareciendo y desapareciendo" like the fog bug but as a brightness
+// flash, loosely associated with mob spawns in an earlier report.
+//
+// Neither existing fix touches this call site: getTexture() below falls
+// through to a full synchronous SD-card read + decode + GPU upload
+// (RenderAPI_DSI.cpp's uploadTexture(), itself the function whose failure
+// path already proved a failed bind draws solid white -- see its own
+// comment) whenever a path is not yet in textureMap, which happens for
+// EVERY brand-new mob skin and for every /mob/*.png this platform's own
+// mid-session eviction (Minecraft.cpp's memtrend block) just released and
+// now needs back. Nothing caps how many of these a single frame can pay
+// for -- unlike the frustum-reveal cap just above, which only throttles
+// terrain SECTIONS, never entities -- so several mobs becoming visible
+// (or reloading after eviction) in the same frame stacks their full load
+// costs exactly the way the confirmed vblank-wait fix's own comment
+// describes an "862ms frame" doing.
+//
+// Pure diagnostic, same shape as RenderGlobal.cpp's frustum-reveal one:
+// times the gap between consecutive cold loads and logs when two land
+// within one ordinary frame's worth of time (50ms, generous against this
+// platform's measured 16-900ms/frame range) instead of guessing at a cap
+// before there is a number to size it against.
+std::uint64_t g_dsiLastColdTextureLoadUs = 0;
+int g_dsiColdTextureLoadBurst = 0;
 
 // DSi only: the atlas's real-quality upload was confirmed failing for want
 // of room in the console's fixed 512KB texture-image VRAM budget
@@ -890,6 +922,24 @@ int_t RenderEngine::getTexture(const std::string &s)
 	// real-hardware log answer that with a simple id match instead of
 	// another guess.
 	MC_LOG_INFO("dsi", "texture id %d = '%s'\n", (int)texture, s.c_str());
+
+	// See g_dsiLastColdTextureLoadUs/g_dsiColdTextureLoadBurst's own comment
+	// above (white-flash investigation): count how many of these full cold
+	// loads land within one ordinary frame's worth of wall-clock time of
+	// each other, regardless of which call site or texture path triggered
+	// them -- several new mob skins becoming visible in the same frame is
+	// exactly this, uncapped by anything that exists today.
+	{
+		const std::uint64_t nowUs = PlatformCompat::getMonotonicMicros();
+		if (g_dsiLastColdTextureLoadUs != 0 && nowUs - g_dsiLastColdTextureLoadUs <= 50000ull)
+			++g_dsiColdTextureLoadBurst;
+		else
+			g_dsiColdTextureLoadBurst = 1;
+		g_dsiLastColdTextureLoadUs = nowUs;
+		if (g_dsiColdTextureLoadBurst >= 2)
+			MC_LOG_INFO("dsi", "texture cold-load burst=%d (last='%s') t=%lluus\n",
+				g_dsiColdTextureLoadBurst, s.c_str(), (unsigned long long)nowUs);
+	}
 #endif
 
 #if PLATFORM_PS2

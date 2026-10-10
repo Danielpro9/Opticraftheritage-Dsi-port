@@ -44,6 +44,11 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 		cache.stackSize = stackSize;
 		if (cache.cacheable)
 		{
+			// drawItemIntoGui() just bound whichever texture this item's
+			// render path uses (terrain.png for a 3D block, items.png for a
+			// flat icon) -- capture it now so a later cache-hit replay (which
+			// never calls drawItemIntoGui() again) knows what to rebind.
+			cache.textureId = dsiGetBoundTexture();
 			dsiAdvanceMeshRepack(cache.repack, cache.mesh, true);
 			handled = renderStaticMeshDraw(cache.mesh);
 		}
@@ -59,6 +64,12 @@ bool dsiDrawCachedItemIcon(RenderItem *itemRenderer, FontRenderer *fontRenderer,
 	}
 	else if (cache.cacheable)
 	{
+		// Must rebind before dsiAdvanceMeshRepack() too, not just before the
+		// draw below: an in-progress repack's stage 0 (texcoord conversion)
+		// still reads the currently-bound texture's width/height, and this
+		// replay path is the only one that can run across several frames
+		// without drawItemIntoGui() ever rebinding anything in between.
+		renderBindTexture(cache.textureId);
 		dsiAdvanceMeshRepack(cache.repack, cache.mesh, false);
 		handled = renderStaticMeshDraw(cache.mesh);
 	}

@@ -51,6 +51,17 @@ struct DsiCachedGuiIcon
 	int itemID = -1;
 	int damage = -1;
 	int stackSize = -1;
+	// The GL texture (dsiGetBoundTexture()) that was bound while this mesh
+	// was captured -- a 3D block icon is captured against terrain.png, a
+	// flat icon against items.png, and this cache can hold either kind from
+	// one call to the next. drawCapturedMeshFast()'s compiled command
+	// stream never carries a texture bind of its own (same invariant
+	// WorldRendererDsi.cpp's terrain meshes and GuiIngame.cpp's HUD caches
+	// rely on for their own single, never-changing texture) -- it just
+	// samples whatever is currently bound. A cache replay skips
+	// drawItemIntoGui() entirely, so nothing else rebinds this between
+	// slots; dsiDrawCachedItemIcon() must do it explicitly before replaying.
+	int textureId = 0;
 };
 
 // Draws stack's icon at (x, y) using/updating cache, WITHOUT the stack-

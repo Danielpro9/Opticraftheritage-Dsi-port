@@ -1978,9 +1978,30 @@ void EntityRenderer::renderWorld(float partialTicks, int64_t renderTimeLimitNano
 #endif
         
         // Niebla para nubes
+#if !PLATFORM_DSI
         renderDisable(RenderCapability::Fog);
+#endif
         setupFog(0, partialTicks);
+#if !PLATFORM_DSI
         renderEnable(RenderCapability::Fog);
+#endif
+        // DSi: fog was already ON through the whole opaque/translucent/entity
+        // run above and needs to stay ON for clouds too, so this disable+
+        // enable pair was a no-op on the visible fog state -- it only existed
+        // to force a state refresh, which setupFog()'s own renderFogf() calls
+        // already do on this backend (dsiApplyFogTableIfDirty() reacts to a
+        // value change directly, not to the capability being toggled). Real-
+        // hardware report: fog visibly flickers every single frame, even
+        // standing still, with the hardware table itself confirmed stable
+        // (see RenderAPI_DSI.cpp's fog table rebuild diagnostic -- 3 rebuilds
+        // in an entire session, not one per frame). GFX_FOG_* and GFX_CONTROL
+        // writes happen directly on this hardware, not queued through the
+        // same GX FIFO geometry commands go through -- two redundant direct
+        // writes landing while the FIFO may still be draining entities/
+        // weather geometry from the pass just above is a plausible source of
+        // a timing hazard between the two. Skipping this redundant pair on
+        // DSi is a bounded experiment to test that theory, not a confirmed
+        // fix; every other platform keeps the original disable/enable.
 #if !PLATFORM_SKIP_CLOUDS
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
         const PlatformDrawSnapshot cloudsDrawStart = platformProfileDrawSnapshot();

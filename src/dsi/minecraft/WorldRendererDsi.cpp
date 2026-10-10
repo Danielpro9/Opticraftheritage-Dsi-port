@@ -171,6 +171,8 @@ namespace
 	unsigned int g_dsiTotalRendererRebuilds = 0u;
 	// See dsiGetTotalBuildRestarts()'s own comment (DsiEarlyInit.h).
 	unsigned int g_dsiTotalBuildRestarts = 0u;
+	// See dsiGetTotalDecorCulled()'s own comment (DsiEarlyInit.h).
+	unsigned long g_dsiTotalDecorCulled = 0ul;
 }
 
 unsigned int dsiGetTotalRendererRebuilds()
@@ -186,6 +188,11 @@ unsigned int dsiGetTotalBuildRestarts()
 void dsiRecordBuildRestart()
 {
 	++g_dsiTotalBuildRestarts;
+}
+
+unsigned long dsiGetTotalDecorCulled()
+{
+	return g_dsiTotalDecorCulled;
 }
 
 void WorldRenderer::updateRenderer()
@@ -631,7 +638,10 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 							const float dy = dsiDecorEyeY - (static_cast<float>(y) + 0.5f);
 							const float dz = dsiDecorEyeZ - (static_cast<float>(z) + 0.5f);
 							if (dx * dx + dy * dy + dz * dz > DSI_DECORATIVE_CULL_DISTANCE_SQ)
+							{
+								++g_dsiTotalDecorCulled;
 								continue;
+							}
 						}
 					}
 

@@ -152,4 +152,16 @@ unsigned int dsiGetTotalBuildRestarts();
 // comment just above for what "a restart" means here and why.
 void dsiRecordBuildRestart();
 
+// Cumulative count of decorative blocks (tall grass/flowers/crops --
+// render types 1 and 6) skipped by WorldRendererDsi.cpp's fog-distance cull
+// instead of tessellated. Surfaced on Minecraft.cpp's memtrend line as
+// decorCulled=: the only way to confirm from a log that the cull is actually
+// removing geometry rather than never firing (DSI_DECORATIVE_CULL_DISTANCE_SQ
+// gating it off, Config::isFogOff() being true, or simply no decorative
+// blocks existing in the 8.8-16 block band of whatever world was tested all
+// look identical to "working" from the frame rate alone). Staying at 0 for a
+// whole session with tall grass/flowers visible on screen means the cull
+// never fired; a number that climbs as chunks build is the actual proof.
+unsigned long dsiGetTotalDecorCulled();
+
 #endif // DSI_PLATFORM

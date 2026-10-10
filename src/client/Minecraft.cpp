@@ -2059,7 +2059,13 @@ void Minecraft::runTick()
                 // Staying at 0 for a whole session with visible still water
                 // on screen would mean the merge is never firing; climbing
                 // is the first real evidence either way.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu waterMerged=%lu\n",
+                // decorCulled= (dsiGetTotalDecorCulled(), DsiEarlyInit.h):
+                // same shape of proof for WorldRendererDsi.cpp's fog-distance
+                // cull of tall grass/flowers/crops -- staying at 0 while such
+                // blocks exist within render distance would mean the cull
+                // never fires (wrong gating, or simply none in range), not
+                // that it is working invisibly.
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu waterMerged=%lu decorCulled=%lu\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
@@ -2069,7 +2075,8 @@ void Minecraft::runTick()
                     dsiGetTotalBuildRestarts(),
                     dsiGetTotalGreedyQuads(),
                     dsiGetTotalGreedyFacesCovered(),
-                    dsiGetTotalWaterQuadsMerged());
+                    dsiGetTotalWaterQuadsMerged(),
+                    dsiGetTotalDecorCulled());
 
                 // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() already
                 // proved /mob/*.png (~40 distinct skins vanilla can load across a

@@ -2065,7 +2065,12 @@ void Minecraft::runTick()
                 // blocks exist within render distance would mean the cull
                 // never fires (wrong gating, or simply none in range), not
                 // that it is working invisibly.
-                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu waterMerged=%lu decorCulled=%lu\n",
+                // greedyFarSections= (dsiGetTotalGreedyFarSections()): direct
+                // proof the fog-distance greedy-mesh LOD override actually
+                // fires, after the first build's greedyFaces/greedyQuads
+                // ratio gave no way to tell "not firing" from "firing but not
+                // visible in that aggregate".
+                MC_LOG_INFO("dsi", "memtrend heap=%u/%uKB vram=%u/512KB chunks=%d entities=%u tileEntities=%u rebuilds=%u restarts=%u greedyQuads=%lu greedyFaces=%lu waterMerged=%lu decorCulled=%lu greedyFarSections=%lu\n",
                     (unsigned)(dsiGetHeapCommitted() / 1024u), (unsigned)(dsiGetHeapCeiling() / 1024u),
                     (unsigned)(dsiTotalTextureVramBytes() / 1024u),
                     (int)theWorld->getLoadedChunkCount(),
@@ -2076,7 +2081,8 @@ void Minecraft::runTick()
                     dsiGetTotalGreedyQuads(),
                     dsiGetTotalGreedyFacesCovered(),
                     dsiGetTotalWaterQuadsMerged(),
-                    dsiGetTotalDecorCulled());
+                    dsiGetTotalDecorCulled(),
+                    dsiGetTotalGreedyFarSections());
 
                 // ClientPlatformPolicy_DSI.cpp's releaseWorldExitAssets() already
                 // proved /mob/*.png (~40 distinct skins vanilla can load across a

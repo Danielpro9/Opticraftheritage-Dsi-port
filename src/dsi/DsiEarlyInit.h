@@ -164,4 +164,16 @@ void dsiRecordBuildRestart();
 // never fired; a number that climbs as chunks build is the actual proof.
 unsigned long dsiGetTotalDecorCulled();
 
+// Cumulative count of dsiBuildRendererStep() calls that set the greedy-mesh
+// LOD override (dsi_set_greedy_max_merge_override(), DsiGreedyMesh.h) to
+// DSI_GREEDY_MAX_MERGE_FAR for the section being built. Surfaced on
+// Minecraft.cpp's memtrend line as greedyFarSections=: the direct way to
+// confirm the fog-distance greedy-mesh LOD is actually firing, after a
+// first build's greedyFaces/greedyQuads ratio stayed flat (never showing
+// the wider merges a working override should produce) with no way to tell
+// whether that meant "not firing" or "firing but not very visible in the
+// aggregate ratio."
+void dsiRecordGreedyFarSection();
+unsigned long dsiGetTotalGreedyFarSections();
+
 #endif // DSI_PLATFORM

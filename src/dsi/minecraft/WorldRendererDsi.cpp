@@ -174,6 +174,8 @@ namespace
 	unsigned int g_dsiTotalBuildRestarts = 0u;
 	// See dsiGetTotalDecorCulled()'s own comment (DsiEarlyInit.h).
 	unsigned long g_dsiTotalDecorCulled = 0ul;
+	// See dsiGetTotalGreedyFarSections()'s own comment (DsiEarlyInit.h).
+	unsigned long g_dsiTotalGreedyFarSections = 0ul;
 }
 
 unsigned int dsiGetTotalRendererRebuilds()
@@ -194,6 +196,16 @@ void dsiRecordBuildRestart()
 unsigned long dsiGetTotalDecorCulled()
 {
 	return g_dsiTotalDecorCulled;
+}
+
+void dsiRecordGreedyFarSection()
+{
+	++g_dsiTotalGreedyFarSections;
+}
+
+unsigned long dsiGetTotalGreedyFarSections()
+{
+	return g_dsiTotalGreedyFarSections;
 }
 
 void WorldRenderer::updateRenderer()
@@ -368,30 +380,48 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 
 	// Greedy-mesh LOD experiment (dsi_set_greedy_max_merge_override()'s own
 	// comment, DsiGreedyMesh.h): reuses the exact same eye position and fog
-	// gate just computed above, just measured against THIS SECTION'S centre
-	// (a single check for the whole 16x16x16 section, same granularity
-	// RenderGlobal.cpp's dsiSectionBeyondFog() already uses) instead of per
-	// block -- a section is either entirely inside the fog-hidden band or
-	// not, there is no partial case to get wrong here. Reset every call so a
-	// section that re-enters the near band after the player walks back
-	// toward it goes back to the normal, unstretched cap on its next rebuild.
+	// gate just computed above, measured against the NEAREST point of this
+	// section's AABB to the eye (clamp each axis into [x0,x1)/[y0,y1)/[z0,z1)
+	// then measure from there) rather than the section's centre. Real-
+	// hardware evidence this corrects: a centre check requires the WHOLE 16-
+	// block-wide section to sit beyond DSI_DECORATIVE_CULL_DISTANCE_SQ before
+	// the override ever applies, and DSi's own render edge sits at only
+	// PLATFORM_VISIBLE_CHUNK_RADIUS*16 (16) blocks -- dsiSectionBeyondFog()
+	// drops a section entirely once NOTHING in it could show, so there is
+	// barely any room left for a section's CENTRE specifically to clear the
+	// threshold first. The first build confirmed this: greedyFaces/greedyQuads
+	// stayed flat at ~1.85-1.94 (exactly DSI_GREEDY_MAX_MERGE=2's own range)
+	// for an entire session, never once showing the wider merges
+	// DSI_GREEDY_MAX_MERGE_FAR=4 should produce -- the override was never
+	// actually firing. The nearest-point form instead fires the moment ANY
+	// part of the section first crosses into the fog-hidden band, matching
+	// what dsiGetTotalGreedyFarSections() (DsiEarlyInit.h) now counts
+	// directly instead of inferring from that ratio.
+	bool dsiGreedyFarThisStep = false;
 	if (dsiCullDecorationByFog)
 	{
-		const float dsiSectionCenterX = static_cast<float>(x0) + 8.0f;
-		const float dsiSectionCenterY = static_cast<float>(y0) + 8.0f;
-		const float dsiSectionCenterZ = static_cast<float>(z0) + 8.0f;
-		const float dx = dsiDecorEyeX - dsiSectionCenterX;
-		const float dy = dsiDecorEyeY - dsiSectionCenterY;
-		const float dz = dsiDecorEyeZ - dsiSectionCenterZ;
+		const float dsiSectionNearX = std::max(static_cast<float>(x0), std::min(dsiDecorEyeX, static_cast<float>(x1)));
+		const float dsiSectionNearY = std::max(static_cast<float>(y0), std::min(dsiDecorEyeY, static_cast<float>(y1)));
+		const float dsiSectionNearZ = std::max(static_cast<float>(z0), std::min(dsiDecorEyeZ, static_cast<float>(z1)));
+		const float dx = dsiDecorEyeX - dsiSectionNearX;
+		const float dy = dsiDecorEyeY - dsiSectionNearY;
+		const float dz = dsiDecorEyeZ - dsiSectionNearZ;
 		if (dx * dx + dy * dy + dz * dz > DSI_DECORATIVE_CULL_DISTANCE_SQ)
+		{
 			dsi_set_greedy_max_merge_override(DSI_GREEDY_MAX_MERGE_FAR);
+			dsiGreedyFarThisStep = true;
+		}
 		else
+		{
 			dsi_set_greedy_max_merge_override(-1);
+		}
 	}
 	else
 	{
 		dsi_set_greedy_max_merge_override(-1);
 	}
+	if (dsiGreedyFarThisStep)
+		dsiRecordGreedyFarSection();
 
 	const uint64_t stepStartUs = PlatformCompat::getMonotonicMicros();
 	int_t processed = 0;

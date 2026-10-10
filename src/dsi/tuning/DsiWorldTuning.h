@@ -161,6 +161,24 @@
 #undef  PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS 12.0f
 
+// Same class of gap as the two radii just above, missed by that same audit
+// because it lives in RenderSheep.cpp instead of RenderGlobal.cpp/
+// EntityLiving.cpp: PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ (PlatformGameTuning.h)
+// still carries PS2's own 256.0f (16 blocks) completely unmodified. DSi's own
+// PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS above already stops rendering any
+// entity -- sheep included -- past 10 blocks, which is LESS than the 16
+// blocks this LOD needs to ever trigger: no unsheared sheep DSi actually
+// renders can ever be far enough for renderSheepFurPass()'s own distance
+// check to return true, so the wool layer never skips and this LOD has been
+// silent dead code on this platform the whole time, costing an extra
+// texture bind + render pass for every visible sheep regardless of
+// distance. 6 blocks (36.0f) sits inside the 10-block render cutoff with
+// room either side, so sheep do cross it while still otherwise visible --
+// unmeasured against a real frame-time log, same as every other distance
+// knob in this file derived from a ratio rather than a measurement.
+#undef  PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ
+#define PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ       36.0f
+
 // Used by WorldRendererDsi.cpp's decorative-only distance cull (grass/
 // flowers/crops -- the purely decorative crossed-quad render types) to skip
 // baking their geometry into a section's mesh once DSi's own short-range

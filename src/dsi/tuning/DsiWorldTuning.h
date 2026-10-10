@@ -161,6 +161,24 @@
 #undef  PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS 12.0f
 
+// Used by WorldRendererDsi.cpp's decorative-only distance cull (grass/
+// flowers/crops -- the purely decorative crossed-quad render types) to skip
+// baking their geometry into a section's mesh once DSi's own short-range
+// fog has mostly obscured them anyway. Deliberately NOT dsiSectionBeyondFog()'s
+// own full render-edge distance (PLATFORM_VISIBLE_CHUNK_RADIUS*16, 16 blocks
+// at this platform's default radius=1) -- that one already drops a whole
+// section once nothing in it could show at all; this is a smaller distance
+// matched to where EntityRenderer.cpp's own PLATFORM_CONSOLE_LOW fog formula
+// (fogEnd*0.55f) puts the START of the fog ramp, since decoration already
+// looks indistinct well before the edge where terrain itself finally fades
+// out. Not kept in exact sync with that formula's live Config::isFogOff()/
+// effectiveFar-dependent value (this header has no access to live game
+// state) -- a fixed ratio of the same PLATFORM_VISIBLE_CHUNK_RADIUS*16 base
+// distance is close enough for a geometry-thinning heuristic, not a visual
+// correctness requirement the way the fog table itself is.
+#undef  DSI_DECORATIVE_CULL_DISTANCE_SQ
+#define DSI_DECORATIVE_CULL_DISTANCE_SQ ((PLATFORM_VISIBLE_CHUNK_RADIUS * 16.0f * 0.55f) * (PLATFORM_VISIBLE_CHUNK_RADIUS * 16.0f * 0.55f))
+
 // Eviction rate: reused from PS2 as-is. These bound how many chunks unload
 // (write to SD + free) per tick, not how much RAM the cache holds, so they do
 // not scale with the smaller radius above -- they exist to keep a save-to-SD

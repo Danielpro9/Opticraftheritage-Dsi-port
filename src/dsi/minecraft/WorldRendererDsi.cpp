@@ -100,6 +100,8 @@
 #include "net/minecraft/src/TileEntity.h"
 #include "net/minecraft/src/TileEntityRenderer.h"
 #include "net/minecraft/src/Config.h"
+#include "net/minecraft/src/EntityLiving.h"
+#include "client/Minecraft.h"
 #include "platform/RenderTerrainAPI.h"
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"
 #include "dsi/render/DsiBlockRenderInfo.h"
@@ -319,6 +321,41 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 	const int_t totalBlocks = sizeWidth * sizeHeight * sizeDepth;
 	if (blockBudget <= 0)
 		blockBudget = totalBlocks;
+
+	// Decorative-only distance cull: grass/flowers/crops etc. (the purely
+	// decorative crossed-quad render types -- never a full face a neighbour
+	// needs for its own occlusion) are hard to make out once DSi's short-
+	// range fog has mostly obscured them anyway (EntityRenderer.cpp's
+	// PLATFORM_CONSOLE_LOW formula puts fogStart at ~55% of the loaded
+	// edge -- see DsiWorldTuning.h's DSI_DECORATIVE_CULL_DISTANCE_SQ), so
+	// this skips baking their geometry into the mesh near that edge instead
+	// of building faces nobody can really see. Computed once per build step
+	// (not per block): cheap, and a build step's geometry decisions only
+	// need to be approximately right, not synced to the sub-tick
+	// interpolated eye position an actual frame's draw uses.
+	//
+	// Same gating as RenderGlobal.cpp's dsiSectionBeyondFog() call (isFogOff/
+	// isNether), and a smaller threshold than that function's own full
+	// render-edge distance: dsiSectionBeyondFog() already drops a section's
+	// ENTIRE mesh once nothing in it could possibly show; this only thins
+	// what a still-submitted section bakes, well before that point, for the
+	// specific shapes fog hides first. Solid blocks (every other render
+	// type) are never skipped by this.
+	bool dsiCullDecorationByFog = false;
+	float dsiDecorEyeX = 0.0f, dsiDecorEyeY = 0.0f, dsiDecorEyeZ = 0.0f;
+	{
+		Minecraft *dsiMc = Minecraft::getMinecraft();
+		if (dsiMc != nullptr && dsiMc->renderViewEntity != nullptr && dsiMc->theWorld != nullptr &&
+			dsiMc->theWorld->worldProvider != nullptr && !dsiMc->theWorld->worldProvider->isNether &&
+			!Config::isFogOff())
+		{
+			EntityLiving *dsiDecorViewEntity = dsiMc->renderViewEntity;
+			dsiCullDecorationByFog = true;
+			dsiDecorEyeX = static_cast<float>(dsiDecorViewEntity->posX);
+			dsiDecorEyeY = static_cast<float>(dsiDecorViewEntity->posY + dsiDecorViewEntity->getEyeHeight());
+			dsiDecorEyeZ = static_cast<float>(dsiDecorViewEntity->posZ);
+		}
+	}
 
 	const uint64_t stepStartUs = PlatformCompat::getMonotonicMicros();
 	int_t processed = 0;
@@ -583,6 +620,19 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 						dsiFullyEnclosedOpaqueCube(chunkcache, x, y, z))
 						continue;
 #endif
+
+					if (dsiCullDecorationByFog)
+					{
+						const int_t renderType = block->getRenderType();
+						if (renderType == 1 || renderType == 6)
+						{
+							const float dx = dsiDecorEyeX - (static_cast<float>(x) + 0.5f);
+							const float dy = dsiDecorEyeY - (static_cast<float>(y) + 0.5f);
+							const float dz = dsiDecorEyeZ - (static_cast<float>(z) + 0.5f);
+							if (dx * dx + dy * dy + dz * dz > DSI_DECORATIVE_CULL_DISTANCE_SQ)
+								continue;
+						}
+					}
 
 					stepDrew |= renderblocks.renderBlockByRenderType(block, x, y, z);
 				}

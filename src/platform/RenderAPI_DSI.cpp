@@ -987,8 +987,24 @@ void dsiApplyFogTableIfDirty()
 
 	// Largest shift (finest resolution) whose 32-entry table still reaches
 	// across the needed span -- see glFogShift()/glFogOffset() in libnds.
+	// Coverage at a given shift is (0x400 >> shift) * 32, which SHRINKS as
+	// shift grows -- so this must walk shift UP from the coarsest setting
+	// only while the NEXT, finer level still covers the span, stopping
+	// (not advancing) the moment it wouldn't. The earlier version checked
+	// the CURRENT level's own coverage against span instead of the next
+	// level's: since shift=0's coverage (32768) already exceeds any real
+	// span here, that condition was false immediately and shift never left
+	// 0 -- the coarsest possible table, one 1024-deep bucket. With the
+	// fogStart..fogEnd span landing within roughly the first 1% of the
+	// depth range (see the fog comment block above), that single bucket
+	// swallowed the *entire* reachable depth range into table[0]'s density
+	// (0, since the loop below's first entry always sits at fogStart) --
+	// every real distance read back as "no fog" regardless of fogEnd,
+	// which is exactly the real-hardware symptom (fog never visible at
+	// any Fog setting). Confirmed by hand: for this project's near/far
+	// planes the needed shift is 8 (bucket width 4), not 0.
 	int shift = 0;
-	while (shift < 15 && (float)((0x400 >> shift) * 32) < span)
+	while (shift < 15 && (float)((0x400 >> (shift + 1)) * 32) >= span)
 		++shift;
 
 	const int bucketWidth = 0x400 >> shift;

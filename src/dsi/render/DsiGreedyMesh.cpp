@@ -18,6 +18,8 @@ namespace
 // dsiGetTotalGreedyFacesCovered() for why these exist and what they prove.
 unsigned long g_dsiGreedyQuadCount = 0ul;
 unsigned long g_dsiGreedyFacesCoveredCount = 0ul;
+// See dsi_set_greedy_max_merge_override()'s own comment (DsiGreedyMesh.h).
+int g_dsiGreedyMaxMergeOverride = -1;
 
 struct FaceKey
 {
@@ -239,6 +241,11 @@ static void faceCellCoordinates(int_t face, int_t slice, int_t u, int_t v,
 }
 } // namespace
 
+void dsi_set_greedy_max_merge_override(int maxMergeOrNonPositiveForDefault)
+{
+	g_dsiGreedyMaxMergeOverride = maxMergeOrNonPositiveForDefault;
+}
+
 bool dsi_is_greedy_cube(Block *block)
 {
 	if (block == nullptr || block->blockID < 0 || block->blockID >= Block::BLOCK_REGISTRY_SIZE)
@@ -285,7 +292,7 @@ bool dsi_greedy_mesh_face(ChunkCache &cc, int face,
 	FaceKey mask[16 * 16];
 	bool used[16 * 16];
 	bool emittedAny = false;
-	const int_t configuredMerge = DSI_GREEDY_MAX_MERGE;
+	const int_t configuredMerge = g_dsiGreedyMaxMergeOverride > 0 ? g_dsiGreedyMaxMergeOverride : DSI_GREEDY_MAX_MERGE;
 	const int_t maxMerge = configuredMerge < 1 ? 1 :
 	                       (configuredMerge > 16 ? 16 : configuredMerge);
 

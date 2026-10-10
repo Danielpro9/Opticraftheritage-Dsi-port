@@ -107,6 +107,7 @@
 #include "dsi/minecraft/DsiCapturedMeshRepack.h"
 #include "dsi/render/DsiBlockRenderInfo.h"
 #include "dsi/render/DsiWaterMerge.h"
+#include "dsi/render/DsiGreedyMesh.h"
 #include "dsi/DsiEarlyInit.h"
 
 #include <algorithm>
@@ -363,6 +364,33 @@ bool WorldRenderer::dsiBuildRendererStep(int_t blockBudget)
 			dsiDecorEyeY = static_cast<float>(dsiDecorViewEntity->posY + dsiDecorViewEntity->getEyeHeight());
 			dsiDecorEyeZ = static_cast<float>(dsiDecorViewEntity->posZ);
 		}
+	}
+
+	// Greedy-mesh LOD experiment (dsi_set_greedy_max_merge_override()'s own
+	// comment, DsiGreedyMesh.h): reuses the exact same eye position and fog
+	// gate just computed above, just measured against THIS SECTION'S centre
+	// (a single check for the whole 16x16x16 section, same granularity
+	// RenderGlobal.cpp's dsiSectionBeyondFog() already uses) instead of per
+	// block -- a section is either entirely inside the fog-hidden band or
+	// not, there is no partial case to get wrong here. Reset every call so a
+	// section that re-enters the near band after the player walks back
+	// toward it goes back to the normal, unstretched cap on its next rebuild.
+	if (dsiCullDecorationByFog)
+	{
+		const float dsiSectionCenterX = static_cast<float>(x0) + 8.0f;
+		const float dsiSectionCenterY = static_cast<float>(y0) + 8.0f;
+		const float dsiSectionCenterZ = static_cast<float>(z0) + 8.0f;
+		const float dx = dsiDecorEyeX - dsiSectionCenterX;
+		const float dy = dsiDecorEyeY - dsiSectionCenterY;
+		const float dz = dsiDecorEyeZ - dsiSectionCenterZ;
+		if (dx * dx + dy * dy + dz * dz > DSI_DECORATIVE_CULL_DISTANCE_SQ)
+			dsi_set_greedy_max_merge_override(DSI_GREEDY_MAX_MERGE_FAR);
+		else
+			dsi_set_greedy_max_merge_override(-1);
+	}
+	else
+	{
+		dsi_set_greedy_max_merge_override(-1);
 	}
 
 	const uint64_t stepStartUs = PlatformCompat::getMonotonicMicros();

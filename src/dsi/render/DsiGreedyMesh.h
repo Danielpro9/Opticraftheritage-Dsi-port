@@ -45,6 +45,20 @@ class ChunkCache;
 // skipped by the per-block RenderBlocks loop (opaque pass only).
 bool dsi_is_greedy_cube(Block* block);
 
+// User-requested LOD experiment: sections far enough to sit inside DSi's own
+// fog-hidden band (WorldRendererDsi.cpp's DSI_DECORATIVE_CULL_DISTANCE_SQ --
+// the same threshold the decorative-block cull already uses) can tolerate a
+// coarser merge than DSI_GREEDY_MAX_MERGE allows everywhere else: fog already
+// hides the extra texture stretch a wider merge run causes (DsiGreedyMesh.h's
+// own banner above explains why a merged quad stretches instead of tiling),
+// so trading a bit more visible stretch for fewer vertices/draw calls is a
+// deliberately *free* trade here -- geometry only, no VRAM cost the way a
+// second lower-quality texture would have (see this session's earlier,
+// rejected texture-LOD research). Set once per dsiBuildRendererStep() call,
+// consumed by every dsi_greedy_mesh_face() call that call makes; a value <= 0
+// means "use DSI_GREEDY_MAX_MERGE as configured", the default.
+void dsi_set_greedy_max_merge_override(int maxMergeOrNonPositiveForDefault);
+
 // Greedy-mesh ONE face direction (0..5, matching RenderBlocks: 0=Y- 1=Y+ 2=Z-
 // 3=Z+ 4=X- 5=X+) of the opaque full cubes inside [x0,x1) x [y0,y1) x [z0,z1)
 // into Tessellator::instance (the caller must have started a quad batch).

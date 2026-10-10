@@ -458,6 +458,17 @@
 #undef  DSI_GREEDY_MAX_MERGE
 #define DSI_GREEDY_MAX_MERGE                     2
 
+// User-requested LOD experiment (see dsi_set_greedy_max_merge_override()'s
+// own comment, DsiGreedyMesh.h): a wider merge cap used ONLY for sections
+// sitting inside DSi's own fog-hidden band, where the extra texture stretch
+// this allows is already hard to make out. 4 is a first, deliberately
+// conservative guess, matching the same "2 is unnoticeable, go further only
+// where something already hides it" reasoning that set the unconditional
+// cap above -- unmeasured on real hardware, same as every other first-guess
+// knob in this file.
+#undef  DSI_GREEDY_MAX_MERGE_FAR
+#define DSI_GREEDY_MAX_MERGE_FAR                 4
+
 // DSI_GREEDY_SLICES_PER_STEP: how many of a face direction's up-to-16 planes
 // the greedy sub-phase scans in one dsiBuildRendererStep() call before
 // returning to let the rest of the frame run. Half of PS2's 4 -- DSi's ARM9 has

@@ -192,7 +192,41 @@ int_t Config::getMaxRenderDistanceFine()
 {
 #if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(DSI_PLATFORM) || PLATFORM_PC_LEGACY
 	// PLATFORM_VISIBLE_CHUNK_RADIUS is authoritative on fixed-grid backends.
+#ifdef DSI_PLATFORM
+	// Real-hardware report, still open at the time of writing: the fog
+	// visibly flickers every frame, even standing completely still with no
+	// camera movement -- which rules out every build/rebuild/reveal-driven
+	// theory already tested this session (the GFX_FOG_TABLE itself only
+	// rebuilds 3 times a whole session, confirmed by its own diagnostic;
+	// removing a redundant fog disable/enable pair near cloud rendering
+	// made no difference either). Found while tracing where this
+	// function's own floor of 32 (below) ends up: DSi's PLATFORM_VISIBLE_
+	// CHUNK_RADIUS*16 is only 16, clamped UP to that 32-block floor meant
+	// for PS2/Wii/PC_LEGACY's much bigger worlds, so EntityRenderer.cpp's
+	// farPlaneDistance (= this function's result) is 32, not 16 -- and the
+	// far CLIP plane passed to glFrustumf32() is farPlaneDistance*2 = 64,
+	// confirmed by RenderAPI_DSI.cpp's own fog-rebuild diagnostic logging
+	// "far=64.00". dsiSectionBeyondFog() already proves nothing ever draws
+	// past 16 blocks on this platform, so the 16-64 range of that far
+	// plane is pure dead space -- and the DS 3D engine's depth buffer is
+	// non-linear (hyperbolic, the same encoding RenderAPI_DSI.cpp's own fog
+	// comment derives from glFrustumf32()'s matrix), so a far plane 4x
+	// farther than anything ever drawn squeezes the DEPTH PRECISION of the
+	// 0-16 block range actually rendered into a much smaller slice of the
+	// available 15-bit window-depth range than a correctly-sized far plane
+	// would. Coarser depth precision exactly where fog is heaviest (the far
+	// edge of the loaded world) is a plausible source of a visible, per-
+	// frame flicker with no camera movement needed to trigger it: two
+	// near-coplanar faces at the render edge could trade which one wins
+	// the depth test from frame to frame purely from precision rounding,
+	// with nothing else in the scene needing to change. Untested
+	// hypothesis -- the next real-hardware build with this fix needs to
+	// confirm whether the flicker actually stops, not just that this
+	// reasoning is plausible.
+	return limit(PLATFORM_VISIBLE_CHUNK_RADIUS * 16, 16, 256);
+#else
 	return limit(PLATFORM_VISIBLE_CHUNK_RADIUS * 16, 32, 256);
+#endif
 #else
 	return 256;
 #endif
